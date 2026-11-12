@@ -7,9 +7,43 @@
   </head>
   <body>
     <main>
-      <h1>refaceCS</h1>
-      <p>A local controller for the Yamaha reface CS synthesizer.</p>
-      <p id="app-status" role="status">Loading application...</p>
+      <header class="toolbar">
+        <div>
+          <h1>reface<span>CS</span></h1>
+          <p>Interactive panel study <span class="badge">No MIDI / no audio</span></p>
+        </div>
+        <div class="toolbar-actions">
+          <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
+            Focus Mode
+          </button>
+          <button id="hide-speakers" type="button" aria-pressed="false" aria-controls="synth">
+            Hide Speakers
+          </button>
+          <button id="hide-displays" type="button" aria-pressed="false" aria-controls="visualizations">
+            Hide Displays
+          </button>
+          <button id="five-octaves" type="button" aria-pressed="false" aria-controls="synth">
+            5 Octaves
+          </button>
+          <button id="reset-faders" type="button" aria-controls="synth">
+            Reset <span>faders</span>
+          </button>
+          <button id="fader-size" type="button" aria-pressed="false" aria-controls="synth">
+            2x <span>fader travel</span>
+          </button>
+        </div>
+      </header>
+      <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
+      <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
+        <div id="synth"></div>
+      </div>
+      <footer>
+        <p id="app-status" role="status">Loading panel...</p>
+        <p class="help">Hold keys to press them. Drag faders or focus one and use arrow keys.
+          Home / End set the limits. Double-click a fader to reset it.
+          Click the left/right ends to shift octave down/up.
+          LEDs show local selections only.</p>
+      </footer>
       <noscript>Enable JavaScript to use this application.</noscript>
     </main>
     <script type="module" src="/src/main.js"></script>

@@ -11,7 +11,45 @@ npm run dev
 ```
 
 Open the localhost URL printed by Vite, including `/static/reface/`.
-The current page is a minimal vanilla JavaScript, HTML, and CSS shell; MIDI and patch features are not implemented yet.
+The current page is an interactive SVG panel built with vanilla JavaScript, HTML, and CSS.
+It is a visual prototype: it does not produce audio, send MIDI, or store patches.
+The surrounding page and toolbar use a dark theme; the synth retains its original light case.
+
+## Interactive panel
+
+- Five read-only floating displays sit below the toolbar and above the synth: LFO, Filter, Amp ADSR, Filter ADSR, and Effect. Dark dotted grids and cyan curves update live with the faders, including resets. Cards wrap on smaller screens without covering the instrument. The gap to the case is reduced by 75%; a fully open filter shows a flat, vertically centered response.
+- These are **schematic previews**, not measured audio or calibrated Hz/millisecond curves. Both envelopes share A/D/S/R, with illustrative linear influence from EG Balance; zero amplitude-envelope influence retains a note gate, not silence. LFO shows its destination and relative depth/speed; Effect switches between echo, modulation, and distortion/tone illustrations. See the MIDI reference for verified behavior and modeling limitations.
+- Display numbers are white, while their labels retain muted colors. Display backgrounds stay dark in every mode. Focus Mode colors graph lines and their shaded fills to match the sections: LFO green, Filter peach, both ADSR displays blue, and Effect pink. Relative luminance and fill opacity are preserved; turning Focus Mode off restores cyan.
+- The compact toolbar includes **Hide Displays**, which removes the cards and their reserved space without changing controls or other view modes. Hidden displays continue to follow faders; Reset faders preserves their visibility.
+- Each display has a subtle **reset** button for its section only. LFO resets Assign/Depth/Speed; Filter resets Cutoff/Resonance; Effect resets Type/Depth/Rate. Both ADSR reset buttons perform the same action: restore EG Balance and all A/D/S/R faders. Other sections, mute restoration, pitch-bend range, and view modes are preserved.
+- One SVG panel follows the supplied reface CS reference image, with 37 individually addressable keys (optionally 61), independent faders, and OSC/looper demo LEDs.
+- The CS mark is a thin, connected SVG outline path based on the reference image, not font-rendered text.
+- Hold a key with a mouse, touch, Space, or Enter to animate it. Release or move focus away to release keyboard-held keys.
+- Drag a fader or focus it and use arrow keys; Shift+arrow and Page Up/Down make larger changes on continuous controls. Home/End reach the limits. Hovering, keyboard focus, and dragging give the handle a brighter glow that eases in/out over 180 ms. Fader movement remains immediate. By user choice, this glow-only fade stays active with reduced motion; key and LED transitions still respect that preference.
+- **Transpose**, between Pitch Bend and Volume, steps from -6 to +6 semitones with 0 centered. Its signed value appears above the fader in every mode, with TRANSPOSE below. It is local-only, independent of Octave; no MIDI is sent.
+- **- 12 +** beneath Pitch Bend adjusts its local range one semitone at a time, from 0 (bending disabled) to 24. Click the glowing -/+ labels or activate them with Enter/Space. Changing range preserves the bend fader position and all view modes; Reset faders restores 12 semitones, matching the user-confirmed factory default. This remains local-only and sends no MIDI.
+- Double-click any fader's handle or track to restore just that fader to its Reset position, without changing other controls or view modes.
+- Click **MUTE** beneath Volume to save its level and set it to 0; **UNMUTE** restores that level only if Volume has not been touched. Touching/adjusting Volume discards the saved level, even at 0; then raise the slider to unmute. Any positive volume returns the label to MUTE. Reset clears mute state. Enter/Space also operate the label.
+- Clickable selector labels and MUTE/UNMUTE have the same 180 ms fading hover glow as fader handles, including when reduced motion is enabled.
+- Octave, Looper, LFO Assign, OSC Type, and Effect Type have one horizontal track line per labeled position, aligned in both travel sizes. Click a position label to select that exact step and refresh its LEDs/readout, without dragging. Repeated label clicks keep selecting that step rather than resetting it. Continuous faders retain their finer scales.
+- The **2x fader travel** toggle doubles the control travel and expands the case/panel, keeping key dimensions, fader handles, labels, and values unchanged.
+- **5 Octaves** adds one octave below and above the original keyboard (61 keys instead of 37). Keys narrow horizontally to fit the same frame; heights, controls, and Octave/Transpose values stay unchanged. Toggling releases held keys. This works with all view modes, and Reset faders preserves the keyboard view.
+- **Hide Speakers** removes the speaker/end margins and narrows the case without resizing keys or controls. Both ends remain clickable (slim strips when compact): left lowers the Octave selector one step, right raises it, bounded at -2/+2. Enter/Space also activate focused ends. This works with Focus Mode and normal/2x travel; Reset preserves the selected layout.
+- **Focus Mode** fades the still-usable Looper section to 20% opacity, adds subtle section colors, and colors the Cutoff handle red and Resonance handle blue. Pitch Bend, Volume, and Octave retain their appearance. Live gray numbers below every fader show local values (0-127; selectors 0-4; Transpose signed semitones). Toggling it preserves values; Reset and 2x preserve Focus Mode.
+- **Reset faders** restores the starting positions listed in the requirements, including 50% volume, centered octave/pitch bend, maximum cutoff/decay/sustain, and other faders at the bottom. These positions also apply on page load; Reset preserves the normal/2x view.
+- Looper Record/Play LEDs reflect the local looper selection only; they do not represent recording, playback, or a hardware connection.
+- Only the selected OSC type's LED glows: SAW red, PULSE orange, SYNC yellow, RING lime, FM light blue. Other OSC LEDs are black. The dots sit to the right of the labels, with clearance before the Texture fader.
+- On smaller screens the panel scrolls horizontally to keep controls usable.
+
+## Tests
+
+```powershell
+npm exec playwright install chromium
+npm run build
+npm test
+```
+
+Browser tests cover keys, fader input and resets, selector LEDs, layout toggles, mute and pitch range, live displays, section resets, and dark/Focus Mode styling against the production build. Display checks include fully open filter geometry, section-color luminance, and responsive spacing.
 
 ## Build and deploy
 

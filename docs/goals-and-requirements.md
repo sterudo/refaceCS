@@ -34,7 +34,6 @@ These are decisions made during requirements refinement:
 - Users import ("upload") MP3 files through a file picker. When browsing patches, the first attachment should play automatically when browser autoplay policy permits; users can select either of the other attachments. Provide an explicit play action if autoplay is blocked.
 - A saved or generated image of a patch's fader/control state.
 - Settings and additional live-play workflow.
-- Choosing SVG (one synth illustration or separate control illustrations) remains a design option, not a requirement.
 - Cross-platform support beyond the chosen Chrome/Edge browser target.
 - Automated changing of system settings until each setting's behavior and safety are validated.
 
@@ -89,3 +88,121 @@ The browser can import up to three user-selected MP3 files per patch, store thei
 Audible autoplay is subject to browser policy. An explicit "Enable previews" action can initiate playback, but the app must still handle rejected playback attempts and offer a Play button. Playback after each patch selection must be tested in the supported browsers; automatic playback on initial page load cannot be guaranteed.
 
 Audio storage consumes the browser origin's quota and writes can fail. Show storage/import errors and do not claim a file was saved before the write succeeds. Stored files do not automatically synchronize between browsers or computers. JSON patch exports alone do not back up MP3 bytes; full-library backup needs a format that includes both patch metadata and audio files (for example, a ZIP archive). A backend is unnecessary for this local workflow, but would be needed for server-hosted sharing or synchronization.
+
+## Approved SVG panel prototype
+
+The user approved implementation ("Code it") after the following decisions:
+
+- Use one SVG panel with reusable shapes and individually addressable key, slider-handle, and LED elements; do not make a separate file for each key.
+- Follow the supplied reface CS reference photo's layout, proportions, and labels, with restrained shading rather than photorealistic textures.
+- Recreate the CS mark as an SVG outline path rather than text: a wide, rounded C connected along its lower stroke to the S, matching the supplied photo. Keep its proportions and keyboard-relative position unchanged in 2x travel.
+- The OSC type selector runs from FM, RING, SYNC, PULSE to SAW, top to bottom (user-confirmed correction).
+- Each OSC type has an LED: SAW red, PULSE orange, SYNC yellow, RING lime, FM blue. Only the selected type glows; all unselected OSC LEDs are black. LED positions follow the fader's normal/2x travel without resizing the dots.
+- OSC LEDs sit to the right of their labels, with clearance before the Texture fader. Their diameter is 50% larger than the initial dots (6 rather than 4 SVG units), and FM uses a lighter blue (`#48a9ff`).
+- Provide all 37 keys with held-press animation, draggable faders, and local demo LEDs.
+- Octave, Looper, LFO Assign, OSC Type, and Effect Type show exactly five horizontal track lines, one aligned with each labeled position. Preserve this alignment in normal and 2x travel; leave continuous fader scales unchanged.
+- Provide a "2x" toggle that doubles vertical fader travel and expands the panel/body. Keep the keyboard, handles, and labels at their original sizes and preserve the current control values.
+- This stage is interactive visuals only. MIDI note/control messages, audio, actual looper operation, hardware synchronization, and patch persistence are not included.
+
+The original illustration is in `src/synth.svg`; vanilla JavaScript wires up individual SVG elements. Keyboard octaves are relative panel positions, not assigned MIDI octaves. Discrete demo values describe slider positions; they are not MIDI CC or SysEx encodings. Looper Record and Play LEDs indicate the selected local demo mode only.
+
+### Starting positions and Reset
+
+The user approved these positions both on page load and when pressing **Reset faders**:
+
+| Controls | Starting/reset position |
+|---|---|
+| Volume | 50%, rounded to 64 on the 0-127 scale |
+| Octave | 0 (middle) |
+| Pitch bend | Centered |
+| Transpose | 0 semitones (middle) |
+| Looper | Stop |
+| Tempo | Bottom |
+| LFO Assign | Off |
+| LFO Depth, LFO Speed, Portamento | Bottom |
+| OSC Type, Texture, Mod | Bottom (Type: SAW) |
+| Filter Cutoff | Top |
+| Filter Resonance | Bottom |
+| EG Balance, Attack, Release | Bottom |
+| Decay, Sustain | Top |
+| Effect Type, Depth, Rate | Bottom (Type: Off) |
+
+Reset preserves normal/2x travel, releases active interactions, and refreshes the control positions and local LEDs. It is not a hardware factory reset and sends no MIDI.
+
+### Focus Mode
+
+The user approved a visual-only **Focus Mode** toggle, off on page load:
+
+- Fade the entire Looper section (including Tempo, labels, and demo LEDs) to 20% opacity while retaining interaction.
+- Give LFO, Portamento, OSC, Filter, EG, and Effect subtle, distinct pastel backgrounds. Leave Pitch Bend, Volume, and Octave styling unchanged.
+- Color the Cutoff handle red and Resonance handle blue.
+- Show live mid-gray numeric readouts below every fader's labels: raw local values 0-127, 0-4 for selectors, or signed semitones for Transpose. These are demo position values, not verified MIDI encodings.
+- Apply all styling/readouts only while enabled. Preserve control values when toggling, preserve Focus Mode on Reset, and support both normal and 2x travel without scaling labels or numbers.
+
+### Hide Speakers and octave end controls
+
+The user approved **Hide Speakers**, off on page load. Remove the speakers and shorten the left/right case margins without scaling the keyboard, fader handles, or labels. Retain slim end strips in the compact layout, with equal visible case margins on either side of the keyboard.
+
+In every combination of speaker visibility, Focus Mode, and normal/2x travel, clicking the left end lowers the Octave selector by one step and the right end raises it. Enter or Space activates a focused end. Reuse the selector's -2 to +2 limits, handle position, accessible value, and live numeric readout; indicate unavailable steps at the limits. These are local UI changes only, not MIDI transposition or audio.
+
+Speaker toggling preserves current values and other view toggles. Reset preserves speaker visibility and restores the Octave selector to its middle position.
+
+### Transpose and individual fader reset
+
+The user approved a 13-position **Transpose** fader between Pitch Bend and Volume, restricted to -6 through +6 semitones in whole-semitone steps. Its starting/reset value is 0 at the center. Show TRANSPOSE below and a live signed value (`+n`, `0`, `-n`) above, regardless of Focus Mode, speaker visibility, or travel size. Arrow keys, Shift+arrow, and Page Up/Down move one semitone; Home/End reach -6/+6.
+
+Transpose is independent of the Octave selector. This remains a local visual control: the documented hardware Master Transpose supports -12 to +12, but hardware synchronization and MIDI sending are not implemented.
+
+Double-clicking any fader's handle or track restores only that fader to its defined starting/reset value and updates its handle, labels, accessible value, and selection LEDs. Preserve other controls and all view toggles.
+
+### Five-octave keyboard view
+
+The user approved a **5 Octaves** toggle, off on page load. Expand the default 37-key, three-octave range to 61 keys by adding one octave below and one above. Keep the existing key identities; new octave labels are relative UI positions 0 and 5, not assigned MIDI octaves.
+
+Fit the additional keys into the same keyboard frame by scaling only their horizontal dimension (36 white keys instead of 22). Keep key height, press animation, synth controls, Octave/Transpose settings, and other view toggles unchanged. Added white/black keys support the same pointer and keyboard interactions as the original keys.
+
+Release held keys before switching either direction, and hide inactive extra keys from interaction and keyboard navigation. Support normal/2x travel, Focus Mode, and speaker visibility in any combination. Reset faders preserves the selected keyboard view. This remains a visual-only feature without MIDI or audio.
+
+### Clickable selector labels and fader hover
+
+The user approved direct selection through each of the five position labels on Octave, Looper, LFO Assign, OSC Type, and Effect Type. Select the exact labeled step, focus the slider for further keyboard adjustment, and refresh the handle, accessible value, readout, LEDs, and octave end controls using the normal update path. Label presses must not start a drag, and repeated/double label clicks must keep selecting that position rather than triggering the handle/track reset shortcut.
+
+All fader handles use the same stronger, brighter highlight on mouse hover, keyboard focus, and dragging, including while a captured drag moves outside the fader. The glow eases in and out over 180 ms, without animating or delaying handle movement. The embedded preview reports reduced motion; after confirming this was suppressing the fade, the user explicitly chose to keep the glow-only transition active even with reduced motion. Key and LED transitions still respect that preference. Hover alone must not change values. Support all view modes and leave Transpose/continuous fader labels non-interactive.
+
+### Label hover and Volume mute
+
+The user approved the same 180 ms fading hover glow on clickable selector labels and the new MUTE/UNMUTE label beneath Volume. Keep the glow active under reduced motion, matching the fader glow exception. The mute label also supports keyboard focus and Enter/Space activation.
+
+MUTE saves the current Volume value, sets Volume to 0, and changes to UNMUTE. UNMUTE restores the saved level only if Volume has not been touched since muting. The user explicitly chose that touching Volume at 0 also discards the saved level: leave UNMUTE visible but unavailable, explain that the slider must be raised, and do not restore a stale value.
+
+Pointer adjustments, keyboard value changes, and individual-fader reset invalidate the saved level. Merely changing view modes, hovering, or operating other controls does not. Any Volume value above 0 returns the label to MUTE. Reset faders clears mute state and restores the normal Volume default. This is local UI state only; no audio or MIDI is connected.
+
+### Pitch bend range
+
+The user approved minus/plus labels beneath Pitch Bend with the current range centered between them. Start at 12 semitones (`- 12 +`), matching the user-confirmed factory default; each action changes the range by one semitone within 0-24, with 0 representing no bending. Disable the unavailable direction at each limit. Use the same fading label glow and Enter/Space activation as MUTE/UNMUTE.
+
+Keep the range controls visible in every view combination and preserve their value when toggling views. Changing range must not move the pitch-bend fader or change any other control. Reset faders restores 12 semitones; double-clicking the bend fader still only recenters that fader.
+
+The user corrected the initially assumed 2-semitone default to the factory default of 12 semitones. The hardware reference documents a signed range parameter, but this UI intentionally exposes only nonnegative range magnitudes. Hardware synchronization and MIDI sending remain unimplemented.
+
+### Floating visualizations
+
+The user selected all five displays: Filter response, Amp ADSR, Filter ADSR, LFO, and Effect. They selected read-only live previews driven by the existing faders, not draggable graph controls.
+
+Reserve space below the toolbar and above the synth. Display separate floating-style dark cards with cyan graphs inspired by the supplied reference; do not overlay the instrument. The two ADSR displays share A/D/S/R settings but distinguish the influence of EG Balance. Filter responds to Cutoff and Resonance, LFO to Assign/Depth/Speed, and Effect to Type/Depth/Rate with type-specific interpretations.
+
+The user approved implementation ("Code it") and schematic rather than hardware-calibrated curves. Show raw fader values and use relative axes rather than invented Hz/millisecond scales. At the user's request, omit the visible Schematic badges, "low-pass" from the Filter caption, and "illustrative diagram" from the Effect caption; retain the modeling caveat in documentation and accessible descriptions. Wrap cards responsively without adding document-wide horizontal scrolling.
+
+Display LFO first, followed by Filter, Amp ADSR, Filter ADSR, and Effect. Center the Filter passband vertically; at maximum cutoff its response is completely flat with no right-edge falloff. Fade the schematic response toward that flat line near maximum cutoff. Reduce the visible gap between cards and the synth case by 75%, including both the CSS margin and the SVG's unused top gutter, without scaling the controls.
+
+Use a dark page background, light page text, and dark toolbar buttons with distinct pressed and focus states. Leave the synth artwork and display backgrounds unchanged.
+
+Render the actual numeric display values in white, including envelope influence percentages, while retaining muted labels. In Focus Mode, color graph lines and the shaded area beneath them using the existing panel section colors as the source of truth: LFO green, Filter peach, both ADSR displays EG blue, and Effect pink. Preserve the existing relative luminance by matching colors in linear RGB, and retain the fill's 0.07 opacity. Match graph glow and envelope marker hues as well, preserving their luminance/opacity. Restore cyan when Focus Mode is off; retain white numbers and the original dark display backgrounds in both modes. This supersedes the earlier background-tint treatment.
+
+Use smaller toolbar buttons and add a Hide Displays toggle, off on page load. Hiding removes all five cards and their reserved layout space, but preserves fader values and other view modes. Keep updating hidden previews so showing them restores the current state. Global Reset must not change display visibility.
+
+Provide a subtle, keyboard-operable reset button inside each display. Restore only that section's captured startup fader values: LFO Assign/Depth/Speed, Filter Cutoff/Resonance, or Effect Type/Depth/Rate. Both Amp ADSR and Filter ADSR reset buttons restore the entire shared EG section, including Balance and A/D/S/R. End active drags on affected faders, refresh related graphs/readouts/LEDs, and announce the section reset. Preserve unrelated faders, held keys, mute restoration, pitch-bend range, and all view modes.
+
+Use the normal fader update path so dragging, keyboard changes, selector labels, double-click reset, and global Reset refresh the previews. Preserve all existing view modes and controls; graph clicks must not change values.
+
+Model EG influence as an explicitly illustrative linear balance, not a verified Yamaha depth law. At zero AEG influence retain a note gate rather than implying silence. LFO uses an illustrative sinusoidal cycle, including an inactive trace when Assign is Off. Its OSC destination follows oscillator type. Effect shows relative echo spacing/strength for Delay, modulation cycles for Phaser and Chorus/Flanger, and an illustrative softened/clipped wave for Distortion with a dry reference. Rate means delay time, modulation rate, or tone according to Type. These are conceptual diagrams, not audio processing or simulations of the actual effect algorithms. See the visualization research in `reface-cs-midi.md` for verified manual behavior and unverified mappings.

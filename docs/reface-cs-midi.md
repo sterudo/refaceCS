@@ -112,7 +112,7 @@ Base address: `00 00 00`; documented table size: 32.
 | `0C` | 1 | Auto Power-Off | `00`: Off; `01`: On |
 | `0D` | 1 | Speaker Output | `00`: Off; `01`: On |
 | `0E` | 1 | MIDI Control | `00`: Off; `01`: On |
-| `0F` | 1 | Pitch Bend Range | `28`–`58`: -24 to +24 semitones |
+| `0F` | 1 | Pitch Bend Range | `28`–`58`: -24 to +24 semitones; factory default +12 semitones (user-confirmed) |
 | `14` | 1 | Foot Volume/Sustain switch | `00`/`01`: Foot Volume / Sustain |
 
 Addresses not listed above are marked reserved in the Data List.
@@ -156,3 +156,21 @@ The Data List (page 4) gives the following blocks:
 | Tone Generator Bulk Footer | 4 / `04` | `0F 0F 00` |
 
 The manual says to designate the corresponding Bulk Header address to request a Tone Generator bulk dump. These block descriptions are not a substitute for validating a complete dump/restore exchange.
+
+## Visualization research: Filter, EG, LFO, and Effect
+
+The owner's manual provides qualitative behavior, not a calibrated model for rendering response curves. The following findings were checked against readable transcriptions of its CS pages:
+
+- [Printed page 11: LFO](https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=17)
+- [Printed page 12: oscillator-specific LFO destinations](https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=18)
+- [Printed page 13: Filter, EG, and Effect](https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=19)
+
+Filter is a 24 dB/octave low-pass filter. Cutoff changes its cutoff frequency; Resonance emphasizes the resonant character. These pages do not establish the conversion from raw control values to Hz or the exact resonance response.
+
+The same A/D/S/R controls adjust both FEG and AEG: attack time, decay time, sustain level, and release time. EG Balance maximizes AEG at the bottom, where FEG has no effect; maximizes FEG at the top; and gives the two equal influence in the middle. Separate displays should therefore share ADSR settings while distinguishing their influence. The text does not establish an exact numerical interpolation law or state that AEG becomes silent at the FEG endpoint. Do not equate absence of amplitude-envelope modulation with muting the sound. Absolute envelope times and curvature remain unverified.
+
+LFO Assign selects no modulation, oscillator volume, filter cutoff, oscillator pitch, or an oscillator-specific parameter. Depth changes modulation strength; Speed changes rate. At OSC, the destination depends on oscillator type: pitch for Multi-saw (excluding its sub-oscillator), pulse width for Pulse, OSC2 pitch for Sync/Ring, and FM amount for FM. The reviewed text does not specify a waveform or raw-value-to-Hz conversion.
+
+Effect Depth controls effect strength. Rate controls distortion tone for DIST, modulation rate for CHO/FLA and PHASER, or delay time for DELAY. OFF passes the sound through unchanged. An effect preview must change its interpretation with Type; a single generic rate waveform would misrepresent distortion and delay.
+
+Any initial graphs should be explicitly schematic, not measured audio, exact hardware responses, or verified Hz/millisecond readouts. Keep these modeling assumptions separate from the MIDI encodings above.

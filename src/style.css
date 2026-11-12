@@ -1,24 +1,370 @@
 :root {
   font-family: system-ui, sans-serif;
-  color: #242424;
-  background: #f3f3f3;
+  color-scheme: dark;
+  color: #dce4e8;
+  background: #10161b;
   line-height: 1.5;
 }
 
 body {
   margin: 0;
-  padding: 2rem 1rem;
+  padding: clamp(1rem, 3vw, 3rem);
 }
 
 main {
-  max-width: 48rem;
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 1.5rem;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 0.5rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toolbar-actions button {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.toolbar-actions button span {
+  font-size: inherit;
 }
 
 h1 {
-  margin-top: 0;
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 500;
+  letter-spacing: -0.06em;
+}
+
+h1 span {
+  margin-left: 0.1em;
+  font-weight: 750;
+}
+
+.toolbar p {
+  margin: 0.25rem 0 0;
+  color: #a3b0b8;
+  font-size: 0.85rem;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: #a3b0b8;
+  font-size: 0.75rem;
+}
+
+button {
+  flex-shrink: 0;
+  padding: 0.65rem 1rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.4rem;
+  background: #202b33;
+  color: #dce4e8;
+  font: inherit;
+  cursor: pointer;
+}
+
+button span {
+  font-size: 0.8rem;
+}
+
+button[aria-pressed="true"] {
+  background: #335361;
+  color: #fff;
+  border-color: #75c6d3;
+}
+
+button:focus-visible,
+.instrument-scroll:focus-visible {
+  outline: 3px solid #6bdeea;
+  outline-offset: 4px;
+}
+
+.instrument-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+}
+
+.visualizations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 1rem;
+  margin: 0 0 0.4375rem;
+}
+
+.visualizations[hidden] {
+  display: none;
+}
+
+.visualization-card {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid #415159;
+  border-radius: 0.65rem;
+  background: linear-gradient(145deg, #253139, #111b22);
+  color: #b6cbd2;
+  box-shadow: 0 8px 18px #17282f30, inset 0 1px #ffffff0c;
+}
+
+.visualization-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.section-reset {
+  min-height: 24px;
+  padding: 0.2rem 0.35rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #9bb2ba;
+  font-size: 0.65rem;
+}
+
+.section-reset:hover,
+.section-reset:focus-visible {
+  background: #ffffff0c;
+  color: #fff;
+}
+
+.visualizations.focus-mode .visualization-card {
+  --graph-line: var(--section-line);
+  --graph-fill: var(--section-fill);
+  --graph-glow: color-mix(in srgb, var(--section-glow) 40%, transparent);
+  --graph-marker: var(--section-marker);
+}
+
+.visualization-card h2 {
+  margin: 0;
+  color: #e2edef;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+
+.visualization-card svg {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+
+.graph-axis {
+  fill: none;
+  stroke: #53636b;
+  stroke-width: 0.7;
+}
+
+.graph-curve,
+.graph-reference {
+  fill: none;
+  stroke: var(--graph-line, #71edec);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.graph-curve {
+  filter: drop-shadow(0 0 2px var(--graph-glow, #44dfd766));
+}
+
+.graph-reference {
+  stroke: #7e9ca8;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.graph-fill {
+  fill: var(--graph-fill, #57dfe1);
+  fill-opacity: 0.07;
+}
+
+.graph-markers circle {
+  fill: #14252d;
+  stroke: var(--graph-marker, #93ffff);
+}
+
+.graph-markers text,
+.graph-axis-label {
+  fill: #a7c7ce;
+  font-size: 9px;
+  font-family: system-ui, sans-serif;
+}
+
+.visualization-card p {
+  margin: 0;
+  font-size: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.graph-values {
+  color: #c4e6ea;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-number {
+  color: #fff;
+}
+
+.visualization-card .graph-context {
+  min-height: 2.8em;
+  margin-top: 0.25rem;
+  color: #95adb5;
+}
+
+#synth {
+  min-width: 1000px;
+}
+
+#synth svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+footer {
+  padding-top: 0.5rem;
+}
+
+#app-status {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.help {
+  color: #a3b0b8;
+  font-size: 0.8rem;
+}
+
+.fader,
+.key,
+.octave-step {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  outline: none;
+}
+
+.fader {
+  cursor: ns-resize;
+}
+
+.hit-area {
+  fill: transparent;
+}
+
+.clickable-label,
+.clickable-label text {
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.clickable-label {
+  outline: none;
+  transition: filter 180ms ease-in-out;
+}
+
+.clickable-label:hover,
+.clickable-label:focus-visible {
+  filter: brightness(1.25) drop-shadow(0 0 5px #b4f1ff);
+}
+
+.clickable-label[role="button"][aria-disabled="true"],
+.clickable-label[role="button"][aria-disabled="true"] text {
+  cursor: default;
+}
+
+.clickable-label[role="button"]:focus-visible rect {
+  stroke: #007b9e;
+  stroke-width: 1;
+}
+
+.fader .cap {
+  transition: filter 180ms ease-in-out;
+}
+
+.fader:hover .cap,
+.fader:focus-visible .cap,
+.fader.is-dragging .cap {
+  filter: brightness(1.25) drop-shadow(0 0 5px #b4f1ff);
+}
+
+.key {
+  cursor: pointer;
+}
+
+.octave-step {
+  cursor: pointer;
+}
+
+.octave-step:hover .end-hit-area {
+  fill: #808080;
+  fill-opacity: 0.08;
+}
+
+.octave-step:focus-visible .end-hit-area {
+  stroke: #007b9e;
+  stroke-width: 3;
+}
+
+.octave-step[aria-disabled="true"] {
+  cursor: default;
+}
+
+.octave-step[aria-disabled="true"] .end-arrow {
+  opacity: 0.3;
+}
+
+.key use {
+  transition: transform 75ms ease-out;
+}
+
+.key.is-pressed use {
+  transform: translateY(5px);
+  filter: brightness(0.84);
+}
+
+.key:focus-visible use {
+  filter: drop-shadow(0 0 3px #0082a5);
+}
+
+.key.is-pressed:focus-visible use {
+  filter: brightness(0.84) drop-shadow(0 0 3px #0082a5);
+}
+
+.selection-led {
+  transition: fill 80ms;
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  .toolbar {
+    align-items: flex-start;
+  }
+
+  .badge {
+    display: block;
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .key use,
+  .selection-led {
+    transition: none;
+  }
 }

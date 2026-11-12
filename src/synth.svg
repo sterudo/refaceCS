@@ -1,0 +1,332 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20.25 1760 579.75" aria-labelledby="panel-title panel-description">
+  <title id="panel-title">Yamaha reface CS interactive panel</title>
+  <desc id="panel-description">37 keys, pitch bend, transpose, faders, and local selection LEDs. This is a visual prototype without sound or MIDI.</desc>
+  <style>
+    text { font-family: Arial, sans-serif; user-select: none; pointer-events: none; }
+    .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; fill: #41474a; }
+    .control-label { font-size: 9px; font-weight: 700; letter-spacing: 0.4px; fill: #41474a; text-anchor: middle; }
+    .scale-label { font-size: 7px; fill: #dedfdc; }
+    .selection-led { fill: var(--led-off, #3b2020); stroke: #141414; stroke-width: 0.8; }
+    .selection-led.is-on { fill: var(--led-color, #ff5b50); filter: drop-shadow(0 0 2px var(--led-color, #ef6351)); }
+    .focus-section, #looper-panel-wash, #fader-values { display: none; pointer-events: none; }
+    .focus-mode .focus-section, .focus-mode #looper-panel-wash, .focus-mode #fader-values { display: inline; }
+    .focus-section { opacity: 0.18; }
+    .focus-mode .focus-looper { opacity: 0.2; }
+    .focus-mode #filter-cutoff { --cap-fill: url(#cutoff-cap-fill); }
+    .focus-mode #filter-resonance { --cap-fill: url(#resonance-cap-fill); }
+    #fader-values { font-size: 11px; fill: #808080; text-anchor: middle; font-variant-numeric: tabular-nums; }
+    .speakers-hidden .speaker { display: none; }
+    .extra-key { display: none; }
+    .five-octaves .extra-key { display: inline; }
+  </style>
+  <defs>
+    <linearGradient id="case-fill" x2="0" y2="1">
+      <stop stop-color="#fafafa"/>
+      <stop offset="0.35" stop-color="#f0f0ee"/>
+      <stop offset="1" stop-color="#dedfdd"/>
+    </linearGradient>
+    <linearGradient id="panel-fill" x2="0" y2="1">
+      <stop stop-color="#1b1d1d"/>
+      <stop offset="0.5" stop-color="#353737"/>
+      <stop offset="1" stop-color="#171a1a"/>
+    </linearGradient>
+    <linearGradient id="white-fill" x2="0" y2="1">
+      <stop stop-color="#e0e1df"/>
+      <stop offset="0.06" stop-color="#fff"/>
+      <stop offset="0.93" stop-color="#f4f4f0"/>
+      <stop offset="1" stop-color="#d5d6d3"/>
+    </linearGradient>
+    <linearGradient id="black-fill" x2="1" y2="0">
+      <stop stop-color="#111"/>
+      <stop offset="0.18" stop-color="#414443"/>
+      <stop offset="0.75" stop-color="#262928"/>
+      <stop offset="1" stop-color="#060707"/>
+    </linearGradient>
+    <linearGradient id="cap-fill" x2="0" y2="1">
+      <stop stop-color="#070808"/>
+      <stop offset="0.45" stop-color="#2c3030"/>
+      <stop offset="0.6" stop-color="#121515"/>
+      <stop offset="0.65" stop-color="#c5c6bf"/>
+      <stop offset="0.78" stop-color="#777d79"/>
+      <stop offset="1" stop-color="#080a0a"/>
+    </linearGradient>
+    <linearGradient id="cutoff-cap-fill" x2="0" y2="1">
+      <stop stop-color="#831d20"/>
+      <stop offset="0.5" stop-color="#d94b4b"/>
+      <stop offset="0.65" stop-color="#ffada5"/>
+      <stop offset="1" stop-color="#91272b"/>
+    </linearGradient>
+    <linearGradient id="resonance-cap-fill" x2="0" y2="1">
+      <stop stop-color="#19447e"/>
+      <stop offset="0.5" stop-color="#4288d6"/>
+      <stop offset="0.65" stop-color="#a7d6ff"/>
+      <stop offset="1" stop-color="#20528e"/>
+    </linearGradient>
+    <pattern id="speaker-holes" width="5" height="5" patternUnits="userSpaceOnUse">
+      <rect width="5" height="5" fill="#252828"/>
+      <circle cx="2.5" cy="2.5" r="1.5" fill="#060808"/>
+    </pattern>
+    <g id="fader-track">
+      <path d="M-17 0H17 M-17 8H17 M-17 16H17 M-17 24H17 M-17 32H17 M-17 40H17 M-17 48H17 M-17 56H17 M-17 64H17 M-17 72H17 M-17 80H17" fill="none" stroke="#969c96" stroke-width="1"/>
+      <rect x="-4" y="-6" width="8" height="92" rx="3" fill="#090b0b" stroke="#565e59"/>
+    </g>
+    <g id="selector-track">
+      <path d="M-17 0H17 M-17 20H17 M-17 40H17 M-17 60H17 M-17 80H17" fill="none" stroke="#969c96" stroke-width="1"/>
+      <rect x="-4" y="-6" width="8" height="92" rx="3" fill="#090b0b" stroke="#565e59"/>
+    </g>
+    <g id="transpose-track">
+      <path d="M-17 0H17 M-17 6.6667H17 M-17 13.3333H17 M-17 20H17 M-17 26.6667H17 M-17 33.3333H17 M-17 40H17 M-17 46.6667H17 M-17 53.3333H17 M-17 60H17 M-17 66.6667H17 M-17 73.3333H17 M-17 80H17" fill="none" stroke="#969c96" stroke-width="1"/>
+      <rect x="-4" y="-6" width="8" height="92" rx="3" fill="#090b0b" stroke="#565e59"/>
+    </g>
+    <g id="fader-cap">
+      <rect x="-19" y="-10" width="38" height="22" rx="2" fill="#0c0e0e" opacity="0.5" transform="translate(1 3)"/>
+      <rect x="-18" y="-10" width="36" height="20" rx="1.5" fill="var(--cap-fill, url(#cap-fill))" stroke="#080909"/>
+      <path d="M-15 -6H15 M-15 -3H15" stroke="#444b47" stroke-width="0.8"/>
+    </g>
+    <g id="pitch-track">
+      <rect x="-12" y="-10" width="24" height="100" rx="12" fill="url(#black-fill)" stroke="#101211"/>
+      <path d="M-8 0H8 M-8 8H8 M-8 16H8 M-8 24H8 M-8 32H8 M-8 40H8 M-8 48H8 M-8 56H8 M-8 64H8 M-8 72H8 M-8 80H8" stroke="#434944"/>
+    </g>
+    <g id="pitch-cap">
+      <rect x="-10" y="-7" width="20" height="14" rx="7" fill="url(#white-fill)" stroke="#8c938b"/>
+    </g>
+    <g id="white-key">
+      <rect class="key-surface" x="0" width="62" height="282" rx="3" fill="url(#white-fill)" stroke="#4e514f" stroke-width="1.5"/>
+      <path d="M3 278H59" stroke="#babcb8"/>
+    </g>
+    <g id="black-key">
+      <path class="key-surface" d="M0 0H34V175L29 181H4L0 176Z" fill="#080909" stroke="#090a0a" stroke-width="2"/>
+      <path d="M4 0H30V167L27 173H6L4 168Z" fill="url(#black-fill)"/>
+      <path d="M6 173H27" stroke="#6b706c" stroke-width="1.5"/>
+    </g>
+  </defs>
+  <rect id="body-edge" x="27" y="33" width="1706" height="550" rx="9" fill="#a5a9a7" opacity="0.3"/>
+  <rect id="body" x="25" y="27" width="1710" height="550" rx="9" fill="url(#case-fill)" stroke="#d4d7d4"/>
+  <path id="body-highlight" d="M36 28H1724L1734 44H26Z" fill="#fff" opacity="0.6"/>
+  <path id="body-vents" d="M81 35H182 M201 35H264 M280 35H316" stroke="#d9dcda" stroke-width="3" stroke-linecap="round"/>
+  <rect id="control-strip" x="72" y="96" width="1620" height="108" rx="8" fill="url(#panel-fill)" stroke="#8b8e88" stroke-width="2"/>
+  <rect class="speaker" x="79" y="104" width="100" height="92" rx="4" fill="url(#speaker-holes)"/>
+  <rect class="speaker" x="1604" y="104" width="80" height="92" rx="4" fill="url(#speaker-holes)"/>
+  <g aria-hidden="true">
+    <rect id="looper-panel-wash" x="436" y="97" width="150" height="106" fill="#f0f0ee" opacity="0.8"/>
+    <rect id="focus-lfo" class="focus-section" x="590" y="70" width="168" height="178" rx="5" fill="#9ad7c1"/>
+    <rect class="focus-section" x="760" y="70" width="75" height="178" rx="5" fill="#ead696"/>
+    <rect class="focus-section" x="837" y="70" width="183" height="178" rx="5" fill="#bba7e8"/>
+    <rect id="focus-filter" class="focus-section" x="1022" y="70" width="120" height="178" rx="5" fill="#eaa98f"/>
+    <rect id="focus-eg" class="focus-section" x="1144" y="70" width="266" height="178" rx="5" fill="#9fc9e8"/>
+    <rect id="focus-effect" class="focus-section" x="1412" y="70" width="188" height="178" rx="5" fill="#e5a9cd"/>
+  </g>
+  <g class="section-label">
+    <text x="185" y="83">PITCH BEND</text>
+    <text x="309" y="83">VOLUME</text>
+    <text x="372" y="83">OCTAVE</text>
+    <text class="focus-looper" x="442" y="83">LOOPER</text>
+    <text x="600" y="83">LFO</text>
+    <text x="758" y="83">PORTAMENTO</text>
+    <text x="854" y="83">OSC</text>
+    <text x="1023" y="83">FILTER</text>
+    <text x="1151" y="83">EG</text>
+    <text x="1420" y="83">EFFECT</text>
+  </g>
+  <text id="transpose-value" class="control-label" x="275" y="83" aria-hidden="true">0</text>
+  <path class="focus-looper" d="M442 91H575" fill="none" stroke="#aaada7"/>
+  <path d="M600 91H742 M854 91H1017 M1023 91H1128 M1151 91H1395 M1420 91H1581" fill="none" stroke="#aaada7"/>
+  <g id="pitch-bend" class="fader" transform="translate(218 112)" data-label="Pitch bend" data-value="64" data-max="127">
+    <use class="track" href="#pitch-track"/>
+    <use class="cap" href="#pitch-cap" y="40"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="transpose" class="fader" transform="translate(275 112)" data-label="Transpose" data-value="0" data-min="-6" data-max="6">
+    <use class="track" href="#transpose-track"/><use class="cap" href="#fader-cap" y="40"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="volume" class="fader" transform="translate(332 112)" data-label="Volume" data-value="64" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="40"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="octave" class="fader" transform="translate(396 112)" data-label="Octave" data-value="2" data-max="4">
+    <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="40"/>
+    <text class="scale-label" x="23" y="3" data-step="4">+2</text><text class="scale-label" x="23" y="23" data-step="3">+1</text>
+    <text class="scale-label" x="23" y="43" data-step="2">0</text><text class="scale-label" x="23" y="63" data-step="1">-1</text><text class="scale-label" x="23" y="83" data-step="0">-2</text>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="looper" class="fader focus-looper" transform="translate(474 112)" data-label="Looper demo mode" data-value="0" data-max="4">
+    <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="24" y="3" data-step="4">CLEAR</text><text class="scale-label" x="24" y="23" data-step="3">REC</text>
+    <text class="scale-label" x="24" y="43" data-step="2">PLAY</text><text class="scale-label" x="24" y="63" data-step="1">PAUSE</text><text class="scale-label" x="24" y="83" data-step="0">STOP</text>
+    <circle class="selection-led" cx="19" cy="20" r="2" data-value="3"/>
+    <circle class="selection-led" cx="19" cy="40" r="2" data-value="2"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="tempo" class="fader focus-looper" transform="translate(558 112)" data-label="Tempo demo" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="lfo-assign" class="fader" transform="translate(620 112)" data-label="LFO assign" data-value="0" data-max="4">
+    <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="22" y="3" data-step="4">OSC</text><text class="scale-label" x="22" y="23" data-step="3">PITCH</text>
+    <text class="scale-label" x="22" y="43" data-step="2">FILTER</text><text class="scale-label" x="22" y="63" data-step="1">AMP</text><text class="scale-label" x="22" y="83" data-step="0">OFF</text>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="lfo-depth" class="fader" transform="translate(688 112)" data-label="LFO depth" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="lfo-speed" class="fader" transform="translate(734 112)" data-label="LFO speed" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="portamento" class="fader" transform="translate(796 112)" data-label="Portamento" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="21" y="83" data-step="0">POLY</text>
+    <text class="scale-label" x="21" y="63" data-step="1">MONO</text>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="osc-type" class="fader" transform="translate(864 112)" data-label="Oscillator type" data-value="0" data-max="4" style="--led-off: black">
+    <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="25" y="3" data-step="4">FM</text><text class="scale-label" x="25" y="23" data-step="3">RING</text>
+    <text class="scale-label" x="25" y="43" data-step="2">SYNC</text><text class="scale-label" x="25" y="63" data-step="1">PULSE</text><text class="scale-label" x="25" y="83" data-step="0">SAW</text>
+    <circle id="osc-fm-led" class="selection-led" cx="56" cy="0" r="3" data-value="4" style="--led-color: #48a9ff" aria-hidden="true"/>
+    <circle id="osc-ring-led" class="selection-led" cx="56" cy="20" r="3" data-value="3" style="--led-color: lime" aria-hidden="true"/>
+    <circle id="osc-sync-led" class="selection-led" cx="56" cy="40" r="3" data-value="2" style="--led-color: yellow" aria-hidden="true"/>
+    <circle id="osc-pulse-led" class="selection-led" cx="56" cy="60" r="3" data-value="1" style="--led-color: orange" aria-hidden="true"/>
+    <circle id="osc-saw-led" class="selection-led is-on" cx="56" cy="80" r="3" data-value="0" style="--led-color: red" aria-hidden="true"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="osc-texture" class="fader" transform="translate(950 112)" data-label="Oscillator texture" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="osc-mod" class="fader" transform="translate(998 112)" data-label="Oscillator modulation" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="filter-cutoff" class="fader" transform="translate(1048 112)" data-label="Filter cutoff" data-value="127" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="0"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="filter-resonance" class="fader" transform="translate(1110 112)" data-label="Filter resonance" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="eg-balance" class="fader" transform="translate(1172 112)" data-label="Envelope balance" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="22" y="3" data-step="4">FEG</text><text class="scale-label" x="22" y="83" data-step="0">AEG</text>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="eg-attack" class="fader" transform="translate(1236 112)" data-label="Envelope attack" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="eg-decay" class="fader" transform="translate(1284 112)" data-label="Envelope decay" data-value="127" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="0"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="eg-sustain" class="fader" transform="translate(1332 112)" data-label="Envelope sustain" data-value="127" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="0"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="eg-release" class="fader" transform="translate(1380 112)" data-label="Envelope release" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="effect-type" class="fader" transform="translate(1444 112)" data-label="Effect type" data-value="0" data-max="4">
+    <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <text class="scale-label" x="22" y="3" data-step="4">DIST</text><text class="scale-label" x="22" y="23" data-step="3">CHO/FLA</text>
+    <text class="scale-label" x="22" y="43" data-step="2">PHASER</text><text class="scale-label" x="22" y="63" data-step="1">DELAY</text><text class="scale-label" x="22" y="83" data-step="0">OFF</text>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="effect-depth" class="fader" transform="translate(1524 112)" data-label="Effect depth" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="effect-rate" class="fader" transform="translate(1572 112)" data-label="Effect rate" data-value="0" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+    <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
+  </g>
+  <g id="lower-panel">
+    <g class="control-label">
+      <text x="275" y="225">TRANSPOSE</text>
+      <text class="focus-looper" x="558" y="225">TEMPO</text><text x="620" y="225">ASSIGN</text><text x="688" y="225">DEPTH</text><text x="734" y="225">SPEED</text>
+      <text x="864" y="225">TYPE</text><text x="950" y="225">TEXTURE</text><text x="998" y="225">MOD</text>
+      <text x="1048" y="225">CUTOFF</text><text x="1110" y="225">RESONANCE</text>
+      <text x="1236" y="225">A</text><text x="1284" y="225">D</text><text x="1332" y="225">S</text><text x="1380" y="225">R</text>
+      <text x="1444" y="225">TYPE</text><text x="1524" y="225">DEPTH</text><text x="1572" y="225">RATE</text>
+    </g>
+    <g id="pitch-range" class="control-label" role="group" aria-label="Pitch bend range">
+      <g id="pitch-range-down" class="clickable-label" role="button" tabindex="0" aria-label="Decrease pitch bend range" data-step="-1">
+        <title>Decrease pitch bend range by one semitone</title>
+        <rect x="194" y="212" width="16" height="19" rx="2" fill="transparent"/>
+        <text x="202" y="225">-</text>
+      </g>
+      <text id="pitch-range-value" x="218" y="225">12</text>
+      <g id="pitch-range-up" class="clickable-label" role="button" tabindex="0" aria-label="Increase pitch bend range" data-step="1">
+        <title>Increase pitch bend range by one semitone</title>
+        <rect x="226" y="212" width="16" height="19" rx="2" fill="transparent"/>
+        <text x="234" y="225">+</text>
+      </g>
+    </g>
+    <g id="volume-mute" class="control-label clickable-label" role="button" tabindex="0" aria-label="Mute volume" aria-pressed="false">
+      <title>Save the current volume and mute</title>
+      <rect x="306" y="212" width="52" height="19" rx="2" fill="transparent"/>
+      <text id="mute-label" x="332" y="225">MUTE</text>
+    </g>
+    <g id="fader-values" aria-hidden="true"/>
+    <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="#1e2221">YAMAHA</text>
+    <path id="cs-logo" role="img" aria-label="CS" transform="translate(1474 248)" d="M40 0H12a12 12 0 0 0 0 24h66a6 6 0 0 0 0-12H52a6 6 0 0 1 0-12h32" fill="none" stroke="#515650" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g id="keyboard" transform="translate(196 296)">
+      <rect x="-3" y="-3" width="1370" height="288" rx="2" fill="#101312"/>
+      <g id="keyboard-keys">
+      <g id="standard-keys">
+      <g class="key" id="key-c-1" aria-label="C, octave 1"><use href="#white-key" x="0"/></g>
+      <g class="key" id="key-d-1" aria-label="D, octave 1"><use href="#white-key" x="62"/></g>
+      <g class="key" id="key-e-1" aria-label="E, octave 1"><use href="#white-key" x="124"/></g>
+      <g class="key" id="key-f-1" aria-label="F, octave 1"><use href="#white-key" x="186"/></g>
+      <g class="key" id="key-g-1" aria-label="G, octave 1"><use href="#white-key" x="248"/></g>
+      <g class="key" id="key-a-1" aria-label="A, octave 1"><use href="#white-key" x="310"/></g>
+      <g class="key" id="key-b-1" aria-label="B, octave 1"><use href="#white-key" x="372"/></g>
+      <g class="key" id="key-c-2" aria-label="C, octave 2"><use href="#white-key" x="434"/></g>
+      <g class="key" id="key-d-2" aria-label="D, octave 2"><use href="#white-key" x="496"/></g>
+      <g class="key" id="key-e-2" aria-label="E, octave 2"><use href="#white-key" x="558"/></g>
+      <g class="key" id="key-f-2" aria-label="F, octave 2"><use href="#white-key" x="620"/></g>
+      <g class="key" id="key-g-2" aria-label="G, octave 2"><use href="#white-key" x="682"/></g>
+      <g class="key" id="key-a-2" aria-label="A, octave 2"><use href="#white-key" x="744"/></g>
+      <g class="key" id="key-b-2" aria-label="B, octave 2"><use href="#white-key" x="806"/></g>
+      <g class="key" id="key-c-3" aria-label="C, octave 3"><use href="#white-key" x="868"/></g>
+      <g class="key" id="key-d-3" aria-label="D, octave 3"><use href="#white-key" x="930"/></g>
+      <g class="key" id="key-e-3" aria-label="E, octave 3"><use href="#white-key" x="992"/></g>
+      <g class="key" id="key-f-3" aria-label="F, octave 3"><use href="#white-key" x="1054"/></g>
+      <g class="key" id="key-g-3" aria-label="G, octave 3"><use href="#white-key" x="1116"/></g>
+      <g class="key" id="key-a-3" aria-label="A, octave 3"><use href="#white-key" x="1178"/></g>
+      <g class="key" id="key-b-3" aria-label="B, octave 3"><use href="#white-key" x="1240"/></g>
+      <g class="key" id="key-c-4" aria-label="C, octave 4"><use href="#white-key" x="1302"/></g>
+      <g class="key" id="key-cs-1" aria-label="C sharp, octave 1"><use href="#black-key" x="45"/></g>
+      <g class="key" id="key-ds-1" aria-label="D sharp, octave 1"><use href="#black-key" x="107"/></g>
+      <g class="key" id="key-fs-1" aria-label="F sharp, octave 1"><use href="#black-key" x="231"/></g>
+      <g class="key" id="key-gs-1" aria-label="G sharp, octave 1"><use href="#black-key" x="293"/></g>
+      <g class="key" id="key-as-1" aria-label="A sharp, octave 1"><use href="#black-key" x="355"/></g>
+      <g class="key" id="key-cs-2" aria-label="C sharp, octave 2"><use href="#black-key" x="479"/></g>
+      <g class="key" id="key-ds-2" aria-label="D sharp, octave 2"><use href="#black-key" x="541"/></g>
+      <g class="key" id="key-fs-2" aria-label="F sharp, octave 2"><use href="#black-key" x="665"/></g>
+      <g class="key" id="key-gs-2" aria-label="G sharp, octave 2"><use href="#black-key" x="727"/></g>
+      <g class="key" id="key-as-2" aria-label="A sharp, octave 2"><use href="#black-key" x="789"/></g>
+      <g class="key" id="key-cs-3" aria-label="C sharp, octave 3"><use href="#black-key" x="913"/></g>
+      <g class="key" id="key-ds-3" aria-label="D sharp, octave 3"><use href="#black-key" x="975"/></g>
+      <g class="key" id="key-fs-3" aria-label="F sharp, octave 3"><use href="#black-key" x="1099"/></g>
+      <g class="key" id="key-gs-3" aria-label="G sharp, octave 3"><use href="#black-key" x="1161"/></g>
+      <g class="key" id="key-as-3" aria-label="A sharp, octave 3"><use href="#black-key" x="1223"/></g>
+      </g>
+      </g>
+    </g>
+  </g>
+  <g id="octave-down" class="octave-step" role="button" tabindex="0" aria-label="Octave down" data-step="-1">
+    <title>Transpose down one octave (local preview)</title>
+    <rect class="end-hit-area" x="25" y="27" width="160" height="550" rx="4" fill="transparent"/>
+    <path class="end-arrow" d="M4 -7L-4 0L4 7" transform="translate(105 430)" fill="none" stroke="#777d79" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+  </g>
+  <g id="octave-up" class="octave-step" role="button" tabindex="0" aria-label="Octave up" data-step="1">
+    <title>Transpose up one octave (local preview)</title>
+    <rect class="end-hit-area" x="1602" y="27" width="133" height="550" rx="4" fill="transparent"/>
+    <path class="end-arrow" d="M-4 -7L4 0L-4 7" transform="translate(1668.5 430)" fill="none" stroke="#777d79" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+  </g>
+</svg>
