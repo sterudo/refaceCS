@@ -148,6 +148,74 @@ select:focus-visible,
   padding-bottom: 0.75rem;
 }
 
+.arpeggiator {
+  margin: 0.75rem 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid #415159;
+  border-radius: 0.65rem;
+  background: #182229;
+}
+
+.arpeggiator h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.arp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.arp-controls button,
+.arp-controls input,
+.arp-controls select {
+  padding: 0.4rem 0.65rem;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.arp-controls label {
+  display: grid;
+  gap: 0.2rem;
+  color: #a3b0b8;
+  font-size: 0.8rem;
+}
+
+.arp-controls input,
+.arp-controls select {
+  border: 1px solid #4b5c66;
+  border-radius: 0.4rem;
+  background: #202b33;
+  color: #dce4e8;
+}
+
+.arp-controls input {
+  width: 5rem;
+}
+
+.arp-controls input:focus-visible {
+  outline: 3px solid #6bdeea;
+  outline-offset: 4px;
+}
+
+.arpeggiator p {
+  margin: 0.5rem 0 0;
+  color: #a3b0b8;
+  font-size: 0.8rem;
+}
+
+.arp-detection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+}
+
+.arp-detection span {
+  color: #dce4e8;
+}
+
 .visualizations {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
@@ -366,7 +434,8 @@ footer {
   transition: transform 75ms ease-out;
 }
 
-.focus-mode .key-labels {
+.focus-mode .key-labels,
+.transpose-active .key-labels {
   display: inline;
 }
 
@@ -380,9 +449,14 @@ footer {
 }
 
 .key-letter {
+  display: none;
   fill: #58656c;
   font-size: 18px;
   font-weight: 600;
+}
+
+.focus-mode .key-letter {
+  display: inline;
 }
 
 .key-black .key-letter {

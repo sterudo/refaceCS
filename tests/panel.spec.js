@@ -12,6 +12,39 @@ async function faderPoint(page, id, y) {
   }, y);
 }
 
+test('focus mode adds mapped CC numbers to fader tooltips', async ({ page }) => {
+  const cutoff = page.locator('#filter-cutoff title');
+  await expect(cutoff).toHaveText('Filter cutoff: 127');
+  await page.locator('#focus-mode').click();
+  await expect(cutoff).toHaveText('Filter cutoff: 127 (CC 74)');
+  await expect(page.locator('#lfo-assign title')).toHaveText('LFO assign: Off (CC 78)');
+  await expect(page.locator('#effect-type title')).toHaveText('Effect type: Off (CC 17)');
+  for (const id of ['pitch-bend', 'transpose', 'tempo', 'volume', 'octave', 'looper']) {
+    await expect(page.locator(`#${id} title`)).not.toContainText('CC ');
+  }
+  await page.locator('#filter-cutoff').press('ArrowDown');
+  await expect(cutoff).toHaveText('Filter cutoff: 126 (CC 74)');
+  await page.locator('#focus-mode').click();
+  await expect(cutoff).toHaveText('Filter cutoff: 126');
+});
+
+test('transpose shows sounding-note labels outside Focus Mode without showing shortcut letters', async ({ page }) => {
+  const notes = page.locator('.key-note:visible');
+  await expect(notes).toHaveCount(0);
+  await page.locator('#transpose').press('ArrowUp');
+  await expect(notes).toHaveCount(37);
+  await expect(page.locator('#key-c-2 .key-note')).toHaveText('C#4');
+  await expect(page.locator('.key-letter:visible')).toHaveCount(0);
+  await page.locator('#five-octaves').click();
+  await expect(notes).toHaveCount(61);
+  await page.locator('#focus-mode').click();
+  await expect(page.locator('.key-letter:visible')).toHaveCount(13);
+  await page.locator('#transpose').press('Delete');
+  await expect(notes).toHaveCount(61);
+  await page.locator('#focus-mode').click();
+  await expect(notes).toHaveCount(0);
+});
+
 test('fully open filter is centered and flat without a right-edge falloff', async ({ page }) => {
   const curve = page.locator('#preview-filter .graph-curve');
   for (const resonance of ['End', 'Home']) {
@@ -407,10 +440,10 @@ test('QWERTY, pointer and focused-key presses retain independent ownership throu
     await page.keyboard.down('a');
     await page.mouse.move(bottom.x, bottom.y);
     await page.mouse.down();
-    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await expect(page.locator('.key.is-pressed')).toHaveCount(id === 'octave' ? 0 : 1);
     await expect(fader).toHaveClass(/is-dragging/);
     await page.mouse.move(top.x, top.y, { steps: 5 });
-    await expect(fader).toHaveAttribute('aria-valuenow', id === 'octave' ? '4' : '6');
+    await expect(fader).toHaveAttribute('aria-valuenow', id === 'octave' ? '4' : '12');
     await expect(fader).toHaveClass(/is-dragging/);
     await page.mouse.up();
     await page.keyboard.up('a');
@@ -459,7 +492,7 @@ test('Focus key labels follow both pitch controls while letters stay anchored an
     await page.keyboard.down('a');
     await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
     await page.locator('#transpose').press('ArrowUp');
-    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await expect(page.locator('.key.is-pressed')).toHaveCount(1);
     await page.keyboard.up('a');
     await expect(page.locator('#key-c-2 .key-note')).toHaveText('C#5');
     await expect(page.locator('#key-c-2 .key-letter')).toHaveText('a');
@@ -471,7 +504,7 @@ test('Focus key labels follow both pitch controls while letters stay anchored an
 
     await page.locator('#octave').press('End');
     await page.locator('#transpose').press('End');
-    await expect(page.locator(`#key-c-${expanded ? 0 : 1} .key-note`)).toHaveText(expanded ? 'F#-1' : 'F#0');
+    await expect(page.locator(`#key-c-${expanded ? 0 : 1} .key-note`)).toHaveText(expanded ? 'C-1' : 'C0');
     await page.keyboard.down('a');
     await page.locator('#octave').press('End');
     await page.locator('#transpose').press('End');
@@ -479,7 +512,7 @@ test('Focus key labels follow both pitch controls while letters stay anchored an
     await page.keyboard.up('a');
     await page.locator('#octave').press('Home');
     await page.locator('#transpose').press('Home');
-    await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'F#9' : 'F#8');
+    await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'C10' : 'C9');
     await page.locator('#reset-faders').click();
     await expect(page.locator('#key-c-2 .key-note')).toHaveText('C4');
   }
@@ -665,7 +698,7 @@ test('Alt wheel keeps selectors and Transpose at single steps in compact double-
     if (id === 'octave') {
       await expect(page.locator('.octave-step[data-step="-1"]')).toHaveAttribute('aria-disabled', 'false');
     }
-    if (id === 'transpose') await expect(page.locator('#transpose-value')).toHaveText('-5');
+    if (id === 'transpose') await expect(page.locator('#transpose-value')).toHaveText('-11');
     await page.mouse.wheel(0, 120);
     await expect(fader).toHaveAttribute('aria-valuenow', String(min));
     await page.keyboard.up('Alt');
@@ -681,13 +714,13 @@ test('wheel respects mute restoration, pitch bend behavior and ignored zoom or h
     { deltaX: 120, deltaY: 1 }, { deltaY: 0 }]) {
     expect(await wheel('volume', options)).toBe(true);
     await expect(mute).toHaveAttribute('aria-disabled', 'false');
-    await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '0');
+    await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
   }
   expect(await wheel('volume', { deltaY: 120 })).toBe(false);
-  await expect(mute).toHaveAttribute('aria-disabled', 'true');
+  await expect(mute).toHaveAttribute('aria-disabled', 'false');
   expect(await wheel('volume', { deltaY: -1, deltaMode: 1 })).toBe(false);
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '1');
-  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
+  await expect(mute).toHaveAttribute('aria-pressed', 'true');
   expect(await wheel('pitch-bend', { deltaY: -1, deltaMode: 2 })).toBe(false);
   await page.locator('h1').hover();
   await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '65');
@@ -774,7 +807,7 @@ test('oscillator positions select FM through Saw and light only their colored LE
       const point = await faderPoint(page, 'osc-type', index * travel / 4);
       await page.mouse.click(point.x, point.y);
       await expect(fader).toHaveAttribute('aria-valuetext', mode);
-      await expect(page.locator('#app-status')).toHaveText(`Oscillator type: ${mode} (local preview)`);
+      await expect(page.locator('#app-status')).toHaveText(`Oscillator type: ${mode}`);
       const activeLED = fader.locator('.selection-led.is-on');
       await expect(activeLED).toHaveCount(1);
       await expect(activeLED).toHaveCSS('fill', colors[index]);
@@ -821,7 +854,7 @@ test('page load and Reset apply the requested fader positions without changing t
   const positions = {
     'pitch-bend': 0.5,
     transpose: 0.5,
-    volume: 0.5,
+    volume: 99 / 126,
     octave: 0.5,
     looper: 0,
     tempo: 0,
@@ -1096,8 +1129,8 @@ test('end panels synchronize the bounded Octave selector in every view combinati
 test('Transpose snaps to semitones, stays centered at zero, and displays its signed value in every mode', async ({ page }) => {
   const transpose = page.getByRole('slider', { name: 'Transpose', exact: true });
   const topLabel = page.locator('#transpose-value');
-  await expect(transpose).toHaveAttribute('aria-valuemin', '-6');
-  await expect(transpose).toHaveAttribute('aria-valuemax', '6');
+  await expect(transpose).toHaveAttribute('aria-valuemin', '-12');
+  await expect(transpose).toHaveAttribute('aria-valuemax', '12');
   await expect(transpose).toHaveAttribute('aria-valuenow', '0');
   await expect(topLabel).toHaveText('0');
   await expect(transpose.locator('.cap')).toHaveAttribute('y', '40');
@@ -1113,8 +1146,8 @@ test('Transpose snaps to semitones, stays centered at zero, and displays its sig
         const top = await faderPoint(page, 'transpose', 0);
         await page.mouse.move(top.x, top.y);
         await page.mouse.down();
-        for (let value = 6; value >= -6; value--) {
-          const point = await faderPoint(page, 'transpose', travel * (6 - value) / 12);
+        for (let value = 12; value >= -12; value--) {
+          const point = await faderPoint(page, 'transpose', travel * (12 - value) / 24);
           await page.mouse.move(point.x, point.y);
           const text = value > 0 ? `+${value}` : String(value);
           await expect(transpose).toHaveAttribute('aria-valuenow', String(value));
@@ -1123,7 +1156,7 @@ test('Transpose snaps to semitones, stays centered at zero, and displays its sig
           if (focus) await expect(page.locator('#fader-value-transpose')).toHaveText(text);
         }
         await page.mouse.up();
-        await expect(transpose).toHaveAttribute('aria-valuenow', '-6');
+        await expect(transpose).toHaveAttribute('aria-valuenow', '-12');
         await transpose.locator('.cap').dblclick();
         await expect(transpose).toHaveAttribute('aria-valuenow', '0');
         await expect(transpose.locator('.cap')).toHaveAttribute('y', String(travel / 2));
@@ -1134,14 +1167,14 @@ test('Transpose snaps to semitones, stays centered at zero, and displays its sig
   await transpose.focus();
   await page.keyboard.press('End');
   await page.keyboard.press('ArrowDown');
-  await expect(topLabel).toHaveText('-6');
+  await expect(topLabel).toHaveText('-12');
   await page.keyboard.press('Home');
   await page.keyboard.press('ArrowUp');
-  await expect(topLabel).toHaveText('+6');
+  await expect(topLabel).toHaveText('+12');
   await page.keyboard.press('Shift+ArrowDown');
-  await expect(topLabel).toHaveText('+5');
+  await expect(topLabel).toHaveText('+11');
   await page.keyboard.press('PageDown');
-  await expect(topLabel).toHaveText('+4');
+  await expect(topLabel).toHaveText('+10');
   await expect(page.locator('#octave')).toHaveAttribute('aria-valuenow', '2');
   await page.locator('#reset-faders').click();
   await expect(topLabel).toHaveText('0');
@@ -1211,8 +1244,8 @@ test('Delete ends an active drag and resets mute state without resetting other c
   await expect(page.locator('#preview-filter .graph-curve')).toHaveAttribute('d', initialCurve);
   await page.locator('#volume-mute').click();
   await page.locator('#volume').press('Delete');
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '64');
-  await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#pitch-range-up').click();
   await page.locator('#pitch-bend').press('Home');
   await page.locator('#pitch-bend').press('Delete');
@@ -1445,7 +1478,7 @@ test('glow eases in and out even with reduced motion, without animating handle m
   await expect(page.locator('#osc-saw-led')).toHaveCSS('transition-duration', '0s');
 });
 
-test('MUTE saves and restores Volume across view changes and supports keyboard activation', async ({ page }) => {
+test('MUTE preserves velocity across view changes and supports keyboard activation', async ({ page }) => {
   const volume = page.locator('#volume');
   const mute = page.locator('#volume-mute');
   const label = page.locator('#mute-label');
@@ -1453,10 +1486,9 @@ test('MUTE saves and restores Volume across view changes and supports keyboard a
   await volume.focus();
   await page.keyboard.press('PageUp');
   await page.keyboard.press('ArrowDown');
-  await expect(volume).toHaveAttribute('aria-valuenow', '73');
+  await expect(volume).toHaveAttribute('aria-valuenow', '109');
   await mute.click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '0');
-  await expect(volume.locator('.cap')).toHaveAttribute('y', '80');
+  await expect(volume).toHaveAttribute('aria-valuenow', '109');
   await expect(label).toHaveText('UNMUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'true');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
@@ -1466,20 +1498,19 @@ test('MUTE saves and restores Volume across view changes and supports keyboard a
     await page.locator(`#${id}`).click();
     await expect(label).toHaveText('UNMUTE');
     await expect(mute).toHaveAttribute('aria-disabled', 'false');
-    await expect(volume).toHaveAttribute('aria-valuenow', '0');
+    await expect(volume).toHaveAttribute('aria-valuenow', '109');
   }
-  await expect(volume.locator('.cap')).toHaveAttribute('y', '160');
   await mute.click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '73');
-  await expect(page.locator('#fader-value-volume')).toHaveText('73');
+  await expect(volume).toHaveAttribute('aria-valuenow', '109');
+  await expect(page.locator('#fader-value-volume')).toHaveText('109');
   await expect(label).toHaveText('MUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
   await mute.focus();
   await page.keyboard.press(' ');
-  await expect(volume).toHaveAttribute('aria-valuenow', '0');
+  await expect(volume).toHaveAttribute('aria-valuenow', '109');
   await page.keyboard.press('Enter');
-  await expect(volume).toHaveAttribute('aria-valuenow', '73');
+  await expect(volume).toHaveAttribute('aria-valuenow', '109');
 
   await volume.focus();
   await page.keyboard.press('End');
@@ -1487,41 +1518,23 @@ test('MUTE saves and restores Volume across view changes and supports keyboard a
   await expect(label).toHaveText('UNMUTE');
   await mute.click();
   await expect(label).toHaveText('MUTE');
-  await expect(volume).toHaveAttribute('aria-valuenow', '0');
+  await expect(volume).toHaveAttribute('aria-valuenow', '1');
 });
 
-test('touching muted Volume discards restoration even at zero, and positive volume or Reset clears mute', async ({ page }) => {
+test('adjusting velocity while muted preserves mute until reset', async ({ page }) => {
   const volume = page.locator('#volume');
   const mute = page.locator('#volume-mute');
   const label = page.locator('#mute-label');
   await mute.click();
-  await volume.locator('.cap').click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '0');
+  await volume.press('End');
+  await expect(volume).toHaveAttribute('aria-valuenow', '1');
   await expect(label).toHaveText('UNMUTE');
-  await expect(mute).toHaveAttribute('aria-disabled', 'true');
-  await mute.focus();
-  await page.keyboard.press('Enter');
-  await expect(volume).toHaveAttribute('aria-valuenow', '0');
-  await expect(page.locator('#app-status')).toContainText('Raise the Volume fader to unmute');
-  await volume.focus();
-  await page.keyboard.press('ArrowUp');
-  await expect(volume).toHaveAttribute('aria-valuenow', '1');
-  await expect(label).toHaveText('MUTE');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
-  await mute.click();
-  await mute.click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '1');
-
-  await mute.click();
-  await volume.focus();
-  await page.keyboard.press('End');
-  await expect(mute).toHaveAttribute('aria-disabled', 'true');
   await volume.locator('.cap').dblclick();
-  await expect(volume).toHaveAttribute('aria-valuenow', '64');
-  await expect(label).toHaveText('MUTE');
-  await mute.click();
+  await expect(volume).toHaveAttribute('aria-valuenow', '100');
+  await expect(label).toHaveText('UNMUTE');
   await page.locator('#reset-faders').click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '64');
+  await expect(volume).toHaveAttribute('aria-valuenow', '100');
   await expect(label).toHaveText('MUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');

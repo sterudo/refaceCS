@@ -2,6 +2,8 @@ import './style.css';
 import panelMarkup from './synth.svg?raw';
 import { createVisualizations } from './visualizations.js';
 import { setupMidiDiscovery } from './midi.js';
+import { controlNumber } from './synth-midi.js';
+import { detectChord, noteNames } from './chord-detection.js';
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const container = document.querySelector('#synth');
@@ -34,7 +36,6 @@ const pressedKeys = new Set();
 const computerKeys = new Map();
 let travel = baseTravel;
 let volumeMuted = false;
-let savedVolume = null;
 let pitchRange = defaultPitchRange;
 
 const selections = {
@@ -71,8 +72,17 @@ for (const octave of [0, 4]) {
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
 const locallyHeldKeys = new Set();
-const midi = setupMidiDiscovery(() => keys.forEach(updateKey));
-const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const midi = setupMidiDiscovery(() => {
+  keys.forEach(updateKey);
+  updateHeldDisplay();
+}, (id, value) => {
+  if (id === 'pitch-range') {
+    updatePitchRange(value, false);
+  } else {
+    const fader = panel.querySelector(`#${id}`);
+    if (fader) updateFader(fader, value, false);
+  }
+});
 const computerKeyBindings = new Map([
   ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
   ['KeyD', 'e-2'], ['KeyF', 'f-2'], ['KeyT', 'fs-2'], ['KeyG', 'g-2'],
@@ -93,6 +103,12 @@ function signedValue(value) {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function updateFaderTooltip(fader) {
+  const cc = controlNumber(fader.id);
+  const suffix = panel.classList.contains('focus-mode') && cc !== undefined ? ` (CC ${cc})` : '';
+  fader.querySelector('title').textContent = `${fader.dataset.label}: ${valueText(fader)}${suffix}`;
+}
+
 function updatePitchRange(value, announce = true) {
   pitchRange = Math.max(0, Math.min(24, Math.round(value)));
   pitchRangeValue.textContent = String(pitchRange);
@@ -102,16 +118,24 @@ function updatePitchRange(value, announce = true) {
     const next = pitchRange + Number(button.dataset.step);
     button.setAttribute('aria-disabled', String(next < 0 || next > 24));
   }
-  if (announce) status.textContent = `${description} (local preview)`;
+  if (announce) {
+    midi.setControl('pitch-range', pitchRange);
+    status.textContent = description;
+  }
 }
 
 function updateKeyNotes() {
-  const transpose = (readValue(octaveFader) - 2) * 12 + readValue(transposeFader);
+  const transpose = readValue(transposeFader);
+  const octaveShift = (readValue(octaveFader) - 2) * 12;
+  midi.setTranspose(transpose);
+  panel.classList.toggle('transpose-active', transpose !== 0);
   for (const key of keys) {
-    const note = Number(key.dataset.baseNote) + transpose;
+    const midiNote = Number(key.dataset.baseNote) + octaveShift;
+    const note = midiNote + transpose;
     const name = noteNames[note % 12];
     const octave = Math.floor(note / 12) - 1;
     key.dataset.note = String(note);
+    key.dataset.midiNote = String(midiNote);
     key.querySelector('.key-note').textContent = `${name}${octave}`;
     const label = `${name.replace('#', ' sharp')}, octave ${octave}`;
     key.setAttribute('aria-label', label);
@@ -129,25 +153,9 @@ function updateFader(fader, value, announce = true) {
   fader.setAttribute('aria-valuenow', value);
   fader.setAttribute('aria-valuetext', valueText(fader));
   fader.querySelector('.cap').setAttribute('y', travel * (1 - (value - min) / (max - min)));
-  fader.querySelector('title').textContent = `${fader.dataset.label}: ${valueText(fader)}`;
+  updateFaderTooltip(fader);
   readouts.get(fader).textContent = fader === transposeFader ? signedValue(value) : String(value);
   if (fader === transposeFader) transposeValue.textContent = signedValue(value);
-
-  if (fader === volumeFader) {
-    if (value > 0) {
-      volumeMuted = false;
-      savedVolume = null;
-    }
-    muteLabel.textContent = volumeMuted ? 'UNMUTE' : 'MUTE';
-    muteButton.setAttribute('aria-label', volumeMuted ? 'Unmute volume' : 'Mute volume');
-    muteButton.setAttribute('aria-pressed', String(volumeMuted));
-    muteButton.setAttribute('aria-disabled', String(volumeMuted && savedVolume === null));
-    muteButton.querySelector('title').textContent = volumeMuted
-      ? savedVolume === null
-        ? 'Saved level cleared; raise the Volume fader to unmute'
-        : 'Restore the previous volume'
-      : 'Save the current volume and mute';
-  }
 
   if (fader === octaveFader) {
     for (const button of octaveButtons) {
@@ -157,8 +165,9 @@ function updateFader(fader, value, announce = true) {
   }
 
   if (changed && (fader === octaveFader || fader === transposeFader)) {
-    releaseNotes();
+    if (fader === octaveFader) releaseNotes();
     updateKeyNotes();
+    updateHeldDisplay();
   }
 
   fader.querySelectorAll('.selection-led').forEach((led) => {
@@ -167,16 +176,13 @@ function updateFader(fader, value, announce = true) {
 
   updateVisualizations(fader.id);
   if (announce) {
-    status.textContent = `${fader.dataset.label}: ${valueText(fader)} (local preview)`;
+    status.textContent = `${fader.dataset.label}: ${valueText(fader)}`;
   }
 }
 
 function updateFaderFromInput(fader, value) {
-  if (fader === volumeFader) savedVolume = null;
   updateFader(fader, value);
-  if (fader === volumeFader && volumeMuted) {
-    status.textContent = 'Saved volume cleared. Raise the Volume fader to unmute.';
-  }
+  midi.setControl(fader.id, readValue(fader));
 }
 
 function resetFader(fader) {
@@ -322,7 +328,7 @@ for (const fader of faders) {
     fader.focus({ preventScroll: true });
     const label = event.target.closest('.position-label');
     if (label) {
-      updateFader(fader, Number(label.dataset.step));
+      updateFaderFromInput(fader, Number(label.dataset.step));
       return;
     }
     fader.setPointerCapture(event.pointerId);
@@ -347,13 +353,27 @@ function updateKey(key) {
     || [...activePointers.values()].some((item) => item.element === key);
   if (localDown && !locallyHeldKeys.has(key)) {
     locallyHeldKeys.add(key);
-    midi.startNote(key, Number(key.dataset.note));
+    const pointer = [...activePointers.values()].find((item) => item.element === key);
+    midi.startNote(key, Number(key.dataset.midiNote), pointer?.velocity ?? readValue(volumeFader));
+    updateHeldDisplay();
   } else if (!localDown && locallyHeldKeys.delete(key)) {
     midi.endNote(key);
+    updateHeldDisplay();
   }
-  const down = localDown || midi.isNoteHeld(Number(key.dataset.note));
+  const down = localDown || midi.isNoteHeld(Number(key.dataset.midiNote));
   key.classList.toggle('is-pressed', down);
   key.setAttribute('aria-pressed', String(down));
+}
+
+function updateHeldDisplay() {
+  const notes = [...new Set([
+    ...[...locallyHeldKeys].map((key) => Number(key.dataset.note)),
+    ...midi.getHeldNotes().map((note) => note + readValue(transposeFader)).filter((note) => note >= 0 && note <= 127),
+  ])].sort((a, b) => a - b);
+  document.querySelector('#arp-held-notes').textContent = notes.length
+    ? notes.map((note) => `${noteNames[note % 12]}${Math.floor(note / 12) - 1}`).join(' ')
+    : 'None';
+  document.querySelector('#arp-detected-chord').textContent = detectChord(notes) || 'None';
 }
 
 for (const key of keys) {
@@ -396,7 +416,13 @@ for (const key of keys) {
     event.preventDefault();
     key.focus({ preventScroll: true });
     key.setPointerCapture(event.pointerId);
-    activePointers.set(event.pointerId, { element: key });
+    let velocity = readValue(volumeFader);
+    if (document.querySelector('#position-velocity').checked) {
+      const bounds = key.getBoundingClientRect();
+      const position = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+      velocity = Math.min(127, Math.max(1, Math.round(1 + position / 0.8 * 126)));
+    }
+    activePointers.set(event.pointerId, { element: key, velocity });
     updateKey(key);
     status.textContent = `${key.getAttribute('aria-label')} pressed`;
   });
@@ -448,7 +474,7 @@ function releasePointer(event) {
     updateKey(item.element);
   } else {
     item.element.classList.remove('is-dragging');
-    if (item.element.id === 'pitch-bend') updateFader(item.element, 64);
+    if (item.element.id === 'pitch-bend') updateFaderFromInput(item.element, 64);
   }
   if (item.element.hasPointerCapture(event.pointerId)) {
     item.element.releasePointerCapture(event.pointerId);
@@ -477,7 +503,10 @@ document.querySelector('#midi-reset').addEventListener('click', () => midi.reset
 
 window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) releaseAll();
+  if (document.hidden) {
+    releaseAll();
+    midi.stopForVisibility();
+  }
 });
 
 function bindButton(button, activate) {
@@ -518,42 +547,38 @@ function resetSection(section) {
   }
   for (const fader of sectionFaders) {
     updateFader(fader, startingValues.get(fader), false);
+    midi.setControl(fader.id, readValue(fader));
   }
-  status.textContent = `${section.toUpperCase()} faders reset to starting positions. Visual preview only.`;
+  status.textContent = `${section.toUpperCase()} faders reset to starting positions.`;
 }
 
 document.querySelector('#reset-faders').addEventListener('click', () => {
   releaseAll();
   volumeMuted = false;
-  savedVolume = null;
+  midi.setMuted(false);
+  muteLabel.textContent = 'MUTE';
+  muteButton.setAttribute('aria-label', 'Mute notes');
+  muteButton.setAttribute('aria-pressed', 'false');
+  muteButton.querySelector('title').textContent = 'Mute notes';
   for (const [fader, value] of startingValues) {
     updateFader(fader, value, false);
+    midi.setControl(fader.id, readValue(fader));
   }
   updatePitchRange(defaultPitchRange, false);
-  status.textContent = 'Faders reset to starting positions. Visual preview only.';
+  midi.setControl('pitch-range', defaultPitchRange);
+  status.textContent = 'Faders reset to starting positions.';
 });
 
 function toggleMute() {
   muteButton.focus({ preventScroll: true });
-  if (volumeMuted && savedVolume === null) {
-    status.textContent = 'Saved volume cleared. Raise the Volume fader to unmute.';
-    return;
-  }
-  for (const [pointerId, item] of activePointers) {
-    if (item.element === volumeFader) releasePointer({ pointerId });
-  }
-  if (volumeMuted) {
-    const previous = savedVolume;
-    volumeMuted = false;
-    savedVolume = null;
-    updateFader(volumeFader, previous);
-    status.textContent = `Volume restored to ${previous} (local preview).`;
-  } else {
-    savedVolume = readValue(volumeFader);
-    volumeMuted = true;
-    updateFader(volumeFader, 0);
-    status.textContent = 'Volume muted (local preview).';
-  }
+  volumeMuted = !volumeMuted;
+  midi.setMuted(volumeMuted);
+  muteLabel.textContent = volumeMuted ? 'UNMUTE' : 'MUTE';
+  muteButton.setAttribute('aria-label', volumeMuted ? 'Unmute notes' : 'Mute notes');
+  muteButton.setAttribute('aria-pressed', String(volumeMuted));
+  muteButton.setAttribute('aria-disabled', 'false');
+  muteButton.querySelector('title').textContent = volumeMuted ? 'Unmute notes' : 'Mute notes';
+  status.textContent = volumeMuted ? 'Notes muted.' : 'Notes unmuted.';
 }
 
 bindButton(muteButton, toggleMute);
@@ -561,6 +586,7 @@ bindButton(muteButton, toggleMute);
 document.querySelector('#focus-mode').addEventListener('click', (event) => {
   const enabled = panel.classList.toggle('focus-mode');
   displays.classList.toggle('focus-mode', enabled);
+  faders.forEach(updateFaderTooltip);
   event.currentTarget.setAttribute('aria-pressed', String(enabled));
   status.textContent = `Focus Mode ${enabled ? 'on' : 'off'}. Control values preserved.`;
 });
@@ -586,11 +612,11 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   keyboardKeys.setAttribute('transform', `scale(${expanded ? 22 / 36 : 1} 1)`);
   standardKeys.setAttribute('transform', `translate(${expanded ? 7 * 62 : 0} 0)`);
   panel.querySelector('#panel-description').textContent =
-    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and local selection LEDs. MIDI notes are available when connected; controls remain visual only.`;
+    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
   status.textContent = `${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`;
 });
 
 updatePitchRange(defaultPitchRange, false);
 updateKeyNotes();
 layoutPanel();
-status.textContent = 'Panel ready. Connect MIDI to send and receive notes; faders are visual only.';
+status.textContent = 'Panel ready. Connect MIDI to send notes and supported controls.';

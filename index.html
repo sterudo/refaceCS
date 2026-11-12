@@ -36,17 +36,43 @@
       <section class="midi-settings" aria-label="MIDI devices">
         <button id="midi-connect" type="button">Connect MIDI</button>
         <button id="midi-reset" type="button">MIDI Reset</button>
+        <button id="capture-synth" type="button">Capture Synth</button>
+        <label><input id="position-velocity" type="checkbox"> Position-sensitive velocity</label>
         <div class="midi-ports">
           <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
           <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
           <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
         </div>
         <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+        <p id="capture-status" role="status"></p>
       </section>
       <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="synth"></div>
       </div>
+      <section class="arpeggiator" aria-labelledby="arp-heading">
+        <h2 id="arp-heading">Arpeggiator</h2>
+        <div class="arp-controls">
+          <button id="arp-enabled" type="button" aria-pressed="false">On / Off</button>
+          <button id="arp-latch" type="button" aria-pressed="true">Latch</button>
+          <button id="arp-chord" type="button" aria-pressed="false">Chord</button>
+          <label>Tempo (BPM) <input id="arp-tempo" type="number" min="30" max="300" step="1" value="120"></label>
+          <label>Rate <select id="arp-rate">
+            <option value="2">1/2</option><option value="4">1/4</option>
+            <option value="8">1/8</option><option value="16" selected>1/16</option><option value="32">1/32</option>
+          </select></label>
+          <label>Mode <select id="arp-mode">
+            <option value="up">Up</option><option value="down">Down</option>
+            <option value="updown">Up/down</option><option value="downup">Down/up</option>
+            <option value="firstlastmiddle">First/last/middle</option><option value="random">Random</option>
+          </select></label>
+        </div>
+        <p id="arp-status" role="status">Arpeggiator off.</p>
+        <div class="arp-detection" aria-live="polite">
+          <p>Notes: <span id="arp-held-notes">None</span></p>
+          <p>Chord: <span id="arp-detected-chord">None</span></p>
+        </div>
+      </section>
       <footer>
         <p id="app-status" role="status">Loading panel...</p>
         <p class="help">Hold keys to press them. Drag faders, scroll the wheel over one, or focus one and use arrow keys.

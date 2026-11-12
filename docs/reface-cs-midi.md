@@ -12,7 +12,7 @@ The source is Yamaha's *reface Data List*, CS section, especially pages 2 (MIDI 
 - [Data List, page 4: CS MIDI Data Table](https://www.manualsdir.com/manuals/848895/yamaha-reface-yc.html?page=4)
 - [Data List, page 5: CS MIDI Implementation Chart](https://www.manualsdir.com/manuals/848895/yamaha-reface-yc.html?page=5)
 
-The Yamaha support page was reachable during research, but its direct PDF URL returned 404. Treat the transcription as a research aid and verify against a Yamaha-hosted Data List PDF before shipping message-generation code.
+The CC and parameter tables were checked against Yamaha's [hosted Data List](https://data.yamaha.com/files/download/other_assets/7/794817/reface_en_dl_b0.pdf). Actual parameter-request replies and timing still require hardware verification.
 
 ## General MIDI behavior
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20.25 1760 579.75" aria-labelledby="panel-title panel-description">
   <title id="panel-title">Yamaha reface CS interactive panel</title>
-  <desc id="panel-description">37 keys, pitch bend, transpose, faders, and local selection LEDs. MIDI notes are available when connected; controls remain visual only.</desc>
+  <desc id="panel-description">37 keys, pitch bend, transpose, faders, and selection LEDs.</desc>
   <style>
     text { font-family: Arial, sans-serif; user-select: none; pointer-events: none; }
     .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; fill: #41474a; }
@@ -118,7 +118,7 @@
   </g>
   <g class="section-label">
     <text x="185" y="83">PITCH BEND</text>
-    <text x="309" y="83">VOLUME</text>
+    <text x="309" y="83">VELOCITY</text>
     <text x="372" y="83">OCTAVE</text>
     <text class="focus-looper" x="442" y="83">LOOPER</text>
     <text x="600" y="83">LFO</text>
@@ -136,11 +136,11 @@
     <use class="cap" href="#pitch-cap" y="40"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="transpose" class="fader" transform="translate(275 112)" data-label="Transpose" data-value="0" data-min="-6" data-max="6">
+  <g id="transpose" class="fader" transform="translate(275 112)" data-label="Transpose" data-value="0" data-min="-12" data-max="12">
     <use class="track" href="#transpose-track"/><use class="cap" href="#fader-cap" y="40"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="volume" class="fader" transform="translate(332 112)" data-label="Volume" data-value="64" data-max="127">
+  <g id="volume" class="fader" transform="translate(332 112)" data-label="Velocity" data-value="100" data-min="1" data-max="127">
     <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="40"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
@@ -158,7 +158,7 @@
     <circle class="selection-led" cx="19" cy="40" r="2" data-value="2"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="tempo" class="fader focus-looper" transform="translate(558 112)" data-label="Tempo demo" data-value="0" data-max="127">
+  <g id="tempo" class="fader focus-looper" transform="translate(558 112)" data-label="Tempo" data-value="0" data-max="127">
     <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
@@ -266,8 +266,8 @@
         <text x="234" y="225">+</text>
       </g>
     </g>
-    <g id="volume-mute" class="control-label clickable-label" role="button" tabindex="0" aria-label="Mute volume" aria-pressed="false">
-      <title>Save the current volume and mute</title>
+    <g id="volume-mute" class="control-label clickable-label" role="button" tabindex="0" aria-label="Mute notes" aria-pressed="false">
+      <title>Mute notes</title>
       <rect x="306" y="212" width="52" height="19" rx="2" fill="transparent"/>
       <text id="mute-label" x="332" y="225">MUTE</text>
     </g>
@@ -320,12 +320,12 @@
     </g>
   </g>
   <g id="octave-down" class="octave-step" role="button" tabindex="0" aria-label="Octave down" data-step="-1">
-    <title>Transpose down one octave (local preview)</title>
+    <title>Transpose down one octave</title>
     <rect class="end-hit-area" x="25" y="27" width="160" height="550" rx="4" fill="transparent"/>
     <path class="end-arrow" d="M4 -7L-4 0L4 7" transform="translate(105 430)" fill="none" stroke="#777d79" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
   </g>
   <g id="octave-up" class="octave-step" role="button" tabindex="0" aria-label="Octave up" data-step="1">
-    <title>Transpose up one octave (local preview)</title>
+    <title>Transpose up one octave</title>
     <rect class="end-hit-area" x="1602" y="27" width="133" height="550" rx="4" fill="transparent"/>
     <path class="end-arrow" d="M-4 -7L4 0L-4 7" transform="translate(1668.5 430)" fill="none" stroke="#777d79" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
   </g>

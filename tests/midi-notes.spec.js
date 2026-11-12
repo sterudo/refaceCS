@@ -42,6 +42,36 @@ test('local notes use channel one, honor pitch controls, and release on blur', a
   ]);
 });
 
+test('transposed held notes retain their original note-off pitches', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#transpose').press('ArrowUp');
+  await page.keyboard.down('a');
+  await page.evaluate(() => window.testNotes.emit('ci', [0x92, 60, 88]));
+  await page.locator('#transpose').press('ArrowUp');
+  await page.evaluate(() => window.testNotes.emit('ci', [0x92, 60, 99]));
+  await page.keyboard.up('a');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0x82, 60, 17]);
+    window.testNotes.emit('ci', [0x92, 60, 0]);
+  });
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0x90, 61, 100] }, { port: 'ro', data: [0x92, 61, 88] },
+    { port: 'ro', data: [0x92, 62, 99] }, { port: 'ro', data: [0x80, 61, 0] },
+    { port: 'ro', data: [0x82, 61, 17] }, { port: 'ro', data: [0x92, 62, 0] },
+  ]);
+});
+
+test('notes shifted outside the MIDI range are reported and not sent', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#transpose').press('ArrowDown');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0x90, 0, 100]);
+    window.testNotes.emit('ci', [0x80, 0, 0]);
+  });
+  await expect(page.locator('#midi-status')).toContainText('outside the MIDI range');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
+});
+
 test('receives both inputs, forwards only controller notes, and ignores CC', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => {
@@ -64,10 +94,9 @@ test('keeps incoming highlights independent of local keys and pitch changes', as
   await page.keyboard.up('a');
   await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#transpose').press('ArrowUp');
-  await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#key-b-1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
   await page.evaluate(() => window.testNotes.emit('ri', [0x80, 60, 0]));
-  await expect(page.locator('#key-b-1')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('releases forwarded notes when changing controller or output and clears disconnected inputs', async ({ page }) => {
@@ -94,7 +123,7 @@ test('surfaces output send errors', async ({ page }) => {
     window.testNotes.access.outputs.get('ro').send = () => { throw new Error('device busy'); };
   });
   await page.keyboard.down('a');
-  await expect(page.locator('#midi-status')).toContainText('MIDI note send failed: device busy');
+  await expect(page.locator('#midi-status')).toContainText('MIDI send failed: device busy');
   await page.keyboard.up('a');
 });
 
