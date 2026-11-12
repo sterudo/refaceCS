@@ -19,6 +19,7 @@ The Yamaha support page was reachable during research, but its direct PDF URL re
 - The Data List specifies MIDI 1.0.
 - Receive channel is configurable from channels 1–16; the MIDI implementation chart lists channel 1 as the default. The instrument also supports Omni receive.
 - Note On, Note Off, Pitch Bend, and supported Control Change messages are received. The CS MIDI implementation chart marks Program Change unsupported; patch recall must therefore use parameter values, not program changes.
+- The CS implementation chart lists All Sound Off (CC 120) and All Notes Off (CC 123) as recognized. The app's MIDI Reset sends both on all 16 channels; a successful browser send does not confirm the instrument responded.
 - The synth transmits Expression (CC 11) and Sustain (CC 64) in the documented cases. When MIDI Control is on, the panel voice parameters use their assigned CC numbers, as detailed below.
 - MIDI Control can be turned on or off. Panel-control CC transmission and recognition are documented when this setting is on.
 - Timing Clock received over MIDI IN or USB-MIDI IN switches the instrument to external synchronization. If no clock is received for three seconds, it returns to its internal clock. Start and Stop are listed; Continue is also listed as received.

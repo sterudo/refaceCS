@@ -1,6 +1,7 @@
 import './style.css';
 import panelMarkup from './synth.svg?raw';
 import { createVisualizations } from './visualizations.js';
+import { setupMidiDiscovery } from './midi.js';
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const container = document.querySelector('#synth');
@@ -69,6 +70,8 @@ for (const octave of [0, 4]) {
 }
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
+const locallyHeldKeys = new Set();
+const midi = setupMidiDiscovery(() => keys.forEach(updateKey));
 const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const computerKeyBindings = new Map([
   ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
@@ -114,6 +117,7 @@ function updateKeyNotes() {
     key.setAttribute('aria-label', label);
     key.querySelector('title').textContent = label;
   }
+  keys.forEach(updateKey);
 }
 
 function updateFader(fader, value, announce = true) {
@@ -338,9 +342,16 @@ for (const fader of faders) {
 }
 
 function updateKey(key) {
-  const down = pressedKeys.has(key)
+  const localDown = pressedKeys.has(key)
     || [...computerKeys.values()].includes(key)
     || [...activePointers.values()].some((item) => item.element === key);
+  if (localDown && !locallyHeldKeys.has(key)) {
+    locallyHeldKeys.add(key);
+    midi.startNote(key, Number(key.dataset.note));
+  } else if (!localDown && locallyHeldKeys.delete(key)) {
+    midi.endNote(key);
+  }
+  const down = localDown || midi.isNoteHeld(Number(key.dataset.note));
   key.classList.toggle('is-pressed', down);
   key.setAttribute('aria-pressed', String(down));
 }
@@ -387,7 +398,7 @@ for (const key of keys) {
     key.setPointerCapture(event.pointerId);
     activePointers.set(event.pointerId, { element: key });
     updateKey(key);
-    status.textContent = `${key.getAttribute('aria-label')} pressed (visual only)`;
+    status.textContent = `${key.getAttribute('aria-label')} pressed`;
   });
 
   key.addEventListener('keydown', (event) => {
@@ -418,7 +429,7 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   computerKeys.set(event.code, key);
   updateKey(key);
-  status.textContent = `${key.getAttribute('aria-label')} pressed (visual only)`;
+  status.textContent = `${key.getAttribute('aria-label')} pressed`;
 });
 
 document.addEventListener('keyup', (event) => {
@@ -461,6 +472,8 @@ function releaseAll() {
   releaseNotes();
   for (const pointerId of [...activePointers.keys()]) releasePointer({ pointerId });
 }
+
+document.querySelector('#midi-reset').addEventListener('click', () => midi.resetNotes(releaseNotes));
 
 window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => {
@@ -573,11 +586,11 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   keyboardKeys.setAttribute('transform', `scale(${expanded ? 22 / 36 : 1} 1)`);
   standardKeys.setAttribute('transform', `translate(${expanded ? 7 * 62 : 0} 0)`);
   panel.querySelector('#panel-description').textContent =
-    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and local selection LEDs. This is a visual prototype without sound or MIDI.`;
+    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and local selection LEDs. MIDI notes are available when connected; controls remain visual only.`;
   status.textContent = `${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`;
 });
 
 updatePitchRange(defaultPitchRange, false);
 updateKeyNotes();
 layoutPanel();
-status.textContent = 'Panel ready. Visual controls only; no MIDI or audio is connected.';
+status.textContent = 'Panel ready. Connect MIDI to send and receive notes; faders are visual only.';

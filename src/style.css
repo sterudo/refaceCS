@@ -65,6 +65,56 @@ h1 span {
   font-size: 0.75rem;
 }
 
+.badge[data-state="connected"] {
+  color: #87d9a7;
+}
+
+.badge[data-state="disconnected"],
+.badge[data-state="error"] {
+  color: #f0ad9e;
+}
+
+.midi-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+}
+
+.midi-settings button {
+  padding: 0.4rem 0.65rem;
+  font-size: inherit;
+}
+
+.midi-ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.midi-ports label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.midi-ports select {
+  max-width: min(100%, 16rem);
+  padding: 0.35rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.4rem;
+  background: #202b33;
+  color: #dce4e8;
+  font: inherit;
+}
+
+.midi-settings p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #a3b0b8;
+}
+
 button {
   flex-shrink: 0;
   padding: 0.65rem 1rem;
@@ -87,6 +137,7 @@ button[aria-pressed="true"] {
 }
 
 button:focus-visible,
+select:focus-visible,
 .instrument-scroll:focus-visible {
   outline: 3px solid #6bdeea;
   outline-offset: 4px;

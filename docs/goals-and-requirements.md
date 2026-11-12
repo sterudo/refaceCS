@@ -50,6 +50,10 @@ These are decisions made during requirements refinement:
 
 Web MIDI requires a secure context and explicit user permission. Chrome and Chromium-based Edge support the API; SysEx access requires the app to request the additional `sysex` permission. A local app should be served from localhost rather than opened as a `file://` document.
 
+Connect MIDI requests ordinary MIDI access; unique input and output names containing "reface" are selected automatically, with manual correction when names do not match or are ambiguous. The controller input can be selected independently. The status badge requires both selected reface ports to be available and does not verify the device's identity. Port availability updates on connection changes.
+
+On-screen notes send on channel 1 at velocity 100, using the local Octave and Transpose. Both reface and controller input notes illuminate matching visible keys. A separate controller's notes are forwarded unchanged, including channel and velocity; reface input is not echoed. MIDI Reset sends All Notes Off (CC 123) and All Sound Off (CC 120) on all channels and clears held-note state. Other controller messages are not handled and SysEx permission is not requested. The prototype decisions below describe earlier visual-only stages and are superseded where they describe notes as visual-only.
+
 Sources:
 
 - [MDN: Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API)

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20.25 1760 579.75" aria-labelledby="panel-title panel-description">
   <title id="panel-title">Yamaha reface CS interactive panel</title>
-  <desc id="panel-description">37 keys, pitch bend, transpose, faders, and local selection LEDs. This is a visual prototype without sound or MIDI.</desc>
+  <desc id="panel-description">37 keys, pitch bend, transpose, faders, and local selection LEDs. MIDI notes are available when connected; controls remain visual only.</desc>
   <style>
     text { font-family: Arial, sans-serif; user-select: none; pointer-events: none; }
     .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; fill: #41474a; }

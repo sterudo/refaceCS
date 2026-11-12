@@ -10,7 +10,7 @@
       <header class="toolbar">
         <div>
           <h1>reface<span>CS</span></h1>
-          <p>Interactive panel study <span class="badge">No MIDI / no audio</span></p>
+          <p>Interactive panel study <span id="midi-badge" class="badge" role="status">MIDI not connected</span></p>
         </div>
         <div class="toolbar-actions">
           <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
@@ -33,6 +33,16 @@
           </button>
         </div>
       </header>
+      <section class="midi-settings" aria-label="MIDI devices">
+        <button id="midi-connect" type="button">Connect MIDI</button>
+        <button id="midi-reset" type="button">MIDI Reset</button>
+        <div class="midi-ports">
+          <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
+          <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
+          <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
+        </div>
+        <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+      </section>
       <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="synth"></div>
