@@ -104,7 +104,7 @@ The user approved implementation ("Code it") after the following decisions:
 - Provide a "2x" toggle that doubles vertical fader travel and expands the panel/body. Keep the keyboard, handles, and labels at their original sizes and preserve the current control values.
 - This stage is interactive visuals only. MIDI note/control messages, audio, actual looper operation, hardware synchronization, and patch persistence are not included.
 
-The original illustration is in `src/synth.svg`; vanilla JavaScript wires up individual SVG elements. Keyboard octaves are relative panel positions, not assigned MIDI octaves. Discrete demo values describe slider positions; they are not MIDI CC or SysEx encodings. Looper Record and Play LEDs indicate the selected local demo mode only.
+The original illustration is in `src/synth.svg`; vanilla JavaScript wires up individual SVG elements. Key IDs retain relative panel positions; the later-approved QWERTY feature uses C4 (note 60) for the default middle C in its local pitch labels. This is a UI naming convention, not a verified hardware mapping or MIDI implementation. Discrete demo values describe slider positions; they are not MIDI CC or SysEx encodings. Looper Record and Play LEDs indicate the selected local demo mode only.
 
 ### Starting positions and Reset
 
@@ -149,25 +149,49 @@ Speaker toggling preserves current values and other view toggles. Reset preserve
 
 ### Transpose and individual fader reset
 
-The user approved a 13-position **Transpose** fader between Pitch Bend and Volume, restricted to -6 through +6 semitones in whole-semitone steps. Its starting/reset value is 0 at the center. Show TRANSPOSE below and a live signed value (`+n`, `0`, `-n`) above, regardless of Focus Mode, speaker visibility, or travel size. Arrow keys, Shift+arrow, and Page Up/Down move one semitone; Home/End reach -6/+6.
+The user approved a 13-position **Transpose** fader between Pitch Bend and Volume, restricted to -6 through +6 semitones in whole-semitone steps. Its starting/reset value is 0 at the center. Show TRANSPOSE below and a live signed value (`+n`, `0`, `-n`) above, regardless of Focus Mode, speaker visibility, or travel size. Arrow keys, Shift+arrow, and Page Up/Down move one semitone; Home reaches +6 at the top and End reaches -6 at the bottom.
 
 Transpose is independent of the Octave selector. This remains a local visual control: the documented hardware Master Transpose supports -12 to +12, but hardware synchronization and MIDI sending are not implemented.
 
-Double-clicking any fader's handle or track restores only that fader to its defined starting/reset value and updates its handle, labels, accessible value, and selection LEDs. Preserve other controls and all view toggles.
+Double-clicking any fader's handle or track, or pressing Delete while the fader has keyboard focus, restores only that fader to its defined starting/reset value and updates its handle, labels, accessible value, graphs, and selection LEDs. Both actions use the same reset handling and end any active drag on the affected fader. Apply normal Volume mute cleanup; Pitch Bend only recenters, without changing its range. Preserve other controls and all view toggles. Delete outside a focused fader must not reset anything.
 
 ### Five-octave keyboard view
 
-The user approved a **5 Octaves** toggle, off on page load. Expand the default 37-key, three-octave range to 61 keys by adding one octave below and one above. Keep the existing key identities; new octave labels are relative UI positions 0 and 5, not assigned MIDI octaves.
+The user approved a **5 Octaves** toggle, off on page load. Expand the default 37-key, three-octave range to 61 keys by adding one octave below and one above. Keep the existing relative key identities (0-5 internally). The later-approved QWERTY/note-label feature names the default ranges C3-C6 and C2-C7 respectively; this does not implement MIDI.
 
 Fit the additional keys into the same keyboard frame by scaling only their horizontal dimension (36 white keys instead of 22). Keep key height, press animation, synth controls, Octave/Transpose settings, and other view toggles unchanged. Added white/black keys support the same pointer and keyboard interactions as the original keys.
 
 Release held keys before switching either direction, and hide inactive extra keys from interaction and keyboard navigation. Support normal/2x travel, Focus Mode, and speaker visibility in any combination. Reset faders preserves the selected keyboard view. This remains a visual-only feature without MIDI or audio.
+
+### Computer-keyboard notes and Focus labels
+
+The user approved ("Code it") this physical QWERTY mapping at default Octave/Transpose settings:
+
+| Key | A | W | S | E | D | F | T | G | Y | H | U | J | K |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Note | C4 | C#4 | D4 | D#4 | E4 | F4 | F#4 | G4 | G#4 | A4 | A#4 | B4 | C5 |
+
+Keep the letters on the same middle physical keys in both the 37- and 61-key views, regardless of Octave/Transpose settings. Hold/release letters to press/release notes and allow chords. Ignore auto-repeat, composition, typing in editable fields, and Ctrl/Alt/Meta shortcuts; Shift is allowed. Computer-key presses, pointer presses, and focused Space/Enter presses have independent ownership, so releasing one source does not release another.
+
+Only in Focus Mode, overlay the mapped lowercase letters and small gray note names at the very top of every visible white/black key. Keep letter proportions unchanged when the five-octave view compresses key widths. The user explicitly chose for note labels to follow **both Octave and semitone Transpose**, using sharp names. At default settings, the standard view spans C3-C6 and the extended view C2-C7; default middle C is C4 (note 60). Update accessible names and tooltips with the same pitches, while retaining internal relative key IDs.
+
+Release all held notes when Octave or Transpose actually changes, without ending unrelated fader drags; an auto-repeat from a still-held letter must not restart a released note. Existing keyboard-range, speaker-layout, fader-travel, global-reset, window-blur, and page-hiding cleanup also releases computer-key notes. Focus Mode and display visibility alone preserve them. Labels do not intercept pointer input and follow the existing key-press animation/reduced-motion behavior. No audio or MIDI is sent.
 
 ### Clickable selector labels and fader hover
 
 The user approved direct selection through each of the five position labels on Octave, Looper, LFO Assign, OSC Type, and Effect Type. Select the exact labeled step, focus the slider for further keyboard adjustment, and refresh the handle, accessible value, readout, LEDs, and octave end controls using the normal update path. Label presses must not start a drag, and repeated/double label clicks must keep selecting that position rather than triggering the handle/track reset shortcut.
 
 All fader handles use the same stronger, brighter highlight on mouse hover, keyboard focus, and dragging, including while a captured drag moves outside the fader. The glow eases in and out over 180 ms, without animating or delaying handle movement. The embedded preview reports reduced motion; after confirming this was suppressing the fade, the user explicitly chose to keep the glow-only transition active even with reduced motion. Key and LED transitions still respect that preference. Hover alone must not change values. Support all view modes and leave Transpose/continuous fader labels non-interactive.
+
+### Keyboard and mouse-wheel fader control
+
+For every focused fader, Home moves to the top/maximum and End to the bottom/minimum, matching the keys' physical layout. Apply this mapping in every view mode to continuous faders, selectors, Pitch Bend, and signed Transpose; retain normal input synchronization and clamping.
+
+The user approved ("Code it") wheel up/down to increase/decrease the hovered fader by one step, then changed the large-step modifier from Shift to Alt. Alt+wheel moves continuous faders by 10; five-position selectors and Transpose always move one step. Shift+wheel retains single-step movement; Shift+arrow keyboard shortcuts remain unchanged. Support the handle, track, and selector labels in all view modes.
+
+Use the normal user-input path to clamp values and synchronize handles, accessible values, readouts, graphs, LEDs, octave end availability, and Volume mute restoration. Wheel adjustment of muted Volume at zero discards its saved level, just like other fader input. Pitch Bend retains wheel changes like keyboard input rather than recentering on hover exit.
+
+Consume vertical wheel scrolling over faders, even at their limits, without changing keyboard focus. Leave zero-delta, predominantly horizontal, and Ctrl+wheel events untouched so normal scrolling and browser/pinch zoom remain available elsewhere.
 
 ### Label hover and Volume mute
 
@@ -181,7 +205,7 @@ Pointer adjustments, keyboard value changes, and individual-fader reset invalida
 
 The user approved minus/plus labels beneath Pitch Bend with the current range centered between them. Start at 12 semitones (`- 12 +`), matching the user-confirmed factory default; each action changes the range by one semitone within 0-24, with 0 representing no bending. Disable the unavailable direction at each limit. Use the same fading label glow and Enter/Space activation as MUTE/UNMUTE.
 
-Keep the range controls visible in every view combination and preserve their value when toggling views. Changing range must not move the pitch-bend fader or change any other control. Reset faders restores 12 semitones; double-clicking the bend fader still only recenters that fader.
+Keep the range controls visible in every view combination and preserve their value when toggling views. Changing range must not move the pitch-bend fader or change any other control. Reset faders restores 12 semitones; double-clicking the bend fader or pressing Delete while it is focused still only recenters that fader.
 
 The user corrected the initially assumed 2-semitone default to the factory default of 12 semitones. The hardware reference documents a signed range parameter, but this UI intentionally exposes only nonnegative range magnitudes. Hardware synchronization and MIDI sending remain unimplemented.
 
@@ -203,6 +227,6 @@ Use smaller toolbar buttons and add a Hide Displays toggle, off on page load. Hi
 
 Provide a subtle, keyboard-operable reset button inside each display. Restore only that section's captured startup fader values: LFO Assign/Depth/Speed, Filter Cutoff/Resonance, or Effect Type/Depth/Rate. Both Amp ADSR and Filter ADSR reset buttons restore the entire shared EG section, including Balance and A/D/S/R. End active drags on affected faders, refresh related graphs/readouts/LEDs, and announce the section reset. Preserve unrelated faders, held keys, mute restoration, pitch-bend range, and all view modes.
 
-Use the normal fader update path so dragging, keyboard changes, selector labels, double-click reset, and global Reset refresh the previews. Preserve all existing view modes and controls; graph clicks must not change values.
+Use the normal fader update path so dragging, keyboard changes, selector labels, double-click/Delete reset, and global Reset refresh the previews. Preserve all existing view modes and controls; graph clicks must not change values.
 
 Model EG influence as an explicitly illustrative linear balance, not a verified Yamaha depth law. At zero AEG influence retain a note gate rather than implying silence. LFO uses an illustrative sinusoidal cycle, including an inactive trace when Assign is Off. Its OSC destination follows oscillator type. Effect shows relative echo spacing/strength for Delay, modulation cycles for Phaser and Chorus/Flanger, and an illustrative softened/clipped wave for Distortion with a dry reference. Rate means delay time, modulation rate, or tone according to Type. These are conceptual diagrams, not audio processing or simulations of the actual effect algorithms. See the visualization research in `reface-cs-midi.md` for verified manual behavior and unverified mappings.

@@ -30,6 +30,7 @@ const baseTravel = 80;
 const panelTopTrim = 27 * 0.75;
 const activePointers = new Map();
 const pressedKeys = new Set();
+const computerKeys = new Map();
 let travel = baseTravel;
 let volumeMuted = false;
 let savedVolume = null;
@@ -68,6 +69,12 @@ for (const octave of [0, 4]) {
 }
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
+const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const computerKeyBindings = new Map([
+  ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
+  ['KeyD', 'e-2'], ['KeyF', 'f-2'], ['KeyT', 'fs-2'], ['KeyG', 'g-2'],
+  ['KeyY', 'gs-2'], ['KeyH', 'a-2'], ['KeyU', 'as-2'], ['KeyJ', 'b-2'], ['KeyK', 'c-3'],
+].map(([code, id]) => [code, panel.querySelector(`#key-${id}`)]));
 
 function readValue(fader) {
   return Number(fader.dataset.value);
@@ -95,10 +102,25 @@ function updatePitchRange(value, announce = true) {
   if (announce) status.textContent = `${description} (local preview)`;
 }
 
+function updateKeyNotes() {
+  const transpose = (readValue(octaveFader) - 2) * 12 + readValue(transposeFader);
+  for (const key of keys) {
+    const note = Number(key.dataset.baseNote) + transpose;
+    const name = noteNames[note % 12];
+    const octave = Math.floor(note / 12) - 1;
+    key.dataset.note = String(note);
+    key.querySelector('.key-note').textContent = `${name}${octave}`;
+    const label = `${name.replace('#', ' sharp')}, octave ${octave}`;
+    key.setAttribute('aria-label', label);
+    key.querySelector('title').textContent = label;
+  }
+}
+
 function updateFader(fader, value, announce = true) {
   const min = Number(fader.dataset.min ?? 0);
   const max = Number(fader.dataset.max);
   value = Math.max(min, Math.min(max, Math.round(value)));
+  const changed = value !== readValue(fader);
   fader.dataset.value = String(value);
   fader.setAttribute('aria-valuenow', value);
   fader.setAttribute('aria-valuetext', valueText(fader));
@@ -130,6 +152,11 @@ function updateFader(fader, value, announce = true) {
     }
   }
 
+  if (changed && (fader === octaveFader || fader === transposeFader)) {
+    releaseNotes();
+    updateKeyNotes();
+  }
+
   fader.querySelectorAll('.selection-led').forEach((led) => {
     led.classList.toggle('is-on', Number(led.dataset.value) === value);
   });
@@ -146,6 +173,13 @@ function updateFaderFromInput(fader, value) {
   if (fader === volumeFader && volumeMuted) {
     status.textContent = 'Saved volume cleared. Raise the Volume fader to unmute.';
   }
+}
+
+function resetFader(fader) {
+  for (const [pointerId, item] of activePointers) {
+    if (item.element === fader) releasePointer({ pointerId });
+  }
+  updateFaderFromInput(fader, startingValues.get(fader));
 }
 
 function layoutPanel() {
@@ -234,10 +268,23 @@ for (const fader of faders) {
     });
   }
 
+  const min = Number(fader.dataset.min ?? 0);
+  const max = Number(fader.dataset.max);
+  const largeStep = max > 4 && fader !== transposeFader ? 10 : 1;
+
+  fader.addEventListener('wheel', (event) => {
+    if (event.ctrlKey || event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    const step = event.altKey ? largeStep : 1;
+    updateFaderFromInput(fader, readValue(fader) - Math.sign(event.deltaY) * step);
+  }, { passive: false });
+
   fader.addEventListener('keydown', (event) => {
-    const min = Number(fader.dataset.min ?? 0);
-    const max = Number(fader.dataset.max);
-    const largeStep = max > 4 && fader !== transposeFader ? 10 : 1;
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      resetFader(fader);
+      return;
+    }
     const step = event.shiftKey ? largeStep : 1;
     const value = readValue(fader);
     const next = {
@@ -247,8 +294,8 @@ for (const fader of faders) {
       ArrowLeft: value - step,
       PageUp: value + largeStep,
       PageDown: value - largeStep,
-      Home: min,
-      End: max,
+      Home: max,
+      End: min,
     }[event.key];
 
     if (next !== undefined) {
@@ -260,10 +307,7 @@ for (const fader of faders) {
   fader.addEventListener('dblclick', (event) => {
     if (event.target.closest('.position-label')) return;
     event.preventDefault();
-    for (const [pointerId, item] of activePointers) {
-      if (item.element === fader) releasePointer({ pointerId });
-    }
-    updateFaderFromInput(fader, startingValues.get(fader));
+    resetFader(fader);
   });
 
   fader.addEventListener('pointerdown', (event) => {
@@ -295,6 +339,7 @@ for (const fader of faders) {
 
 function updateKey(key) {
   const down = pressedKeys.has(key)
+    || [...computerKeys.values()].includes(key)
     || [...activePointers.values()].some((item) => item.element === key);
   key.classList.toggle('is-pressed', down);
   key.setAttribute('aria-pressed', String(down));
@@ -307,6 +352,33 @@ for (const key of keys) {
   const title = document.createElementNS(svgNS, 'title');
   title.textContent = key.getAttribute('aria-label');
   key.prepend(title);
+  const [, note, relativeOctave] = key.id.split('-');
+  // Keep relative key IDs while naming the middle C as C4 (note 60).
+  key.dataset.baseNote = String(60 + (Number(relativeOctave) - 2) * 12
+    + noteNames.indexOf(note.replace('s', '#').toUpperCase()));
+  const shape = key.querySelector('use');
+  const black = shape.getAttribute('href') === '#black-key';
+  key.classList.toggle('key-black', black);
+  const labels = document.createElementNS(svgNS, 'g');
+  labels.setAttribute('class', 'key-labels');
+  labels.setAttribute('aria-hidden', 'true');
+  const noteLabel = document.createElementNS(svgNS, 'text');
+  noteLabel.setAttribute('class', 'key-note');
+  noteLabel.setAttribute('x', Number(shape.getAttribute('x')) + (black ? 17 : 31));
+  noteLabel.setAttribute('y', '16');
+  labels.append(noteLabel);
+  const binding = [...computerKeyBindings].find(([, mappedKey]) => mappedKey === key);
+  if (binding) {
+    const letter = binding[0].slice(3);
+    key.setAttribute('aria-keyshortcuts', letter);
+    const letterLabel = document.createElementNS(svgNS, 'text');
+    letterLabel.setAttribute('class', 'key-letter');
+    letterLabel.setAttribute('x', noteLabel.getAttribute('x'));
+    letterLabel.setAttribute('y', black ? '155' : '248');
+    letterLabel.textContent = letter.toLowerCase();
+    labels.append(letterLabel);
+  }
+  key.append(labels);
 
   key.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -336,6 +408,27 @@ for (const key of keys) {
   });
 }
 
+document.addEventListener('keydown', (event) => {
+  const key = computerKeyBindings.get(event.code);
+  if (!key || event.defaultPrevented || event.repeat || event.isComposing
+    || event.ctrlKey || event.altKey || event.metaKey
+    || !(event.target instanceof Element)
+    || event.target.isContentEditable
+    || event.target.closest('input, textarea, select, [role="textbox"], [role="searchbox"], [role="combobox"]')) return;
+  event.preventDefault();
+  computerKeys.set(event.code, key);
+  updateKey(key);
+  status.textContent = `${key.getAttribute('aria-label')} pressed (visual only)`;
+});
+
+document.addEventListener('keyup', (event) => {
+  const key = computerKeys.get(event.code);
+  if (!key) return;
+  event.preventDefault();
+  computerKeys.delete(event.code);
+  updateKey(key);
+});
+
 function releasePointer(event) {
   const item = activePointers.get(event.pointerId);
   if (!item) return;
@@ -355,10 +448,18 @@ panel.addEventListener('pointerup', releasePointer);
 panel.addEventListener('pointercancel', releasePointer);
 panel.addEventListener('lostpointercapture', releasePointer);
 
-function releaseAll() {
+function releaseNotes() {
   pressedKeys.clear();
-  for (const pointerId of [...activePointers.keys()]) releasePointer({ pointerId });
+  computerKeys.clear();
+  for (const [pointerId, item] of activePointers) {
+    if (item.element.classList.contains('key')) releasePointer({ pointerId });
+  }
   keys.forEach(updateKey);
+}
+
+function releaseAll() {
+  releaseNotes();
+  for (const pointerId of [...activePointers.keys()]) releasePointer({ pointerId });
 }
 
 window.addEventListener('blur', releaseAll);
@@ -477,5 +578,6 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
 });
 
 updatePitchRange(defaultPitchRange, false);
+updateKeyNotes();
 layoutPanel();
 status.textContent = 'Panel ready. Visual controls only; no MIDI or audio is connected.';

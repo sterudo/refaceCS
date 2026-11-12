@@ -307,6 +307,47 @@ footer {
   cursor: pointer;
 }
 
+.key-labels {
+  display: none;
+  pointer-events: none;
+  text-anchor: middle;
+  font-family: system-ui, sans-serif;
+  transition: transform 75ms ease-out;
+}
+
+.focus-mode .key-labels {
+  display: inline;
+}
+
+.key-note {
+  fill: #71787d;
+  font-size: 10px;
+}
+
+.key-black .key-note {
+  fill: #9ba3a8;
+}
+
+.key-letter {
+  fill: #58656c;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.key-black .key-letter {
+  fill: #c1ced3;
+}
+
+.five-octaves .key-letter {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: calc(36 / 22) 1;
+}
+
+.key.is-pressed .key-labels {
+  transform: translateY(5px);
+}
+
 .octave-step {
   cursor: pointer;
 }
@@ -364,6 +405,7 @@ footer {
 
 @media (prefers-reduced-motion: reduce) {
   .key use,
+  .key-labels,
   .selection-led {
     transition: none;
   }

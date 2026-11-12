@@ -14,7 +14,7 @@ async function faderPoint(page, id, y) {
 
 test('fully open filter is centered and flat without a right-edge falloff', async ({ page }) => {
   const curve = page.locator('#preview-filter .graph-curve');
-  for (const resonance of ['Home', 'End']) {
+  for (const resonance of ['End', 'Home']) {
     await page.locator('#filter-resonance').press(resonance);
     const bounds = await curve.evaluate((element) => {
       const { y, height } = element.getBBox();
@@ -25,8 +25,8 @@ test('fully open filter is centered and flat without a right-edge falloff', asyn
   }
   await page.locator('#filter-cutoff').press('ArrowDown');
   expect(await curve.evaluate((element) => element.getBBox().height)).toBeLessThan(10);
-  await page.locator('#filter-resonance').press('Home');
-  await page.locator('#filter-cutoff').press('Home');
+  await page.locator('#filter-resonance').press('End');
+  await page.locator('#filter-cutoff').press('End');
   const endpoints = await curve.evaluate((element) => ({
     startY: element.getPointAtLength(0).y,
     endY: element.getPointAtLength(element.getTotalLength()).y,
@@ -37,27 +37,27 @@ test('fully open filter is centered and flat without a right-edge falloff', asyn
 test('filter and separate envelopes follow the faders and balance without muting the amp', async ({ page }) => {
   const curve = (id) => page.locator(`#preview-${id} .graph-curve`);
   const initialFilter = await curve('filter').getAttribute('d');
-  await page.locator('#filter-cutoff').press('Home');
+  await page.locator('#filter-cutoff').press('End');
   await expect(curve('filter')).not.toHaveAttribute('d', initialFilter);
   const lowFilter = await curve('filter').getAttribute('d');
-  await page.locator('#filter-resonance').press('End');
+  await page.locator('#filter-resonance').press('Home');
   await expect(curve('filter')).not.toHaveAttribute('d', lowFilter);
 
   const initialAmp = await curve('amp-eg').getAttribute('d');
   const inactiveFilter = await curve('filter-eg').getAttribute('d');
-  await page.locator('#eg-attack').press('End');
+  await page.locator('#eg-attack').press('Home');
   await expect(curve('amp-eg')).not.toHaveAttribute('d', initialAmp);
   expect(await curve('filter-eg').evaluate((element) => element.getBBox().height)).toBe(0);
-  await page.locator('#eg-balance').press('End');
+  await page.locator('#eg-balance').press('Home');
   await expect(curve('filter-eg')).not.toHaveAttribute('d', inactiveFilter);
   await expect(page.locator('#preview-amp-eg .graph-context')).toContainText('note gate remains');
   expect(await curve('amp-eg').evaluate((element) => element.getBBox().height)).toBeCloseTo(98);
 
-  await page.locator('#eg-balance').press('Home');
+  await page.locator('#eg-balance').press('End');
   await page.locator('#eg-balance').press('PageUp');
   const amp = await curve('amp-eg').getAttribute('d');
   const filter = await curve('filter-eg').getAttribute('d');
-  await page.locator('#eg-sustain').press('Home');
+  await page.locator('#eg-sustain').press('End');
   await expect(curve('amp-eg')).not.toHaveAttribute('d', amp);
   await expect(curve('filter-eg')).not.toHaveAttribute('d', filter);
   await expect(page.locator('#preview-amp-eg .graph-values')).toHaveText(
@@ -73,19 +73,19 @@ test('LFO and effect previews reflect destinations and type-specific parameters 
   const initial = await curves.evaluateAll((elements) => elements.map((element) => element.getAttribute('d')));
   const lfo = page.locator('#preview-lfo .graph-curve');
   const off = await lfo.getAttribute('d');
-  await page.locator('#lfo-depth').press('End');
+  await page.locator('#lfo-depth').press('Home');
   await expect(lfo).toHaveAttribute('d', off);
   await page.locator('#lfo-assign .position-label[data-step="4"]').click();
   await expect(lfo).not.toHaveAttribute('d', off);
-  await page.locator('#osc-type').press('End');
+  await page.locator('#osc-type').press('Home');
   await expect(page.locator('#preview-lfo .graph-context')).toContainText('FM amount');
   const slow = await lfo.getAttribute('d');
-  await page.locator('#lfo-speed').press('End');
+  await page.locator('#lfo-speed').press('Home');
   await expect(lfo).not.toHaveAttribute('d', slow);
 
   const effect = page.locator('#preview-effect .graph-curve');
   const shapes = new Set();
-  await page.locator('#effect-depth').press('End');
+  await page.locator('#effect-depth').press('Home');
   for (const step of [1, 2, 3, 4]) {
     await page.locator(`#effect-type .position-label[data-step="${step}"]`).click();
     const shape = await effect.getAttribute('d');
@@ -94,12 +94,12 @@ test('LFO and effect previews reflect destinations and type-specific parameters 
     const values = page.locator('#preview-effect .graph-values');
     await expect(values).toContainText(step === 1 ? 'Delay time' : step === 4 ? 'Tone' : 'Rate');
     await expect(page.locator('#preview-effect .graph-context')).not.toContainText('illustrative diagram');
-    await page.locator('#effect-rate').press('End');
-    await expect(effect).not.toHaveAttribute('d', shape);
     await page.locator('#effect-rate').press('Home');
+    await expect(effect).not.toHaveAttribute('d', shape);
+    await page.locator('#effect-rate').press('End');
   }
   expect(shapes.size).toBe(4);
-  await page.locator('#effect-depth').press('Home');
+  await page.locator('#effect-depth').press('End');
   await expect(effect).toHaveAttribute('d',
     await page.locator('#preview-effect .graph-reference').getAttribute('d'));
   await page.locator('#reset-faders').click();
@@ -173,7 +173,7 @@ test('dark page keeps the light synth and Focus Mode recolors graphs without cha
     expect(channelOrder(style.fillRGB)).toEqual(channelOrder(style.sectionRGB));
   }
 
-  await page.locator('#lfo-depth').press('End');
+  await page.locator('#lfo-depth').press('Home');
   await expect(page.locator('#preview-lfo .graph-number').first()).toHaveText('127');
   for (const id of ['hide-speakers', 'five-octaves', 'fader-size', 'reset-faders']) {
     await page.locator(`#${id}`).click();
@@ -192,7 +192,7 @@ test('Hide Displays removes reserved space and preserves controls, view modes an
     elements.map((element) => element.dataset.value));
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(displays).toBeVisible();
-  await page.locator('#lfo-depth').press('End');
+  await page.locator('#lfo-depth').press('Home');
   const before = await values();
   const geometry = await displays.evaluate((element) => ({
     space: element.getBoundingClientRect().height + parseFloat(getComputedStyle(element).marginBottom),
@@ -208,7 +208,7 @@ test('Hide Displays removes reserved space and preserves controls, view modes an
     await page.locator(`#${id}`).click();
   }
   expect(await values()).toEqual(before);
-  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#lfo-depth').press('End');
   await expect(page.locator('#preview-lfo .graph-number').first()).toHaveText('0');
   await toggle.press('Enter');
   await expect(displays).toBeVisible();
@@ -231,9 +231,9 @@ test('display resets restore only their section, with shared EG resets and safe 
   const defaultCurves = await page.locator('.visualization-card').evaluateAll((cards) =>
     Object.fromEntries(cards.map((card) => [card.id, card.querySelector('.graph-curve').getAttribute('d')])));
   for (const [id, value] of Object.entries(defaults)) {
-    await page.locator(`#${id}`).press(value === 0 ? 'End' : 'Home');
+    await page.locator(`#${id}`).press(value === 0 ? 'Home' : 'End');
   }
-  await page.locator('#volume').press('End');
+  await page.locator('#volume').press('Home');
   await page.locator('#volume-mute').click();
   await page.locator('#pitch-range-up').click();
   const modes = ['focus-mode', 'hide-speakers', 'five-octaves', 'fader-size'];
@@ -244,7 +244,7 @@ test('display resets restore only their section, with shared EG resets and safe 
     ['amp-eg', 'eg', ' '], ['filter-eg', 'eg', 'Enter'], ['effect', 'effect', null],
   ]) {
     for (const [id, value] of Object.entries(defaults)) {
-      if (id.startsWith(`${section}-`)) await page.locator(`#${id}`).press(value === 0 ? 'End' : 'Home');
+      if (id.startsWith(`${section}-`)) await page.locator(`#${id}`).press(value === 0 ? 'Home' : 'End');
     }
     const before = await state();
     if (display === 'lfo') {
@@ -351,6 +351,196 @@ test('keys remain independent and release outside the panel or after cancellatio
   await page.keyboard.up('Enter');
 });
 
+test('QWERTY plays the chromatic middle octave and independent chords in both keyboard views', async ({ page }) => {
+  const mapping = [
+    ['a', 'c-2'], ['w', 'cs-2'], ['s', 'd-2'], ['e', 'ds-2'], ['d', 'e-2'],
+    ['f', 'f-2'], ['t', 'fs-2'], ['g', 'g-2'], ['y', 'gs-2'], ['h', 'a-2'],
+    ['u', 'as-2'], ['j', 'b-2'], ['k', 'c-3'],
+  ];
+  for (const expanded of [false, true]) {
+    if (expanded) await page.locator('#five-octaves').click();
+    for (const [letter, id] of mapping) {
+      await page.keyboard.down(letter);
+      await expect(page.locator(`#key-${id}`)).toHaveAttribute('aria-pressed', 'true');
+    }
+    await expect(page.locator('.key.is-pressed')).toHaveCount(13);
+    for (const [index, [letter, id]] of mapping.entries()) {
+      await page.keyboard.up(letter);
+      await expect(page.locator(`#key-${id}`)).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.locator('.key.is-pressed')).toHaveCount(12 - index);
+    }
+  }
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('a');
+  await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.up('Shift');
+  await page.keyboard.up('a');
+  await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+});
+
+test('QWERTY, pointer and focused-key presses retain independent ownership through the overlays', async ({ page }) => {
+  await page.locator('#focus-mode').click();
+  for (const [letter, id] of [['a', 'c-2'], ['w', 'cs-2']]) {
+    const key = page.locator(`#key-${id}`);
+    const overlay = await key.locator('.key-letter').boundingBox();
+    await page.mouse.move(overlay.x + overlay.width / 2, overlay.y + overlay.height / 2);
+    await page.mouse.down();
+    await page.keyboard.down(letter);
+    await page.keyboard.down(' ');
+    await page.keyboard.up(letter);
+    await expect(key).toHaveAttribute('aria-pressed', 'true');
+    await page.mouse.up();
+    await expect(key).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.up(' ');
+    await expect(key).toHaveAttribute('aria-pressed', 'false');
+
+    await page.keyboard.down(letter);
+    await page.keyboard.press('Enter');
+    await expect(key).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.up(letter);
+    await expect(key).toHaveAttribute('aria-pressed', 'false');
+  }
+  for (const id of ['octave', 'transpose']) {
+    const fader = page.locator(`#${id}`);
+    const bottom = await faderPoint(page, id, 80);
+    const top = await faderPoint(page, id, 0);
+    await page.keyboard.down('a');
+    await page.mouse.move(bottom.x, bottom.y);
+    await page.mouse.down();
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await expect(fader).toHaveClass(/is-dragging/);
+    await page.mouse.move(top.x, top.y, { steps: 5 });
+    await expect(fader).toHaveAttribute('aria-valuenow', id === 'octave' ? '4' : '6');
+    await expect(fader).toHaveClass(/is-dragging/);
+    await page.mouse.up();
+    await page.keyboard.up('a');
+    await expect(fader).not.toHaveClass(/is-dragging/);
+  }
+});
+
+test('Focus key labels follow both pitch controls while letters stay anchored and pitch changes release notes', async ({ page }) => {
+  await expect(page.locator('.key-note:visible')).toHaveCount(0);
+  await expect(page.locator('.key-letter:visible')).toHaveCount(0);
+  await page.locator('#focus-mode').click();
+  const letterSize = await page.locator('#key-c-2 .key-letter').boundingBox();
+  for (const expanded of [false, true]) {
+    if (expanded) await page.locator('#five-octaves').click();
+    await expect(page.locator('.key-note:visible')).toHaveCount(expanded ? 61 : 37);
+    await expect(page.locator('.key-letter:visible')).toHaveCount(13);
+    await expect(page.locator('#key-c-2 .key-letter')).toHaveText('a');
+    await expect(page.locator('#key-c-3 .key-letter')).toHaveText('k');
+    const mappedLetter = await page.locator('#key-c-2 .key-letter').boundingBox();
+    expect(mappedLetter.width).toBeCloseTo(letterSize.width, 1);
+    expect(mappedLetter.height).toBeCloseTo(letterSize.height, 1);
+    await expect(page.locator('#key-c-2 .key-note')).toHaveText('C4');
+    await expect(page.locator('#key-cs-2 .key-note')).toHaveText('C#4');
+    await expect(page.locator(`#key-c-${expanded ? 0 : 1} .key-note`)).toHaveText(expanded ? 'C2' : 'C3');
+    await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'C7' : 'C6');
+
+    const misplaced = await page.locator('.key:visible').evaluateAll((keys) => keys.flatMap((key) => {
+      const label = key.querySelector('.key-note');
+      const bounds = label.getBoundingClientRect();
+      const surface = key.querySelector('use').getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      return bounds.top >= surface.top && bounds.bottom < surface.top + 20
+        && hit?.closest('.key') === key ? [] : [key.id];
+    }));
+    expect(misplaced).toEqual([]);
+    await page.keyboard.down('a');
+    await page.keyboard.down('g');
+    await page.locator('#octave').press('ArrowUp');
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await expect(page.locator('#key-c-2 .key-note')).toHaveText('C5');
+    await page.keyboard.down('a');
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await page.keyboard.up('a');
+    await page.keyboard.up('g');
+
+    await page.keyboard.down('a');
+    await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#transpose').press('ArrowUp');
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await page.keyboard.up('a');
+    await expect(page.locator('#key-c-2 .key-note')).toHaveText('C#5');
+    await expect(page.locator('#key-c-2 .key-letter')).toHaveText('a');
+    await expect(page.locator('#key-c-2')).toHaveAttribute('aria-label', 'C sharp, octave 5');
+    await expect(page.locator('#key-c-2 title')).toHaveText('C sharp, octave 5');
+    await page.keyboard.down('a');
+    await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.up('a');
+
+    await page.locator('#octave').press('End');
+    await page.locator('#transpose').press('End');
+    await expect(page.locator(`#key-c-${expanded ? 0 : 1} .key-note`)).toHaveText(expanded ? 'F#-1' : 'F#0');
+    await page.keyboard.down('a');
+    await page.locator('#octave').press('End');
+    await page.locator('#transpose').press('End');
+    await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.up('a');
+    await page.locator('#octave').press('Home');
+    await page.locator('#transpose').press('Home');
+    await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'F#9' : 'F#8');
+    await page.locator('#reset-faders').click();
+    await expect(page.locator('#key-c-2 .key-note')).toHaveText('C4');
+  }
+  await page.locator('#focus-mode').click();
+  await expect(page.locator('.key-note:visible')).toHaveCount(0);
+  await expect(page.locator('.key-letter:visible')).toHaveCount(0);
+});
+
+test('QWERTY ignores typing and shortcuts and clears held notes on layout changes and loss of visibility', async ({ page }) => {
+  await page.evaluate(() => {
+    const fields = document.createElement('div');
+    fields.id = 'typing-fields';
+    fields.innerHTML = '<input><textarea></textarea><select><option>A</option></select>'
+      + '<div contenteditable="true">editable</div><div role="textbox" tabindex="0"></div>';
+    document.body.append(fields);
+  });
+  for (const selector of ['input', 'textarea', 'select', '[contenteditable]', '[role="textbox"]']) {
+    await page.locator(`#typing-fields ${selector}`).focus();
+    await page.keyboard.press('a');
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+  }
+  await expect(page.locator('#typing-fields input')).toHaveValue('a');
+  await page.locator('#volume').focus();
+  const consumed = await page.evaluate(() => ['ctrlKey', 'altKey', 'metaKey', 'isComposing', 'repeat'].map((flag) => {
+    const event = new KeyboardEvent('keydown', {
+      code: 'KeyA', key: 'a', bubbles: true, cancelable: true, [flag]: true,
+    });
+    document.body.dispatchEvent(event);
+    return event.defaultPrevented;
+  }));
+  expect(consumed).toEqual([false, false, false, false, false]);
+  await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+
+  await page.keyboard.down('a');
+  await page.locator('#focus-mode').click();
+  await page.locator('#hide-displays').click();
+  await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.up('a');
+  for (const id of ['five-octaves', 'hide-speakers', 'fader-size', 'reset-faders']) {
+    await page.keyboard.down('a');
+    await page.keyboard.down('w');
+    await expect(page.locator('.key.is-pressed')).toHaveCount(2);
+    await page.locator(`#${id}`).click();
+    await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+    await page.keyboard.up('a');
+    await page.keyboard.up('w');
+  }
+  await page.keyboard.down('a');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+  await page.keyboard.up('a');
+  await page.keyboard.down('a');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.hidden;
+  });
+  await expect(page.locator('.key.is-pressed')).toHaveCount(0);
+  await page.keyboard.up('a');
+});
+
 test('faders drag to their limits without jumping when the handle is grabbed', async ({ page }) => {
   const fader = page.locator('#filter-cutoff');
   const cap = fader.locator('.cap');
@@ -414,6 +604,113 @@ test('2x doubles travel without scaling keys or handles or changing values', asy
   expect(restored.value).toBe('0');
 });
 
+test('wheel adjusts only the hovered fader with Alt steps and blocks page scrolling locally', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  const fader = page.locator('#filter-cutoff');
+  await fader.press('End');
+  await page.locator('#focus-mode').focus();
+  await fader.locator('.cap').hover();
+  const scrollY = await page.evaluate(() => window.scrollY);
+  const graph = page.locator('#preview-filter .graph-curve');
+  const initialCurve = await graph.getAttribute('d');
+  await page.mouse.wheel(0, -120);
+  await expect(fader).toHaveAttribute('aria-valuenow', '1');
+  await expect(graph).not.toHaveAttribute('d', initialCurve);
+  await expect(page.locator('#fader-value-filter-cutoff')).toHaveText('1');
+  await expect(page.locator('#filter-resonance')).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('#focus-mode')).toBeFocused();
+  await page.keyboard.down('Alt');
+  await page.mouse.wheel(0, -120);
+  await expect(fader).toHaveAttribute('aria-valuenow', '11');
+  await page.keyboard.up('Alt');
+  await page.mouse.wheel(0, 120);
+  await expect(fader).toHaveAttribute('aria-valuenow', '10');
+  await page.keyboard.down('Shift');
+  await page.mouse.wheel(0, -120);
+  await expect(fader).toHaveAttribute('aria-valuenow', '11');
+  await page.keyboard.up('Shift');
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollY);
+  await fader.press('Shift+ArrowUp');
+  await expect(fader).toHaveAttribute('aria-valuenow', '21');
+
+  for (const [key, deltaY, value] of [['Home', -120, '127'], ['End', 120, '0']]) {
+    await fader.press(key);
+    const allowed = await fader.evaluate((element, delta) =>
+      element.dispatchEvent(new WheelEvent('wheel', { deltaY: delta, bubbles: true, cancelable: true })), deltaY);
+    expect(allowed).toBe(false);
+    await expect(fader).toHaveAttribute('aria-valuenow', value);
+  }
+  await page.locator('h1').hover();
+  const outsideScrollY = await page.evaluate(() => window.scrollY);
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(outsideScrollY);
+});
+
+test('Alt wheel keeps selectors and Transpose at single steps in compact double-travel mode', async ({ page }) => {
+  for (const id of ['hide-displays', 'hide-speakers', 'focus-mode', 'five-octaves', 'fader-size']) {
+    await page.locator(`#${id}`).click();
+  }
+  for (const id of ['octave', 'looper', 'lfo-assign', 'osc-type', 'effect-type', 'transpose']) {
+    const fader = page.locator(`#${id}`);
+    await fader.press('End');
+    const min = Number(await fader.getAttribute('aria-valuemin'));
+    const target = id === 'osc-type' ? fader.locator('.position-label').first() : fader.locator('.cap');
+    await target.hover();
+    await page.keyboard.down('Alt');
+    await page.mouse.wheel(0, -120);
+    await expect(fader).toHaveAttribute('aria-valuenow', String(min + 1));
+    if (id === 'osc-type') {
+      await expect(fader.locator('.selection-led[data-value="1"]')).toHaveClass(/is-on/);
+    }
+    if (id === 'octave') {
+      await expect(page.locator('.octave-step[data-step="-1"]')).toHaveAttribute('aria-disabled', 'false');
+    }
+    if (id === 'transpose') await expect(page.locator('#transpose-value')).toHaveText('-5');
+    await page.mouse.wheel(0, 120);
+    await expect(fader).toHaveAttribute('aria-valuenow', String(min));
+    await page.keyboard.up('Alt');
+  }
+});
+
+test('wheel respects mute restoration, pitch bend behavior and ignored zoom or horizontal events', async ({ page }) => {
+  const wheel = (id, options) => page.locator(`#${id}`).evaluate((element, init) =>
+    element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })), options);
+  const mute = page.locator('#volume-mute');
+  await mute.click();
+  for (const options of [{ deltaY: -120, ctrlKey: true }, { deltaX: 120, deltaY: 0 },
+    { deltaX: 120, deltaY: 1 }, { deltaY: 0 }]) {
+    expect(await wheel('volume', options)).toBe(true);
+    await expect(mute).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '0');
+  }
+  expect(await wheel('volume', { deltaY: 120 })).toBe(false);
+  await expect(mute).toHaveAttribute('aria-disabled', 'true');
+  expect(await wheel('volume', { deltaY: -1, deltaMode: 1 })).toBe(false);
+  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '1');
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+  expect(await wheel('pitch-bend', { deltaY: -1, deltaMode: 2 })).toBe(false);
+  await page.locator('h1').hover();
+  await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '65');
+});
+
+test('Home moves every fader to the top and End to the bottom at both travel sizes', async ({ page }) => {
+  for (const travel of [80, 160]) {
+    if (travel === 160) {
+      await page.locator('#fader-size').click();
+      await page.locator('#hide-speakers').click();
+      await page.locator('#focus-mode').click();
+    }
+    for (const fader of await page.getByRole('slider').all()) {
+      await fader.press('Home');
+      await expect(fader).toHaveAttribute('aria-valuenow', await fader.getAttribute('aria-valuemax'));
+      await expect(fader.locator('.cap')).toHaveAttribute('y', '0');
+      await fader.press('End');
+      await expect(fader).toHaveAttribute('aria-valuenow', await fader.getAttribute('aria-valuemin'));
+      await expect(fader.locator('.cap')).toHaveAttribute('y', String(travel));
+    }
+  }
+});
+
 test('keyboard fader changes are bounded and update the local looper LEDs', async ({ page }) => {
   const looper = page.locator('#looper');
   await looper.focus();
@@ -425,10 +722,10 @@ test('keyboard fader changes are bounded and update the local looper LEDs', asyn
   await expect(looper).toHaveAttribute('aria-valuetext', 'Record');
   await expect(looper.locator('.selection-led[data-value="2"]')).not.toHaveClass(/is-on/);
   await expect(looper.locator('.selection-led[data-value="3"]')).toHaveClass(/is-on/);
-  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
   await page.keyboard.press('ArrowUp');
   await expect(looper).toHaveAttribute('aria-valuenow', '4');
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   await page.keyboard.press('ArrowDown');
   await expect(looper).toHaveAttribute('aria-valuenow', '0');
   await expect(looper.locator('.selection-led.is-on')).toHaveCount(0);
@@ -571,13 +868,13 @@ test('page load and Reset apply the requested fader positions without changing t
     if (travel === 160) await page.locator('#fader-size').click();
     for (const fader of await page.getByRole('slider').all()) {
       await fader.focus();
-      await page.keyboard.press('End');
+      await page.keyboard.press('Home');
     }
     await page.locator('#looper').focus();
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('#looper .selection-led.is-on')).toHaveCount(1);
     await page.locator('#filter-cutoff').focus();
-    await page.keyboard.press('Home');
+    await page.keyboard.press('End');
 
     await page.locator('#key-c-1').focus();
     await page.keyboard.down(' ');
@@ -650,7 +947,7 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
     await page.mouse.click(looperTop.x, looperTop.y);
     await expect(page.locator('#fader-value-looper')).toHaveText('4');
     await page.locator('#filter-cutoff').focus();
-    await page.keyboard.press('Home');
+    await page.keyboard.press('End');
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('#fader-value-filter-cutoff')).toHaveText('1');
     await page.locator('#reset-faders').click();
@@ -776,7 +1073,7 @@ test('end panels synchronize the bounded Octave selector in every view combinati
         await expect(octave.locator('.cap')).toHaveAttribute('y', '0');
 
         await octave.focus();
-        await page.keyboard.press('Home');
+        await page.keyboard.press('End');
         await expect(down).toHaveAttribute('aria-disabled', 'true');
         await down.focus();
         await page.keyboard.press(' ');
@@ -835,10 +1132,10 @@ test('Transpose snaps to semitones, stays centered at zero, and displays its sig
     }
   }
   await transpose.focus();
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   await page.keyboard.press('ArrowDown');
   await expect(topLabel).toHaveText('-6');
-  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
   await page.keyboard.press('ArrowUp');
   await expect(topLabel).toHaveText('+6');
   await page.keyboard.press('Shift+ArrowDown');
@@ -850,48 +1147,80 @@ test('Transpose snaps to semitones, stays centered at zero, and displays its sig
   await expect(topLabel).toHaveText('0');
 });
 
-test('double-click resets only the selected fader and refreshes its LEDs and octave end state', async ({ page }) => {
-  const snapshot = () => page.locator('.fader').evaluateAll((faders) =>
-    Object.fromEntries(faders.map((fader) => [fader.id, fader.dataset.value])));
-  const starting = await snapshot();
-  for (const travel of [80, 160]) {
-    if (travel === 160) {
-      await page.locator('#fader-size').click();
-      await page.locator('#hide-speakers').click();
-      await page.locator('#focus-mode').click();
-    }
-    for (const fader of await page.getByRole('slider').all()) {
-      const id = await fader.getAttribute('id');
-      const min = await fader.getAttribute('aria-valuemin');
-      const max = await fader.getAttribute('aria-valuemax');
-      await fader.focus();
-      await page.keyboard.press(starting[id] === max ? 'Home' : 'End');
-      expect(await fader.getAttribute('aria-valuenow'), id).not.toBe(starting[id]);
-      const before = await snapshot();
-      await fader.locator('.cap').dblclick();
-      await expect(fader).toHaveAttribute('aria-valuenow', starting[id]);
-      expect(await snapshot()).toEqual({ ...before, [id]: starting[id] });
-      if (id === 'transpose') {
-        await expect(page.locator('#transpose-value')).toHaveText('0');
-      } else if (id === 'octave') {
-        await expect(page.locator('#octave-down')).toHaveAttribute('aria-disabled', 'false');
-        await expect(page.locator('#octave-up')).toHaveAttribute('aria-disabled', 'false');
+for (const reset of ['double-click', 'Delete']) {
+  test(`${reset} resets only the selected fader and refreshes its LEDs and octave end state`, async ({ page }) => {
+    const snapshot = () => page.locator('.fader').evaluateAll((faders) =>
+      Object.fromEntries(faders.map((fader) => [fader.id, fader.dataset.value])));
+    const starting = await snapshot();
+    for (const travel of [80, 160]) {
+      if (travel === 160) {
+        await page.locator('#fader-size').click();
+        await page.locator('#hide-speakers').click();
+        await page.locator('#focus-mode').click();
       }
-      if (max === '4' && min === '0') {
-        if (id === 'osc-type') {
-          await expect(page.locator('#osc-saw-led')).toHaveClass(/is-on/);
-        } else if (id === 'looper') {
-          await expect(fader.locator('.selection-led.is-on')).toHaveCount(0);
+      for (const fader of await page.getByRole('slider').all()) {
+        const id = await fader.getAttribute('id');
+        const min = await fader.getAttribute('aria-valuemin');
+        const max = await fader.getAttribute('aria-valuemax');
+        await fader.focus();
+        await page.keyboard.press(starting[id] === max ? 'End' : 'Home');
+        expect(await fader.getAttribute('aria-valuenow'), id).not.toBe(starting[id]);
+        const before = await snapshot();
+        if (reset === 'Delete') await fader.press('Delete');
+        else await fader.locator('.cap').dblclick();
+        await expect(fader).toHaveAttribute('aria-valuenow', starting[id]);
+        expect(await snapshot()).toEqual({ ...before, [id]: starting[id] });
+        if (id === 'transpose') {
+          await expect(page.locator('#transpose-value')).toHaveText('0');
+        } else if (id === 'octave') {
+          await expect(page.locator('#octave-down')).toHaveAttribute('aria-disabled', 'false');
+          await expect(page.locator('#octave-up')).toHaveAttribute('aria-disabled', 'false');
+        }
+        if (max === '4' && min === '0') {
+          if (id === 'osc-type') {
+            await expect(page.locator('#osc-saw-led')).toHaveClass(/is-on/);
+          } else if (id === 'looper') {
+            await expect(fader.locator('.selection-led.is-on')).toHaveCount(0);
+          }
         }
       }
+      await expect(page.locator('#fader-size')).toHaveAttribute('aria-pressed', String(travel === 160));
+      await expect(page.locator('#focus-mode')).toHaveAttribute('aria-pressed', String(travel === 160));
+      await expect(page.locator('#hide-speakers')).toHaveAttribute('aria-pressed', String(travel === 160));
     }
-    await expect(page.locator('#fader-size')).toHaveAttribute('aria-pressed', String(travel === 160));
-    await expect(page.locator('#focus-mode')).toHaveAttribute('aria-pressed', String(travel === 160));
-    await expect(page.locator('#hide-speakers')).toHaveAttribute('aria-pressed', String(travel === 160));
-  }
-  const trackPoint = await faderPoint(page, 'filter-cutoff', 160);
-  await page.mouse.dblclick(trackPoint.x, trackPoint.y);
+    const trackPoint = await faderPoint(page, 'filter-cutoff', 160);
+    await page.mouse.dblclick(trackPoint.x, trackPoint.y);
+    await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+  });
+}
+
+test('Delete ends an active drag and resets mute state without resetting other controls', async ({ page }) => {
+  const filter = page.locator('#filter-cutoff');
+  const initialCurve = await page.locator('#preview-filter .graph-curve').getAttribute('d');
+  await filter.press('End');
+  const handle = await filter.locator('.cap').boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await expect(filter).toHaveClass(/is-dragging/);
+  await page.keyboard.press('Delete');
+  await expect(filter).not.toHaveClass(/is-dragging/);
+  const bottom = await faderPoint(page, 'filter-cutoff', 80);
+  await page.mouse.move(bottom.x + 2, bottom.y);
+  await page.mouse.up();
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+  await expect(page.locator('#preview-filter .graph-curve')).toHaveAttribute('d', initialCurve);
+  await page.locator('#volume-mute').click();
+  await page.locator('#volume').press('Delete');
+  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '64');
+  await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#pitch-range-up').click();
+  await page.locator('#pitch-bend').press('Home');
+  await page.locator('#pitch-bend').press('Delete');
+  await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '64');
+  await expect(page.locator('#pitch-range-value')).toHaveText('13');
+  await filter.press('End');
+  await page.locator('#focus-mode').press('Delete');
+  await expect(filter).toHaveAttribute('aria-valuenow', '0');
 });
 
 test('5 Octaves fits the expanded range in the same frame without changing controls in any view', async ({ page }) => {
@@ -966,8 +1295,8 @@ test('added keys support independent presses and cancellation, and switching rel
   await expect(page.locator('.key.is-pressed')).toHaveCount(0);
   await page.keyboard.up(' ');
 
-  const low = page.getByRole('button', { name: 'C, octave 0', exact: true });
-  const high = page.getByRole('button', { name: 'C, octave 5', exact: true });
+  const low = page.getByRole('button', { name: 'C, octave 2', exact: true });
+  const high = page.getByRole('button', { name: 'C, octave 7', exact: true });
   const lowBox = await low.boundingBox();
   await page.mouse.move(lowBox.x + lowBox.width / 2, lowBox.y + lowBox.height * 0.8);
   await page.mouse.down();
@@ -985,7 +1314,7 @@ test('added keys support independent presses and cancellation, and switching rel
   await expect(page.locator('#key-c-5')).toBeHidden();
 
   await toggle.click();
-  const sharp = page.getByRole('button', { name: 'C sharp, octave 4', exact: true });
+  const sharp = page.getByRole('button', { name: 'C sharp, octave 6', exact: true });
   const sharpBox = await sharp.boundingBox();
   await page.mouse.move(sharpBox.x + sharpBox.width / 2, sharpBox.y + sharpBox.height / 2);
   await page.mouse.down();
@@ -1109,7 +1438,7 @@ test('glow eases in and out even with reduced motion, without animating handle m
 
   const fader = page.locator('#filter-cutoff');
   await fader.focus();
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   await expect(fader.locator('.cap')).toHaveAttribute('y', '80');
   await expect(fader.locator('.cap')).toHaveCSS('transition-property', 'filter');
   await expect(page.locator('#key-c-1 use')).toHaveCSS('transition-duration', '0s');
@@ -1132,7 +1461,7 @@ test('MUTE saves and restores Volume across view changes and supports keyboard a
   await expect(mute).toHaveAttribute('aria-pressed', 'true');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
   await page.locator('#filter-cutoff').focus();
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   for (const id of ['focus-mode', 'hide-speakers', 'fader-size', 'five-octaves']) {
     await page.locator(`#${id}`).click();
     await expect(label).toHaveText('UNMUTE');
@@ -1153,7 +1482,7 @@ test('MUTE saves and restores Volume across view changes and supports keyboard a
   await expect(volume).toHaveAttribute('aria-valuenow', '73');
 
   await volume.focus();
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   await mute.click();
   await expect(label).toHaveText('UNMUTE');
   await mute.click();
@@ -1185,7 +1514,7 @@ test('touching muted Volume discards restoration even at zero, and positive volu
 
   await mute.click();
   await volume.focus();
-  await page.keyboard.press('Home');
+  await page.keyboard.press('End');
   await expect(mute).toHaveAttribute('aria-disabled', 'true');
   await volume.locator('.cap').dblclick();
   await expect(volume).toHaveAttribute('aria-valuenow', '64');
@@ -1231,7 +1560,7 @@ test('pitch bend range steps by semitones, stays within 0-24, and does not move 
     faders.map((fader) => fader.dataset.value));
   await expect(range).toHaveText('12');
   await bend.focus();
-  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
   const before = await snapshot();
   for (let value = 11; value >= 0; value--) {
     await down.click();
