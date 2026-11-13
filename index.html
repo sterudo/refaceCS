@@ -7,9 +7,60 @@
   </head>
   <body>
     <main>
-      <h1>refaceCS</h1>
-      <p>A local controller for the Yamaha reface CS synthesizer.</p>
-      <p id="app-status" role="status">Loading application...</p>
+      <header class="toolbar">
+        <div>
+          <h1>reface<span>CS</span></h1>
+          <p>Interactive panel study <span id="midi-badge" class="badge" role="status">MIDI not connected</span></p>
+        </div>
+        <div class="toolbar-actions">
+          <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
+            Focus Mode
+          </button>
+          <button id="hide-speakers" type="button" aria-pressed="false" aria-controls="synth">
+            Hide Speakers
+          </button>
+          <button id="hide-displays" type="button" aria-pressed="false" aria-controls="visualizations">
+            Hide Displays
+          </button>
+          <button id="five-octaves" type="button" aria-pressed="false" aria-controls="synth">
+            5 Octaves
+          </button>
+          <button id="reset-faders" type="button" aria-controls="synth">
+            Reset <span>faders</span>
+          </button>
+          <button id="fader-size" type="button" aria-pressed="false" aria-controls="synth">
+            2x <span>fader travel</span>
+          </button>
+        </div>
+      </header>
+      <section class="midi-settings" aria-label="MIDI devices">
+        <button id="midi-connect" type="button">Connect MIDI</button>
+        <button id="midi-reset" type="button">MIDI Reset</button>
+        <button id="capture-synth" type="button">Capture Synth</button>
+        <label><input id="position-velocity" type="checkbox"> Position-sensitive velocity</label>
+        <div class="midi-ports">
+          <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
+          <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
+          <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
+        </div>
+        <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+        <p id="capture-status" role="status"></p>
+      </section>
+      <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
+      <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
+        <div id="synth"></div>
+      </div>
+      <footer>
+        <p id="arp-status" role="status">Arpeggiator off.</p>
+        <p id="app-status" role="status">Loading panel...</p>
+        <p class="help">Hold keys to press them. Drag faders, scroll the wheel over one, or focus one and use arrow keys.
+          Alt+wheel makes larger changes on continuous faders.
+          Home sets the top; End sets the bottom. Double-click or press Delete on a focused fader to reset it.
+          A W S E D F T G Y H U J K plays the middle octave; hold multiple letters for chords.
+          Focus Mode shows letters and transposed note names.
+          Click the left/right ends to shift octave down/up.
+          LEDs show local selections only.</p>
+      </footer>
       <noscript>Enable JavaScript to use this application.</noscript>
     </main>
     <script type="module" src="/src/main.js"></script>
