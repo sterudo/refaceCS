@@ -15,6 +15,13 @@ The current page is an interactive SVG panel built with vanilla JavaScript, HTML
 It discovers MIDI devices, routes notes, synchronizes documented synth controls, and manages local patch cards with optional MP3 previews.
 The surrounding page and toolbar use a dark theme; the synth retains its original light case.
 
+## Deployment
+
+The GitHub Actions workflow deploys the static app to GitHub Pages when changes are pushed to `main`, or when run manually.
+Enable GitHub Pages in the repository settings with **Build and deployment → Source: GitHub Actions**.
+After the workflow succeeds, the app is available at <https://sterudo.github.io/refaceCS/>.
+The Pages build uses `/refaceCS/` as its asset base; local builds continue to use `/static/reface/`.
+
 ## Interactive panel
 
 - **Connect MIDI** requests ordinary browser MIDI access and lists available ports. A unique port containing "reface" is selected automatically for each direction; correct the reface input and output selections if their names differ or are ambiguous. The controller input defaults to the reface input and can be changed independently. The badge reports port availability, not verified hardware identity. No settings are sent on connect.
