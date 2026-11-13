@@ -55,7 +55,84 @@
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="synth"></div>
       </div>
+      <section id="patch-library" class="patch-library" aria-labelledby="patch-library-title">
+        <header class="patch-library-header">
+          <div>
+            <h2 id="patch-library-title">Patch library</h2>
+            <p>Save and recall sound settings, organize patches, and preview attached audio.</p>
+          </div>
+          <div class="patch-library-actions">
+            <button id="patch-save" type="button">Save current sound</button>
+            <button id="patch-import" type="button">Import ZIP</button>
+            <button id="patch-export" type="button" disabled>Export ZIP</button>
+          </div>
+        </header>
+        <div class="patch-filters" aria-label="Filter patches">
+          <label class="patch-favorite-filter"><input id="patch-favorites-only" type="checkbox"> Favorites</label>
+          <input id="patch-name-filter" type="search" placeholder="Search patch names" aria-label="Search patch names">
+          <button id="patch-clear-filters" type="button">Clear filters</button>
+          <div class="patch-filter-actions">
+            <button id="patch-view-toggle" type="button" aria-pressed="false" title="Show patch descriptions and labeled fader values instead of compact fader outlines.">Detailed snapshots</button>
+            <button id="patch-manage-labels" type="button">Manage categories / tags</button>
+          </div>
+          <fieldset><legend>Categories</legend><div id="patch-category-filter" class="patch-filter-chips"></div></fieldset>
+          <fieldset><legend>Tags</legend><div id="patch-tag-filter" class="patch-filter-chips"></div></fieldset>
+        </div>
+        <p id="patch-status" role="status">Opening patch library...</p>
+        <div id="patch-cards" class="patch-cards"></div>
+      </section>
       <input id="looper-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+      <input id="patch-import-file" type="file" accept=".zip,application/zip" hidden>
+      <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
+      <dialog id="patch-recorder" class="patch-editor">
+        <h2>Record patch audio</h2>
+        <p>Connect the synth's audio output to an audio interface. USB MIDI does not carry audio.
+          Recordings stay in this browser and are limited to 10 seconds.</p>
+        <label>Audio input
+          <select id="patch-record-input"></select>
+        </label>
+        <p id="patch-record-status" role="status"></p>
+        <p id="patch-record-warning" role="status" hidden></p>
+        <audio controls hidden aria-label="Recorded MP3 preview"></audio>
+        <div class="patch-editor-actions">
+          <button id="patch-record-start" type="button" disabled>Start recording</button>
+          <button id="patch-record-stop" type="button" disabled>Stop</button>
+          <button id="patch-record-save" type="button" disabled>Save MP3</button>
+          <button id="patch-record-discard" type="button">Discard</button>
+        </div>
+      </dialog>
+      <dialog id="patch-label-manager" class="patch-editor">
+        <h2>Categories and tags</h2>
+        <p>Only unused categories can be deleted. Deleting a tag removes it from all patches.</p>
+        <h3>Categories</h3>
+        <div id="patch-managed-categories" class="patch-managed-labels"></div>
+        <h3>Tags</h3>
+        <div id="patch-managed-tags" class="patch-managed-labels"></div>
+        <p id="patch-label-status" role="status"></p>
+        <button id="patch-label-manager-close" type="button">Close</button>
+      </dialog>
+      <dialog id="patch-editor" class="patch-editor">
+        <form id="patch-editor-form">
+          <h2>Patch details</h2>
+          <label> Name
+            <input id="patch-name" name="name" required autocomplete="off">
+          </label>
+          <label> Description
+            <textarea id="patch-description" name="description" rows="3"></textarea>
+          </label>
+          <label> Main category
+            <input id="patch-category" name="category" list="patch-category-options" value="synth" required>
+            <datalist id="patch-category-options"></datalist>
+          </label>
+          <label> Tags, separated by commas
+            <input id="patch-tags" name="tags" autocomplete="off">
+          </label>
+          <div class="patch-editor-actions">
+            <button id="patch-editor-cancel" type="button">Cancel</button>
+            <button type="submit">Save patch</button>
+          </div>
+        </form>
+      </dialog>
       <footer>
         <p id="looper-status" role="status">Looper stopped.</p>
         <p id="arp-status" role="status">Arpeggiator off.</p>

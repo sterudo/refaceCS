@@ -356,6 +356,456 @@ input[type="range"]:focus-visible,
   height: auto;
 }
 
+.patch-library {
+  margin-top: 1.5rem;
+}
+
+.patch-library-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.patch-library-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.patch-library-header p {
+  margin: 0.2rem 0 0;
+  color: #a3b0b8;
+  font-size: 0.85rem;
+}
+
+.patch-library-actions,
+.patch-filters,
+.patch-filter-actions,
+.patch-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.patch-library-actions button,
+.patch-filters > button,
+.patch-filter-actions button,
+.patch-editor-actions button {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+#patch-save {
+  background: #287a46;
+  border-color: #53ab70;
+  color: #fff;
+  font-weight: 700;
+}
+
+.patch-filter-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.patch-filters {
+  margin-bottom: 0.75rem;
+  color: #b6c3c9;
+  font-size: 0.85rem;
+}
+
+.patch-filters label,
+.patch-editor label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.patch-filters fieldset {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0.4rem 0.6rem 0.6rem;
+  border: 1px solid #415159;
+  border-radius: 0.4rem;
+}
+
+.patch-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.patch-filter-chip {
+  padding: 0.25rem 0.7rem;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+}
+
+.patch-filters input[type="search"] {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.35rem;
+  background: #202b33;
+  color: #dce4e8;
+  font: inherit;
+}
+
+.patch-managed-labels {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.patch-managed-labels > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.patch-managed-labels button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.patch-fader-outline {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0.6rem 0;
+}
+
+.patch-outline-track {
+  stroke: #53636b;
+  stroke-width: 1;
+}
+
+.patch-outline-cap {
+  stroke: #b6e4e8;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.patch-fader-outline text {
+  fill: #a9c5cc;
+  font: 7px system-ui, sans-serif;
+  text-anchor: middle;
+}
+
+.patch-card:focus-visible {
+  outline: 2px solid #75c6d3;
+  outline-offset: 3px;
+}
+
+.patch-favorite-filter {
+  display: flex !important;
+  align-items: center;
+  gap: 0.4rem !important;
+  margin-right: 0.5rem;
+}
+
+.patch-filters select,
+.patch-editor input,
+.patch-editor select,
+.patch-editor textarea {
+  min-width: 10rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.35rem;
+  background: #202b33;
+  color: #dce4e8;
+  font: inherit;
+}
+
+#patch-recorder audio {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.patch-editor-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#patch-status {
+  margin: 0.5rem 0;
+  color: #a3b0b8;
+  font-size: 0.85rem;
+}
+
+.patch-inline-play {
+  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.patch-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 500px));
+  align-items: start;
+  justify-content: start;
+  gap: 1rem;
+}
+
+.patch-empty {
+  color: #a3b0b8;
+}
+
+.patch-card {
+  min-width: 0;
+  max-width: 500px;
+  padding: 1rem;
+  border: 1px solid #415159;
+  border-radius: 0.65rem;
+  background: linear-gradient(145deg, #253139, #111b22);
+  box-shadow: 0 8px 18px #17282f30, inset 0 1px #ffffff0c;
+}
+
+.patch-card.is-selected {
+  border-color: #75c6d3;
+  box-shadow: 0 0 0 1px #75c6d344, 0 8px 18px #17282f30;
+}
+
+.patch-card > header,
+.patch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.patch-card > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+}
+
+.patch-card h3 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.05rem;
+}
+
+.patch-card h4 {
+  margin: 0 0 0.35rem;
+  color: #a9c5cc;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.patch-card button {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.patch-icon-button:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.patch-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.patch-icon-play,
+.patch-icon-up,
+.patch-icon-down {
+  fill: currentColor;
+  stroke: none;
+}
+
+.patch-card .patch-favorite {
+  background: transparent;
+  border-color: transparent;
+}
+
+.patch-card .patch-favorite[aria-pressed="true"] {
+  color: #ffd54a;
+}
+
+.patch-favorite[aria-pressed="true"] .patch-icon {
+  fill: currentColor;
+}
+
+.patch-description {
+  min-height: 1.5em;
+  margin: 0.45rem 0;
+  color: #c3ced2;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.patch-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.patch-category,
+.patch-tag {
+  padding: 0.12rem 0.45rem;
+  border-radius: 1rem;
+  background: #34505a;
+  color: #d6edf0;
+  font-size: 0.7rem;
+}
+
+.patch-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.patch-tag {
+  background: #35403c;
+  color: #c6d6c9;
+}
+
+.patch-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+  padding: 0.55rem;
+  border-radius: 0.4rem;
+  background: #0e171c99;
+}
+
+.patch-control-group {
+  min-width: 0;
+}
+
+.patch-control-row {
+  display: grid;
+  gap: 0.12rem;
+  margin-top: 0.3rem;
+  color: #b6c3c9;
+  font-size: 0.62rem;
+}
+
+.patch-control-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patch-control-track {
+  display: block;
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #43535a;
+}
+
+.patch-control-fill {
+  display: block;
+  height: 100%;
+  min-width: 1px;
+  border-radius: inherit;
+  background: #71d5dc;
+}
+
+.patch-actions {
+  margin: 0.75rem 0;
+}
+
+.patch-audio-section {
+  padding-top: 0.6rem;
+  border-top: 1px solid #415159;
+}
+
+.patch-audio-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.patch-audio-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.3rem;
+  border: 1px solid #36464e;
+  border-radius: 0.35rem;
+  background: #111b20;
+  cursor: grab;
+}
+
+.patch-audio-item:active {
+  cursor: grabbing;
+}
+
+.patch-audio-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #c6d2d6;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patch-small-button {
+  padding: 0.28rem 0.4rem !important;
+}
+
+.patch-small-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.patch-editor {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 1.25rem;
+  border: 1px solid #526873;
+  border-radius: 0.65rem;
+  background: #182229;
+  color: #dce4e8;
+}
+
+.patch-editor::backdrop {
+  background: #000a;
+}
+
+.patch-editor form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.patch-editor h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.patch-editor input,
+.patch-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.patch-editor textarea {
+  resize: vertical;
+}
+
+.patch-editor-actions {
+  justify-content: end;
+  margin-top: 0.25rem;
+}
+
 footer {
   padding-top: 0.5rem;
 }
@@ -521,6 +971,10 @@ footer {
 @media (max-width: 600px) {
   .toolbar {
     align-items: flex-start;
+  }
+
+  .patch-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .badge {

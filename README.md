@@ -12,7 +12,7 @@ npm run dev
 
 Open the localhost URL printed by Vite, including `/static/reface/`.
 The current page is an interactive SVG panel built with vanilla JavaScript, HTML, and CSS.
-It discovers MIDI devices, routes notes, and synchronizes documented synth controls. Audio is produced by the connected instrument; patch storage is not yet implemented.
+It discovers MIDI devices, routes notes, synchronizes documented synth controls, and manages local patch cards with optional MP3 previews.
 The surrounding page and toolbar use a dark theme; the synth retains its original light case.
 
 ## Interactive panel
@@ -60,6 +60,18 @@ The surrounding page and toolbar use a dark theme; the synth retains its origina
 - Only the selected OSC type's LED glows: SAW red, PULSE orange, SYNC yellow, RING lime, FM light blue. Other OSC LEDs are black. The dots sit to the right of the labels, with clearance before the Texture fader.
 - On smaller screens the panel scrolls horizontally to keep controls usable.
 
+## Patch library
+
+- Save the current on-screen sound controls as a named patch. Snapshots include the visible LFO, oscillator (including Portamento), Filter, EG, and Effects controls; they do not read back hardware state or include performance/system settings.
+- Patch cards show the name, main category, tags, and a small line-and-handle outline of their LFO-through-Effects faders. **Detailed snapshots** shows descriptions and the original labeled control previews; its tooltip explains the view. Cards are listed below the synth, up to 500 px wide, in a responsive grid, with a hollow/yellow favorite star just left of Load in the top-right corner. Edit opens patch details; play, move, remove, and delete actions use icons with accessible names and tooltips.
+- Filter by favorites, case-insensitive name substring, and any number of category/tag chips. No chips selected means no restriction; selections match any category and any tag, while the filter groups combine with AND. Clear filters resets all selections. Each patch still has one main category.
+- Starter categories are pads, bass, plucks, keys, synth, FM, noise, FX, and Percussion; custom categories and tags are supported. **Manage categories / tags** can delete unused categories (including starter categories) persistently. Deleting a tag asks for confirmation and removes it from every patch.
+- Each patch can have up to three MP3 attachments. Select a card to preview its first attachment; choose another track, reorder tracks with drag-and-drop or the move buttons, or remove an attachment. If browser autoplay policy blocks playback, use the displayed Play preview button. Adding files uses the browser file picker.
+- **Record** first loads the patch into the panel and sends all sound-control CC values to the synth. Recording opens only if every value is sent successfully; unavailable MIDI and partial send failures block it with an explanation. MIDI send success does not confirm the hardware applied the patch. Audio-input selection remembers your last choice across page reloads. If that input is unavailable, a warning appears and the default input is selected. Start recording and stop manually, or let it stop at 10 seconds; preview the locally encoded **256 kbps MP3** before saving it as an attachment, or discard it. Stereo is requested: two captured channels remain stereo, while a single captured channel stays mono. Existing attachments are unchanged. Requires microphone permission and HTTPS or localhost. Connect the synth's audio output to an audio interface: its USB MIDI connection does not carry audio. No recording is uploaded, and the three-attachment limit also applies to recordings.
+- After selecting a card, Left/Right selects the previous/next name-sorted patch in the filtered results and previews its first attachment without loading the synth. Navigation stops at the ends; typing, dialogs, and synth-control arrow shortcuts are unaffected.
+- Load explicitly to apply the patch to the panel and send its CC values to the selected MIDI output. Without MIDI output, the patch still loads locally and reports that it was not sent. Send failures are reported as partial recall; MIDI Control must be enabled on the synth, and MIDI send success does not confirm the synth applied the values.
+- Patch data and audio are stored in IndexedDB for the current browser profile and origin. Import and export a versioned ZIP backup containing both patch metadata and MP3 files. Imports merge into the current library and ask before replacing same-named patches. Save/rename conflicts and deletion also require confirmation.
+
 ## Tests
 
 ```powershell
@@ -68,7 +80,7 @@ npm run build
 npm test
 ```
 
-Browser tests cover MIDI discovery, note and controller routing, modulation-wheel mapping, reset, looper transport and recording, MIDI file import/export, and arpeggiator timing and patterns using mocked ports, plus keys, fader input and resets, selector LEDs, layout toggles, mute and pitch range, live displays, section resets, and dark/Focus Mode styling against the production build. Display checks include fully open filter geometry, section-color luminance, and responsive spacing. Real hardware behavior still requires manual verification.
+Browser tests cover MIDI discovery, note and controller routing, modulation-wheel mapping, reset, looper transport and recording, MIDI file import/export, and arpeggiator timing and patterns using mocked ports, plus keys, fader input and resets, selector LEDs, layout toggles, mute and pitch range, live displays, section resets, patch persistence and recall, patch-library filters, audio ordering, ZIP backup import/export, and dark/Focus Mode styling against the production build. Audio-recording tests exercise real browser capture from a generated signal, playable 256 kbps MP3 output, the 10-second limit, MIDI gating, input-selection persistence, permission errors, cancellation, and storage-error retry. Display checks include fully open filter geometry, section-color luminance, responsive spacing, compact/detailed patch cards, and accessible icon actions. Real hardware behavior still requires manual verification.
 
 ## Build and deploy
 
@@ -86,8 +98,8 @@ To inspect the production build locally, run `npm run preview` and open its prin
 ## Goals
 - MVP: a local browser app that visually controls the reface CS and sends MIDI CC in real time
 - Mirror physical control changes when the synth sends MIDI feedback
-- Save and recall basic app-side patches (the synth itself has no patch storage)
-- Later: full patch library, basic MIDI sequencer, settings, and live-play features
+- Save, organize, preview, export, and recall app-side patches (the synth itself has no patch storage)
+- Later: basic MIDI sequencer, settings, and additional live-play features
 
 ## Research / Ideas to be discussed with AI before coding
 - [Product goals and MVP requirements](docs/goals-and-requirements.md)

@@ -4,6 +4,8 @@ import { createVisualizations } from './visualizations.js';
 import { setupMidiDiscovery } from './midi.js';
 import { controlNumber } from './synth-midi.js';
 import { detectChord, noteNames } from './chord-detection.js';
+import { createPatchLibrary } from './patch-library.js';
+import { PATCH_CONTROL_IDS } from './patches.js';
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const container = document.querySelector('#synth');
@@ -644,4 +646,17 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
 updatePitchRange(defaultPitchRange, false);
 updateKeyNotes();
 layoutPanel();
+createPatchLibrary({
+  root: document.querySelector('#patch-library'),
+  getControls: () => Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [
+    id,
+    readValue(panel.querySelector(`#${id}`)),
+  ])),
+  applyControls: async (controls) => {
+    for (const id of PATCH_CONTROL_IDS) {
+      updateFader(panel.querySelector(`#${id}`), controls[id], false);
+    }
+    return midi.sendPatchControls(controls);
+  },
+});
 status.textContent = 'Panel ready. Connect MIDI to send notes and supported controls.';

@@ -87,6 +87,28 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     else if (encodeParameter(id, value)) void sendParameter(id, value, revision);
   }
 
+  function sendPatchControls(controls) {
+    const values = Object.entries(controls);
+    if (!output || output.state !== 'connected') {
+      reportError('MIDI output unavailable; patch values were not sent.');
+      return { sent: 0, failed: values.length, total: values.length, unavailable: true };
+    }
+
+    let sent = 0;
+    let failed = 0;
+    for (const [id, value] of values) {
+      const message = encodeControl(id, value);
+      if (!message || (message[0] & 0xf0) !== 0xb0) {
+        failed++;
+        continue;
+      }
+      rememberCC(message[1], message[2]);
+      if (send(output, message)) sent++;
+      else failed++;
+    }
+    return { sent, failed, total: values.length, unavailable: false };
+  }
+
   function send(port, message) {
     if (!port || port.state !== 'connected') {
       reportError('MIDI output unavailable; message was not sent.');
@@ -605,6 +627,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     setLooperMode(value) {
       looper.setMode(value);
     },
+    sendPatchControls,
     setControl,
     resetNotes(clearLocalNotes) {
       looper.stop();
