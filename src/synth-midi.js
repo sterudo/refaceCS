@@ -1,5 +1,6 @@
 const positions = [0, 32, 64, 95, 127];
 const controls = [
+  ['expression', 11],
   ['lfo-assign', 78, 0x02, positions],
   ['lfo-depth', 77, 0x03],
   ['lfo-speed', 76, 0x04],
@@ -19,12 +20,15 @@ const controls = [
   ['effect-rate', 19, 0x12],
 ].map(([id, cc, address, values]) => ({ id, cc, address, values }));
 
+export const tempoRange = { min: 40, max: 240, default: 120 };
+
 export const captureParameters = [
   { id: 'midi-control', address: [0, 0, 0x0e], size: 1 },
   { id: 'transpose', address: [0, 0, 0x07], size: 1 },
   { id: 'tempo', address: [0, 0, 0x08], size: 2 },
   { id: 'pitch-range', address: [0, 0, 0x0f], size: 1 },
-  ...controls.map(({ id, address }) => ({ id, address: [0x30, 0, address], size: 1 })),
+  ...controls.filter(({ address }) => address !== undefined)
+    .map(({ id, address }) => ({ id, address: [0x30, 0, address], size: 1 })),
 ];
 
 export function controlNumber(id) {
@@ -64,8 +68,7 @@ export function encodeParameter(id, value) {
   if (id === 'transpose') return { address: [0, 0, 7], data: [64 + value] };
   if (id === 'pitch-range') return { address: [0, 0, 15], data: [64 + value] };
   if (id === 'tempo') {
-    const bpm = Math.round(30 + value * 270 / 127);
-    return { address: [0, 0, 8], data: [bpm >> 7, bpm & 0x7f] };
+    return { address: [0, 0, 8], data: [value >> 7, value & 0x7f] };
   }
   return null;
 }
@@ -88,7 +91,7 @@ export function decodeParameter(address, data) {
   else if (parameter.id === 'tempo') {
     const bpm = (data[0] << 7) + data[1];
     if (bpm < 30 || bpm > 300) return null;
-    value = Math.round((bpm - 30) * 127 / 270);
+    value = bpm;
   } else if (parameter.id === 'midi-control' && value > 1) return null;
   else if (parameter.id === 'effect-type') {
     if (value > 4) return null;

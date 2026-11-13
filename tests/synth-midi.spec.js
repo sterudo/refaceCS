@@ -40,7 +40,7 @@ test.beforeEach(async ({ page }) => {
         return options?.sysex ? sysex : plain;
       },
     });
-    window.testSynth = { sent, requests, emit: (id, data) => emit(id === 'ri' ? input : controller, data) };
+    window.testSynth = { sent, requests, values, emit: (id, data) => emit(id === 'ri' ? input : controller, data) };
   });
   await page.goto('/static/reface/');
   await page.locator('#midi-connect').click();
@@ -79,7 +79,7 @@ test('SysEx settings use explicit permission and app-routed notes are transposed
   const sent = await page.evaluate(() => window.testSynth.sent);
   expect(sent).toContainEqual([0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 7, 65, 0xf7]);
   expect(sent).toContainEqual([0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 15, 77, 0xf7]);
-  expect(sent).toContainEqual([0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 8, 2, 44, 0xf7]);
+  expect(sent).toContainEqual([0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 8, 1, 112, 0xf7]);
   expect(sent).toContainEqual([0x90, 61, 100]);
 });
 
@@ -92,13 +92,77 @@ test('capture applies valid replies, reports missing values, and preserves newer
   await expect(page.locator('#capture-status')).toContainText('effect-rate');
   await expect(page.locator('#midi-status')).toContainText('MIDI Control: on');
   await expect(page.locator('#transpose')).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '128');
+  await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '128');
   await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', '2');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
 });
 
-test('velocity and mute affect local and external notes without changing the fader', async ({ page }) => {
+test('capture synchronizes the modulation slider for the selected CC without sending it', async ({ page }) => {
+  await page.evaluate(() => { window.testSynth.values['48,0,9'] = [9]; });
+  await page.locator('#capture-synth').click();
+  await expect(page.locator('#midi-modwheel-value')).toHaveValue('9', { timeout: 5000 });
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xb0 && message[1] === 74))).toBe(false);
+});
+
+test('shared tempo sends exact BPM from both controls and on activation', async ({ page }) => {
+  const fader = page.locator('#tempo');
+  const display = page.locator('#arp-tempo');
+  const tempoMessages = () => page.evaluate(() => window.testSynth.sent.filter((message) =>
+    message[0] === 0xf0 && message[2] === 0x10 && message[8] === 8));
+  const expectMessage = async (count, bpm) => {
+    await expect.poll(async () => (await tempoMessages()).length).toBe(count);
+    expect((await tempoMessages()).at(-1)).toEqual([
+      0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 8, bpm >> 7, bpm & 0x7f, 0xf7,
+    ]);
+  };
+  await expect(fader).toHaveAttribute('aria-valuenow', '120');
+  expect(await tempoMessages()).toEqual([]);
+  await fader.press('ArrowUp');
+  await expect(display).toHaveAttribute('data-value', '121');
+  await expectMessage(1, 121);
+  await page.locator('#arp-tempo-up').click();
+  await expect(fader).toHaveAttribute('aria-valuenow', '122');
+  await expectMessage(2, 122);
+  await fader.press('Home');
+  await expect(display).toHaveAttribute('data-value', '240');
+  await expectMessage(3, 240);
+  await fader.press('End');
+  await expect(display).toHaveAttribute('data-value', '40');
+  await expectMessage(4, 40);
+  await page.locator('#arp-tempo-display').dblclick();
+  await expect(fader).toHaveAttribute('aria-valuenow', '120');
+  await expectMessage(5, 120);
+  await page.locator('#arp-tempo-display').dblclick();
+  await expectMessage(6, 120);
+  await page.locator('#arp-enabled').click();
+  await expectMessage(7, 120);
+  await expect(fader).toHaveAttribute('aria-valuenow', '120');
+  expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary', 'sysex']);
+});
+
+test('capture reports synth tempo outside the shared range without changing it', async ({ page }) => {
+  await page.evaluate(() => { window.testSynth.values['0,0,8'] = [1, 127]; });
+  await page.locator('#capture-synth').click();
+  await expect(page.locator('#capture-status')).toContainText('tempo (255 BPM outside 40–240 BPM)', { timeout: 5000 });
+  await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '120');
+  await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '120');
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x10 && message[8] === 8))).toBe(false);
+});
+
+test('denied tempo SysEx reports failure while linked controls still update', async ({ page }) => {
+  await page.evaluate(() => { window.testSynth.denySysex = true; });
+  await page.locator('#arp-tempo-up').click();
+  await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '121');
+  await expect(page.locator('#midi-status')).toContainText('permission denied');
+  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([]);
+});
+
+test('expression sends CC 11 while mute remains app-only and local velocity stays fixed', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
-  await page.locator('#volume').press('End');
+  await page.locator('#expression').press('End');
   await page.keyboard.press('a');
   await page.locator('#volume-mute').click();
   await page.keyboard.press('a');
@@ -106,27 +170,62 @@ test('velocity and mute affect local and external notes without changing the fad
     window.testSynth.emit('ci', [0x92, 64, 87]);
     window.testSynth.emit('ci', [0x82, 64, 0]);
   });
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '1');
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '0');
   await page.locator('#volume-mute').click();
   await page.evaluate(() => {
     window.testSynth.emit('ci', [0x92, 64, 87]);
     window.testSynth.emit('ci', [0x82, 64, 0]);
   });
   expect(await page.evaluate(() => window.testSynth.sent)).toEqual([
-    [0x90, 60, 1], [0x80, 60, 0], [0x92, 64, 87], [0x82, 64, 0],
+    [0xb0, 11, 0], [0x90, 60, 100], [0x80, 60, 0], [0x92, 64, 87], [0x82, 64, 0],
   ]);
 });
 
-test('position-sensitive mouse velocity is quiet near the top and maximal at the bottom', async ({ page }) => {
-  await page.locator('#position-velocity').check();
+test('position-sensitive expression sends CC 11 before notes and updates the fader', async ({ page }) => {
+  await page.locator('#midi-modwheel-target').selectOption('11');
+  await page.locator('#position-expression').check();
   const bounds = await page.locator('#key-c-2 use').boundingBox();
-  for (const fraction of [0.2, 0.9]) {
-    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * fraction);
-  }
-  const ons = await page.evaluate(() => window.testSynth.sent.filter((data) => data[0] === 0x90));
-  expect(ons).toHaveLength(2);
-  expect(ons[0][2]).toBeLessThan(127);
-  expect(ons[1][2]).toBe(127);
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.2);
+  const firstValue = await page.locator('#expression').getAttribute('aria-valuenow');
+  await expect(page.locator('#midi-modwheel-value')).toHaveValue(firstValue);
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.9);
+  const sent = await page.evaluate(() => window.testSynth.sent);
+  expect(sent).toEqual([
+    [0xb0, 11, expect.any(Number)], [0x90, 60, 100], [0x80, 60, 0],
+    [0xb0, 11, 127], [0x90, 60, 100], [0x80, 60, 0],
+  ]);
+  expect(sent[0][2]).toBeGreaterThanOrEqual(30);
+  expect(sent[0][2]).toBeLessThanOrEqual(33);
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('a later position-sensitive key changes expression while another key is held', async ({ page }) => {
+  await page.locator('#position-expression').check();
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.down('a');
+  const bounds = await page.locator('#key-d-2 use').boundingBox();
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.4);
+  await page.keyboard.up('a');
+  const sent = await page.evaluate(() => window.testSynth.sent);
+  expect(sent).toEqual([
+    [0x90, 60, 100], [0xb0, 11, expect.any(Number)], [0x90, 62, 100], [0x80, 62, 0], [0x80, 60, 0],
+  ]);
+  expect(sent[1][2]).toBeGreaterThanOrEqual(62);
+  expect(sent[1][2]).toBeLessThanOrEqual(65);
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', String(sent[1][2]));
+});
+
+test('expression mirrors synth and controller CC feedback without echoing synth input', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 11, 37]));
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '37');
+  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([]);
+  await page.evaluate(() => window.testSynth.emit('ci', [0xb2, 11, 80]));
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '80');
+  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([[0xb2, 11, 80]]);
+  await page.locator('#expression').press('Delete');
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
+  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([[0xb2, 11, 80], [0xb0, 11, 127]]);
 });
 
 test('denied SysEx leaves ordinary MIDI working and reports capture failure', async ({ page }) => {

@@ -133,7 +133,7 @@
   </g>
   <g class="section-label">
     <text x="185" y="83">PITCH BEND</text>
-    <text x="309" y="83">VELOCITY</text>
+    <text x="302" y="83" textLength="61" lengthAdjust="spacingAndGlyphs">EXPRESSION</text>
     <text x="372" y="83">OCTAVE</text>
     <text class="focus-looper" x="442" y="83">LOOPER</text>
     <text x="600" y="83">LFO</text>
@@ -142,6 +142,16 @@
     <text x="1023" y="83">FILTER</text>
     <text x="1151" y="83">EG</text>
     <text x="1420" y="83">EFFECT</text>
+  </g>
+  <g id="looper-load" class="clickable-label focus-looper" role="button" tabindex="0" aria-label="Load MIDI loop">
+    <title>Load a MIDI file into the looper</title>
+    <rect x="532" y="69" width="20" height="19" rx="2" fill="transparent"/>
+    <path d="M535 75h5l2 2h7v8h-14z M542 70v9m-3-3 3 3 3-3" fill="none" stroke="#41474a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+  </g>
+  <g id="looper-save" class="clickable-label focus-looper" role="button" tabindex="0" aria-label="Save MIDI loop">
+    <title>Save the loop as a MIDI file</title>
+    <rect x="555" y="69" width="20" height="19" rx="2" fill="transparent"/>
+    <path d="M558 70h11l3 3v12h-14z M561 70v5h7v-5 M561 85v-6h8v6" fill="none" stroke="#41474a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
   </g>
   <text id="transpose-value" class="control-label" x="275" y="83" aria-hidden="true">0</text>
   <path class="focus-looper" d="M442 91H575" fill="none" stroke="#aaada7"/>
@@ -155,8 +165,8 @@
     <use class="track" href="#transpose-track"/><use class="cap" href="#fader-cap" y="40"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="volume" class="fader" transform="translate(332 112)" data-label="Velocity" data-value="100" data-min="1" data-max="127">
-    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="40"/>
+  <g id="expression" class="fader" transform="translate(332 112)" data-label="Expression" data-value="127" data-max="127">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="0"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
   <g id="octave" class="fader" transform="translate(396 112)" data-label="Octave" data-value="2" data-max="4">
@@ -165,7 +175,7 @@
     <text class="scale-label" x="23" y="43" data-step="2">0</text><text class="scale-label" x="23" y="63" data-step="1">-1</text><text class="scale-label" x="23" y="83" data-step="0">-2</text>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="looper" class="fader focus-looper" transform="translate(474 112)" data-label="Looper demo mode" data-value="0" data-max="4">
+  <g id="looper" class="fader focus-looper" transform="translate(474 112)" data-label="Looper" data-value="0" data-max="4">
     <use class="track" href="#selector-track"/><use class="cap" href="#fader-cap" y="80"/>
     <text class="scale-label" x="24" y="3" data-step="4">CLEAR</text><text class="scale-label" x="24" y="23" data-step="3">REC</text>
     <text class="scale-label" x="24" y="43" data-step="2">PLAY</text><text class="scale-label" x="24" y="63" data-step="1">PAUSE</text><text class="scale-label" x="24" y="83" data-step="0">STOP</text>
@@ -173,8 +183,8 @@
     <circle class="selection-led" cx="19" cy="40" r="2" data-value="2"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
-  <g id="tempo" class="fader focus-looper" transform="translate(558 112)" data-label="Tempo" data-value="0" data-max="127">
-    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="80"/>
+  <g id="tempo" class="fader focus-looper" transform="translate(558 112)" data-label="Tempo" data-value="120" data-min="40" data-max="240">
+    <use class="track" href="#fader-track"/><use class="cap" href="#fader-cap" y="48"/>
     <rect class="hit-area" x="-22" y="-15" width="44" height="110" fill="transparent"/>
   </g>
   <g id="lfo-assign" class="fader" transform="translate(620 112)" data-label="LFO assign" data-value="0" data-max="4">
@@ -286,6 +296,26 @@
       <rect x="306" y="212" width="52" height="19" rx="2" fill="transparent"/>
       <text id="mute-label" x="332" y="225">MUTE</text>
     </g>
+    <g id="looper-automation" class="control-label focus-looper" role="group" aria-label="Looper recording settings">
+      <title>Loop length for the next new recording, in bars. During recording, the number counts down the remaining bars.</title>
+      <g id="looper-meter" class="clickable-label" role="button" tabindex="0" aria-label="Time signature: 4/4">
+        <title>Time signature for the next new loop. Click to toggle 4/4 and 3/4.</title>
+        <rect x="448" y="212" width="20" height="19" rx="2" fill="transparent"/><text x="458" y="225">4/4</text>
+      </g>
+      <g id="looper-bars-down" class="clickable-label" role="button" tabindex="0" aria-label="Decrease loop length">
+        <title>Decrease loop length in bars. Zero records until you select PLAY.</title>
+        <rect x="468" y="212" width="14" height="19" rx="2" fill="transparent"/><text x="478.5" y="225">-</text>
+      </g>
+      <text id="looper-bars-value" x="485" y="225">0</text>
+      <g id="looper-bars-up" class="clickable-label" role="button" tabindex="0" aria-label="Increase loop length">
+        <title>Increase loop length in bars. Recording wraps into overdubbing at the selected length.</title>
+        <rect x="488" y="212" width="14" height="19" rx="2" fill="transparent"/><text x="492" y="225">+</text>
+      </g>
+      <g id="looper-quantize" class="clickable-label" role="button" tabindex="0" aria-label="Note quantization: off" aria-haspopup="menu" aria-expanded="false">
+        <title>Quantize recorded note starts for the next new loop: 0 is off; 1, 2, 4, 8, 16, and 32 are note divisions. Click to cycle or right-click for the menu.</title>
+        <rect x="503" y="212" width="12" height="19" rx="2" fill="transparent"/><text x="509" y="225">0</text>
+      </g>
+    </g>
     <g id="fader-values" aria-hidden="true"/>
     <g id="lower-instrument" transform="translate(0 18)">
     <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="#1e2221">YAMAHA</text>
@@ -367,6 +397,7 @@
     </g>
     <g id="arp-menu-layer" transform="translate(110 0)"/>
     </g>
+    <g id="looper-menu-layer"/>
   </g>
   <g id="octave-down" class="octave-step" role="button" tabindex="0" aria-label="Octave down" data-step="-1">
     <title>Transpose down one octave</title>

@@ -1,14 +1,19 @@
 import { createArpeggiator } from './arpeggiator.js';
-import { captureParameters, decodeControl, decodeParameter, encodeControl, encodeParameter,
+import { createLooper } from './looper.js';
+import { captureParameters, controlNumber, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
   parameterMessage, requestMessage } from './synth-midi.js';
 
-export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
+export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode) {
   const connect = document.querySelector('#midi-connect');
   const badge = document.querySelector('#midi-badge');
   const status = document.querySelector('#midi-status');
   const refaceInput = document.querySelector('#midi-reface-input');
   const refaceOutput = document.querySelector('#midi-reface-output');
   const controllerInput = document.querySelector('#midi-controller-input');
+  const modwheelTarget = document.querySelector('#midi-modwheel-target');
+  const modwheelValue = document.querySelector('#midi-modwheel-value');
+  const modwheelReadout = document.querySelector('#midi-modwheel-readout');
+  const mappingStatus = document.querySelector('#midi-mapping-status');
   const selected = { input: '', output: '', controller: '' };
   const manuallySelected = { input: false, output: false, controller: false };
   const names = new Map();
@@ -16,6 +21,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
   const received = new Map();
   const forwarded = new Map();
   const localNotes = new Map();
+  const outputNotes = new Map();
+  const activeSustain = new Map();
+  const ccValues = new Map();
   const revisions = new Map();
   const captureStatus = document.querySelector('#capture-status');
   let midiAccess;
@@ -30,11 +38,53 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
   let output;
   let controllerPort;
   let lastError = '';
-  const arpeggiator = createArpeggiator((message) => send(output, message), changeRouting, () => muted, () => transpose);
+  let modwheelCC = 74;
+  let mappingError = '';
+  const mappingKey = 'refaceCS.modwheelCC';
+  const panelFaders = [...document.querySelectorAll('#synth .fader[data-label]')];
+  const controlLabels = new Map(panelFaders
+    .map((fader) => [controlNumber(fader.id), fader.dataset.label]));
+  for (const fader of panelFaders) {
+    const message = encodeControl(fader.id, Number(fader.dataset.value));
+    if (message && (message[0] & 0xf0) === 0xb0) ccValues.set(message[1], message[2]);
+  }
+  for (let cc = 0; cc < 128; cc++) {
+    const description = cc === 1 ? 'Pass through' : controlLabels.get(cc);
+    modwheelTarget.add(new Option(`CC ${cc}${description ? ` — ${description}` : ''}`, String(cc)));
+  }
+  try {
+    const saved = localStorage.getItem(mappingKey);
+    if (saved !== null) {
+      if (/^(0|[1-9]\d*)$/.test(saved) && Number(saved) <= 127) modwheelCC = Number(saved);
+      else mappingError = 'Saved modulation-wheel mapping is invalid; filter cutoff is selected.';
+    }
+  } catch (error) {
+    mappingError = `Could not load modulation-wheel mapping: ${error.message || error}. Filter cutoff is selected.`;
+  }
+  modwheelTarget.value = String(modwheelCC);
+  setModwheelDisplay(ccValues.get(modwheelCC) ?? Number(modwheelValue.value));
+  updateMappingStatus();
+  const looper = createLooper((message, owner) => sendOwned(output, message, owner), onLooperMode, (bpm) => {
+    onSynthValue('tempo', bpm);
+    if (output) setControl('tempo', bpm);
+  });
+  const arpeggiator = createArpeggiator((message) => sendLive(output, message, 'arpeggiator'), changeRouting,
+    () => muted, () => transpose, onArpeggiatorTempo);
 
   function reportError(message) {
     lastError = message;
     status.textContent = message;
+  }
+
+  function setControl(id, value) {
+    const revision = (revisions.get(id) || 0) + 1;
+    revisions.set(id, revision);
+    const message = encodeControl(id, value);
+    if (message) {
+      if ((message[0] & 0xf0) === 0xb0) rememberCC(message[1], message[2]);
+      send(output, message);
+    }
+    else if (encodeParameter(id, value)) void sendParameter(id, value, revision);
   }
 
   function send(port, message) {
@@ -51,22 +101,113 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
     }
   }
 
-  function releaseForwarded(port) {
-    for (const { channel, notes } of forwarded.values()) {
-      for (const note of notes) if (note !== null) send(port, [0x80 | channel, note, 0]);
+  function setModwheelDisplay(value) {
+    modwheelValue.value = String(value);
+    modwheelValue.setAttribute('aria-label', `Modulation wheel value, CC ${modwheelCC}`);
+    modwheelReadout.textContent = String(value);
+  }
+
+  function rememberCC(cc, value) {
+    ccValues.set(cc, value);
+    if (cc === modwheelCC) setModwheelDisplay(value);
+  }
+
+  function updateMappingStatus() {
+    const held = modwheelCC !== 64 && [...activeSustain.values()]
+      .some((source) => source === 'modwheel' || source === 'slider');
+    mappingStatus.textContent = [mappingError,
+      held ? 'Sustain remains active; send CC 64 off or use MIDI Reset.' : ''].filter(Boolean).join(' ');
+  }
+
+  function sendControllerCC(message, source) {
+    const channel = message[0] & 0x0f;
+    if (!send(output, message)) return;
+    if (message[1] === 64) {
+      if (message[2] >= 64) activeSustain.set(channel, source);
+      else activeSustain.delete(channel);
+    } else if (message[1] === 121) {
+      activeSustain.delete(channel);
+    }
+    updateMappingStatus();
+    if (message[1] === 120 || message[1] === 123 || message[1] >= 124) {
+      for (const [key, owners] of outputNotes) {
+        if (!key.startsWith(`${channel}:`)) continue;
+        for (const queue of owners.values()) queue.fill(false);
+      }
+    }
+  }
+
+  function mirrorControl(message) {
+    const control = decodeControl(message);
+    if (control) {
+      revisions.set(control.id, (revisions.get(control.id) || 0) + 1);
+      onSynthValue(control.id, control.value);
+    }
+  }
+
+  function sendOwned(port, message, owner) {
+    const channel = message[0] & 0x0f;
+    const key = `${channel}:${message[1]}`;
+    const on = (message[0] & 0xf0) === 0x90 && message[2] !== 0;
+    let owners = outputNotes.get(key);
+    if (on) {
+      const activeOwners = owners ? [...owners].filter(([, queue]) => queue.includes(true)) : [];
+      const isLoopNote = (value) => typeof value === 'string' && value.startsWith('looper:');
+      if (activeOwners.length && (isLoopNote(owner) || activeOwners.some(([value]) => isLoopNote(value)))) {
+        if (!send(port, [0x80 | channel, message[1], 0])) return false;
+        for (const queue of owners.values()) queue.fill(false);
+      }
+      if (!send(port, message)) return false;
+      if (!owners) outputNotes.set(key, owners = new Map());
+      const queue = owners.get(owner) || [];
+      queue.push(true);
+      owners.set(owner, queue);
+      return true;
+    }
+    if (!owners?.has(owner)) return true;
+    const queue = owners.get(owner);
+    const active = queue.shift();
+    if (!queue.length) owners.delete(owner);
+    if (!owners.size) outputNotes.delete(key);
+    if (!active || [...owners.values()].some((entries) => entries.includes(true))) return true;
+    return send(port, message);
+  }
+
+  function sendLive(port, message, owner) {
+    const on = (message[0] & 0xf0) === 0x90 && message[2] !== 0;
+    if (on) looper.noteOn(owner, message[0] & 0x0f, message[1], message[2]);
+    else looper.noteOff(owner);
+    return sendOwned(port, message, owner);
+  }
+
+  function releaseForwarded(port, includeSlider = false) {
+    for (const [owner, { channel, notes }] of forwarded) {
+      for (const note of notes) {
+        if (note !== null) sendLive(port, [0x80 | channel, note, 0], owner);
+        else looper.noteOff(owner);
+      }
     }
     forwarded.clear();
+    for (const [channel, source] of activeSustain) {
+      if (source === 'slider' && !includeSlider) continue;
+      send(port, [0xb0 | channel, 64, 0]);
+      rememberCC(64, 0);
+      activeSustain.delete(channel);
+    }
+    updateMappingStatus();
   }
 
   function releaseDirect(port) {
-    releaseForwarded(port);
-    for (const note of localNotes.values()) send(port, [0x80, note, 0]);
+    releaseForwarded(port, true);
+    for (const [owner, note] of localNotes) sendLive(port, [0x80, note, 0], owner);
     localNotes.clear();
   }
 
   function releaseOutput(port) {
+    looper.stop();
     arpeggiator.clear();
     releaseDirect(port);
+    outputNotes.clear();
   }
 
   function transposedNote(note) {
@@ -93,7 +234,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
     for (const [owner, value] of arpeggiator.getHeld()) {
       for (let i = 0; i < value.count; i++) {
         const note = transposedNote(value.note);
-        const sent = note !== null && send(output, [0x90 | value.channel, note, value.velocity]);
+        const sent = note !== null && sendLive(output, [0x90 | value.channel, note, value.velocity], owner);
         if (value.source === 'local') {
           if (sent) localNotes.set(owner, note);
         } else {
@@ -106,7 +247,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
   function handleMessage(port, event) {
     const data = event.data;
     if (!data || data.length !== 3) return;
+    const type = data[0] & 0xf0;
     if (port.id === selected.input) {
+      if (type === 0xb0 && data[1] < 128 && data[2] < 128) rememberCC(data[1], data[2]);
       const control = decodeControl(data);
       if (control) {
         revisions.set(control.id, (revisions.get(control.id) || 0) + 1);
@@ -114,7 +257,23 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
         return;
       }
     }
-    const type = data[0] & 0xf0;
+    if (port === controllerPort && port.id !== selected.input && (type === 0xb0 || type === 0xe0)) {
+      if (data[1] > 127 || data[2] > 127) {
+        reportError('Invalid controller MIDI data; message was not sent.');
+        return;
+      }
+      const fromModwheel = type === 0xb0 && data[1] === 1;
+      const message = [data[0], fromModwheel ? modwheelCC : data[1], data[2]];
+      if (type === 0xb0) {
+        rememberCC(data[1], data[2]);
+        rememberCC(message[1], message[2]);
+        sendControllerCC(message, fromModwheel ? 'modwheel' : 'controller');
+      } else {
+        send(output, message);
+      }
+      mirrorControl(message);
+      return;
+    }
     if ((type !== 0x80 && type !== 0x90) || data[1] > 127 || data[2] > 127) return;
     const channel = data[0] & 0x0f;
     const note = data[1];
@@ -126,19 +285,28 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
     else received.delete(key);
     onNotesChanged();
 
+    if (port.id === selected.input) {
+      const owner = `reface:${key}`;
+      if (on) {
+        looper.noteOn(owner, channel, note, data[2]);
+      } else {
+        looper.noteOff(owner);
+      }
+    }
     if (port !== controllerPort || port.id === selected.input) return;
     if (on) arpeggiator.noteOn(key, note, data[2], channel, 'controller');
     else arpeggiator.noteOff(key);
     if (arpeggiator.enabled) return;
     if (on) {
       const target = muted ? null : transposedNote(note);
-      const sent = target !== null && send(output, [data[0], target, data[2]]);
+      const sent = target !== null && sendLive(output, [data[0], target, data[2]], key);
       rememberForwarded(key, channel, sent ? target : null);
     } else {
       const active = forwarded.get(key);
       if (!active) return;
       const target = active.notes[0];
-      if (target !== null && !send(output, [data[0], target, data[2]])) return;
+      if (target !== null && !sendLive(output, [data[0], target, data[2]], key)) return;
+      if (target === null) looper.noteOff(key);
       active.notes.shift();
       if (active.notes.length === 0) forwarded.delete(key);
     }
@@ -158,7 +326,10 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
       port.removeEventListener('midimessage', listener);
       listening.delete(port);
       for (const [key, value] of received) {
-        if (value.port === port) received.delete(key);
+        if (value.port === port) {
+          for (let count = 0; count < value.count; count++) looper.noteOff(`reface:${key}`);
+          received.delete(key);
+        }
       }
       onNotesChanged();
     }
@@ -329,12 +500,16 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
         } else if (result.id === 'midi-control') {
           midiControlStatus = result.value ? 'on' : 'off';
           refresh();
+        } else if (result.id === 'tempo' && (result.value < tempoRange.min || result.value > tempoRange.max)) {
+          missing.push(`tempo (${result.value} BPM outside ${tempoRange.min}–${tempoRange.max} BPM)`);
         } else {
+          const message = encodeControl(result.id, result.value);
+          if (message && (message[0] & 0xf0) === 0xb0) rememberCC(message[1], message[2]);
           onSynthValue(result.id, result.value);
           captured++;
         }
       }
-      captureStatus.textContent = `Captured ${captured} settings. Not captured: velocity, octave, looper, pitch bend${missing.length ? `, ${missing.join(', ')}` : ''}.`;
+      captureStatus.textContent = `Captured ${captured} settings. Not captured: expression, octave, looper, pitch bend${missing.length ? `, ${missing.join(', ')}` : ''}.`;
     } finally {
       capturing = false;
       button.disabled = false;
@@ -342,6 +517,25 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
   }
 
   document.querySelector('#capture-synth').addEventListener('click', captureSynth);
+  modwheelTarget.addEventListener('change', () => {
+    const next = Number(modwheelTarget.value);
+    modwheelCC = next;
+    setModwheelDisplay(ccValues.get(next) ?? Number(modwheelValue.value));
+    try {
+      localStorage.setItem(mappingKey, String(next));
+      mappingError = '';
+    } catch (error) {
+      mappingError = `Could not save modulation-wheel mapping: ${error.message || error}. The mapping will reset on reload.`;
+    }
+    updateMappingStatus();
+  });
+  modwheelValue.addEventListener('input', () => {
+    const value = Number(modwheelValue.value);
+    const message = [0xb0, modwheelCC, value];
+    rememberCC(modwheelCC, value);
+    sendControllerCC(message, 'slider');
+    mirrorControl(message);
+  });
   refaceInput.addEventListener('change', () => {
     lastError = '';
     const previous = selected.input;
@@ -393,6 +587,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
   return {
     setMuted(value) {
       muted = value;
+      looper.setMuted(value);
       if (muted) {
         arpeggiator.silence();
         releaseDirect(output);
@@ -403,25 +598,30 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
       transpose = value;
       arpeggiator.transposeChanged();
     },
-    setControl(id, value) {
-      const revision = (revisions.get(id) || 0) + 1;
-      revisions.set(id, revision);
-      const message = encodeControl(id, value);
-      if (message) send(output, message);
-      else if (encodeParameter(id, value)) void sendParameter(id, value, revision);
+    setArpeggiatorTempo(value) {
+      arpeggiator.setTempo(value);
+      looper.setTempo(value);
     },
+    setLooperMode(value) {
+      looper.setMode(value);
+    },
+    setControl,
     resetNotes(clearLocalNotes) {
+      looper.stop();
       let failed = 0;
       let firstError = '';
+      const messages = [...activeSustain.keys()].map((channel) => [0xb0 | channel, 64, 0]);
+      for (let channel = 0; channel < 16; channel++) {
+        for (const controller of [123, 120]) messages.push([0xb0 | channel, controller, 0]);
+      }
       if (output && output.state === 'connected') {
-        for (let channel = 0; channel < 16; channel++) {
-          for (const controller of [123, 120]) {
-            try {
-              output.send([0xb0 | channel, controller, 0]);
-            } catch (error) {
-              failed++;
-              if (!firstError) firstError = error.message || String(error);
-            }
+        for (const message of messages) {
+          try {
+            output.send(message);
+            rememberCC(message[1], message[2]);
+          } catch (error) {
+            failed++;
+            if (!firstError) firstError = error.message || String(error);
           }
         }
       } else {
@@ -430,13 +630,16 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
 
       localNotes.clear();
       forwarded.clear();
+      outputNotes.clear();
+      activeSustain.clear();
+      updateMappingStatus();
       received.clear();
       arpeggiator.clear();
       clearLocalNotes();
       onNotesChanged();
 
       if (firstError) {
-        reportError(`MIDI reset failed${failed ? ` (${failed} of 32 messages)` : ''}: ${firstError}. Held-note state cleared.`);
+        reportError(`MIDI reset failed${failed ? ` (${failed} of ${messages.length} messages)` : ''}: ${firstError}. Held-note state cleared.`);
       } else {
         lastError = '';
         status.textContent = 'MIDI reset messages sent. Release and play held keys again.';
@@ -453,12 +656,15 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue) {
       if (arpeggiator.enabled) return;
       if (muted) return;
       const target = transposedNote(note);
-      if (target !== null && send(output, [0x90, target, velocity])) localNotes.set(owner, target);
+      if (target !== null && sendLive(output, [0x90, target, velocity], owner)) localNotes.set(owner, target);
     },
     endNote(owner) {
       arpeggiator.noteOff(owner);
-      if (!localNotes.has(owner)) return;
-      send(output, [0x80, localNotes.get(owner), 0]);
+      if (!localNotes.has(owner)) {
+        looper.noteOff(owner);
+        return;
+      }
+      sendLive(output, [0x80, localNotes.get(owner), 0], owner);
       localNotes.delete(owner);
     },
     stopForVisibility() {

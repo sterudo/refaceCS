@@ -72,7 +72,7 @@ test('notes shifted outside the MIDI range are reported and not sent', async ({ 
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
 });
 
-test('receives both inputs, forwards only controller notes, and ignores CC', async ({ page }) => {
+test('receives both inputs and forwards controller notes and CCs', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => {
     window.testNotes.emit('ri', [0x90, 60, 90]);
@@ -84,8 +84,259 @@ test('receives both inputs, forwards only controller notes, and ignores CC', asy
   await page.evaluate(() => window.testNotes.emit('ci', [0x92, 60, 0]));
   await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
-    { port: 'ro', data: [0x92, 60, 88] }, { port: 'ro', data: [0x92, 60, 0] },
+    { port: 'ro', data: [0x92, 60, 88] }, { port: 'ro', data: [0xb2, 74, 100] },
+    { port: 'ro', data: [0x92, 60, 0] },
   ]);
+});
+
+test('forwards controller pitch bend and CCs on their channels and mirrors supported controls', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await expect(page.locator('#midi-modwheel-target')).toHaveValue('74');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 1, 53]);
+    window.testNotes.emit('ci', [0xb5, 64, 127]);
+    window.testNotes.emit('ci', [0xb7, 99, 35]);
+    window.testNotes.emit('ci', [0xb2, 80, 127]);
+    window.testNotes.emit('ci', [0xe3, 127, 127]);
+  });
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb2, 74, 53] }, { port: 'ro', data: [0xb5, 64, 127] },
+    { port: 'ro', data: [0xb7, 99, 35] }, { port: 'ro', data: [0xb2, 80, 127] },
+    { port: 'ro', data: [0xe3, 127, 127] },
+  ]);
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '53');
+  await expect(page.locator('#osc-type')).toHaveAttribute('aria-valuenow', '4');
+  await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('modulation slider follows wheel, synth, controller and panel without echoing', async ({ page }) => {
+  const slider = page.locator('#midi-modwheel-value');
+  await expect(slider).toHaveValue('127');
+  await expect(page.locator('#midi-modwheel-readout')).toHaveText('127');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 1, 53]));
+  await expect(slider).toHaveValue('53');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '53');
+  await page.evaluate(() => window.testNotes.emit('ri', [0xb0, 74, 42]));
+  await expect(slider).toHaveValue('42');
+  await expect(page.locator('#midi-modwheel-readout')).toHaveText('42');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb5, 74, 69]));
+  await expect(slider).toHaveValue('69');
+  await page.locator('#filter-cutoff').press('End');
+  await expect(slider).toHaveValue('0');
+  await slider.press('ArrowRight');
+  await expect(slider).toHaveValue('1');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '1');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb2, 74, 53] }, { port: 'ro', data: [0xb5, 74, 69] },
+    { port: 'ro', data: [0xb0, 74, 0] }, { port: 'ro', data: [0xb0, 74, 1] },
+  ]);
+});
+
+test('modulation slider restores known CC values, retains unknown values, and sends selected CC on channel 1', async ({ page }) => {
+  const slider = page.locator('#midi-modwheel-value');
+  const select = page.locator('#midi-modwheel-target');
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.emit('ri', [0xb3, 99, 33]);
+    window.testNotes.emit('ci', [0xb4, 1, 70]);
+  });
+  await select.selectOption('99');
+  await expect(slider).toHaveValue('33');
+  await expect(slider).toHaveAttribute('aria-label', 'Modulation wheel value, CC 99');
+  await page.evaluate(() => window.testNotes.emit('ri', [0xb3, 99, 44]));
+  await expect(slider).toHaveValue('44');
+  await select.selectOption('98');
+  await expect(slider).toHaveValue('44');
+  await slider.evaluate((element) => {
+    element.value = '85';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.locator('#midi-modwheel-readout')).toHaveText('85');
+  await select.selectOption('74');
+  await expect(slider).toHaveValue('70');
+  await select.selectOption('1');
+  await expect(slider).toHaveValue('70');
+  await slider.evaluate((element) => {
+    element.value = '23';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb4, 74, 70] },
+    { port: 'ro', data: [0xb0, 98, 85] }, { port: 'ro', data: [0xb0, 1, 23] },
+  ]);
+});
+
+test('modulation slider preserves raw CC values for discrete synth controls', async ({ page }) => {
+  await page.locator('#midi-modwheel-target').selectOption('80');
+  const slider = page.locator('#midi-modwheel-value');
+  await slider.evaluate((element) => {
+    element.value = '35';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.locator('#osc-type')).toHaveAttribute('aria-valuenow', '1');
+  await expect(slider).toHaveValue('35');
+  await page.locator('#osc-type').press('ArrowUp');
+  await expect(slider).toHaveValue('64');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb0, 80, 35] }, { port: 'ro', data: [0xb0, 80, 64] },
+  ]);
+});
+
+test('modulation slider reports unavailable output and still updates supported panel controls', async ({ page }) => {
+  await page.locator('#midi-reface-output').selectOption('');
+  await page.locator('#midi-modwheel-value').press('ArrowLeft');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '126');
+  await expect(page.locator('#midi-status')).toContainText('MIDI output unavailable');
+});
+
+test('slider-controlled sustain survives controller changes and is released by MIDI Reset', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#midi-modwheel-target').selectOption('64');
+  const slider = page.locator('#midi-modwheel-value');
+  await slider.press('Home');
+  await page.evaluate(() => { window.testNotes.sent.length = 0; });
+  await slider.press('End');
+  await page.locator('#midi-controller-input').selectOption('ri');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([{ port: 'ro', data: [0xb0, 64, 127] }]);
+  await page.getByRole('button', { name: 'MIDI Reset' }).click();
+  await expect(slider).toHaveValue('0');
+  const messages = await page.evaluate(() => window.testNotes.sent);
+  expect(messages[1]).toEqual({ port: 'ro', data: [0xb0, 64, 0] });
+});
+
+test('remaps the modulation wheel, supports passthrough, and remembers the selection', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#midi-modwheel-target').selectOption('71');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb1, 1, 52]));
+  await expect(page.locator('#filter-resonance')).toHaveAttribute('aria-valuenow', '52');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([{ port: 'ro', data: [0xb1, 71, 52] }]);
+  await page.reload();
+  await expect(page.locator('#midi-modwheel-target')).toHaveValue('71');
+  await page.getByRole('button', { name: 'Connect MIDI' }).click();
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#midi-modwheel-target').selectOption('1');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xbf, 1, 89]));
+  await page.locator('#midi-modwheel-target').selectOption('0');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb3, 1, 12]));
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xbf, 1, 89] }, { port: 'ro', data: [0xb3, 0, 12] },
+  ]);
+  await page.reload();
+  await expect(page.locator('#midi-modwheel-target')).toHaveValue('0');
+});
+
+test('reports mapping persistence failures while retaining the selected mapping', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => { throw new Error('storage blocked'); };
+  });
+  await page.locator('#midi-modwheel-target').selectOption('99');
+  await expect(page.locator('#midi-mapping-status')).toContainText('storage blocked');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 1, 63]));
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([{ port: 'ro', data: [0xb2, 99, 63] }]);
+});
+
+test('reports invalid saved mappings and unavailable browser storage', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('refaceCS.modwheelCC', 'invalid'));
+  await page.reload();
+  await expect(page.locator('#midi-modwheel-target')).toHaveValue('74');
+  await expect(page.locator('#midi-mapping-status')).toContainText('mapping is invalid');
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', {
+      get() { throw new Error('storage unavailable'); },
+    });
+  });
+  await page.reload();
+  await expect(page.locator('#midi-modwheel-target')).toHaveValue('74');
+  await expect(page.locator('#midi-mapping-status')).toContainText('storage unavailable');
+});
+
+test('controller send failures are reported without suppressing panel updates', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.access.outputs.get('ro').send = () => { throw new Error('controller output failed'); };
+    window.testNotes.emit('ci', [0xb3, 1, 45]);
+  });
+  await expect(page.locator('#midi-status')).toContainText('controller output failed');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '45');
+});
+
+test('does not echo synth controls or forward them when synth and controller are the same port', async ({ page }) => {
+  await page.evaluate(() => {
+    window.testNotes.emit('ri', [0xb0, 74, 57]);
+    window.testNotes.emit('ri', [0xb0, 1, 100]);
+    window.testNotes.emit('ri', [0xe0, 0, 0]);
+  });
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '57');
+  await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '0');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
+});
+
+test('changing a sustain mapping sends nothing and warns until sustain is released', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 64, 127]));
+  await page.locator('#midi-controller-input').selectOption('ri');
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#midi-modwheel-target').selectOption('64');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb5, 1, 100]));
+  await page.locator('#midi-modwheel-target').selectOption('71');
+  await expect(page.locator('#midi-mapping-status')).toContainText('Sustain remains active');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb2, 64, 127] }, { port: 'ro', data: [0xb2, 64, 0] },
+    { port: 'ro', data: [0xb5, 64, 100] },
+  ]);
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb5, 64, 0]));
+  await expect(page.locator('#midi-mapping-status')).toHaveText('');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb7, 64, 127]));
+  await page.locator('#midi-reface-output').selectOption('other');
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb2, 64, 127] }, { port: 'ro', data: [0xb2, 64, 0] },
+    { port: 'ro', data: [0xb5, 64, 100] }, { port: 'ro', data: [0xb5, 64, 0] },
+    { port: 'ro', data: [0xb7, 64, 127] }, { port: 'ro', data: [0xb7, 64, 0] },
+  ]);
+});
+
+test('controller CC and pitch bend continue through while the arpeggiator is on', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#arp-enabled').click();
+  await page.evaluate(() => {
+    window.testNotes.sent.length = 0;
+    window.testNotes.emit('ci', [0xb4, 1, 33]);
+    window.testNotes.emit('ci', [0xe4, 12, 65]);
+  });
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0xb4, 74, 33] }, { port: 'ro', data: [0xe4, 12, 65] },
+  ]);
+});
+
+test('channel-mode note reset does not let stale releases silence a newer note', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0x92, 60, 90]);
+    window.testNotes.emit('ci', [0xb2, 123, 0]);
+    window.testNotes.emit('ci', [0x92, 60, 80]);
+    window.testNotes.emit('ci', [0x82, 60, 0]);
+    window.testNotes.emit('ci', [0x82, 60, 0]);
+  });
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
+    { port: 'ro', data: [0x92, 60, 90] }, { port: 'ro', data: [0xb2, 123, 0] },
+    { port: 'ro', data: [0x92, 60, 80] }, { port: 'ro', data: [0x82, 60, 0] },
+  ]);
+});
+
+test('MIDI Reset releases controller sustain before resetting notes', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 64, 127]);
+    window.testNotes.sent.length = 0;
+  });
+  await page.getByRole('button', { name: 'MIDI Reset' }).click();
+  const messages = await page.evaluate(() => window.testNotes.sent);
+  expect(messages).toHaveLength(33);
+  expect(messages[0]).toEqual({ port: 'ro', data: [0xb2, 64, 0] });
+  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
 });
 
 test('keeps incoming highlights independent of local keys and pitch changes', async ({ page }) => {

@@ -19,7 +19,8 @@ test('focus mode adds mapped CC numbers to fader tooltips', async ({ page }) => 
   await expect(cutoff).toHaveText('Filter cutoff: 127 (CC 74)');
   await expect(page.locator('#lfo-assign title')).toHaveText('LFO assign: Off (CC 78)');
   await expect(page.locator('#effect-type title')).toHaveText('Effect type: Off (CC 17)');
-  for (const id of ['pitch-bend', 'transpose', 'tempo', 'volume', 'octave', 'looper']) {
+  await expect(page.locator('#expression title')).toHaveText('Expression: 127 (CC 11)');
+  for (const id of ['pitch-bend', 'transpose', 'tempo', 'octave', 'looper']) {
     await expect(page.locator(`#${id} title`)).not.toContainText('CC ');
   }
   await page.locator('#filter-cutoff').press('ArrowDown');
@@ -266,7 +267,7 @@ test('display resets restore only their section, with shared EG resets and safe 
   for (const [id, value] of Object.entries(defaults)) {
     await page.locator(`#${id}`).press(value === 0 ? 'Home' : 'End');
   }
-  await page.locator('#volume').press('Home');
+  await page.locator('#expression').press('Home');
   await page.locator('#volume-mute').click();
   await page.locator('#pitch-range-up').click();
   const modes = ['focus-mode', 'hide-speakers', 'five-octaves', 'fader-size'];
@@ -309,7 +310,7 @@ test('display resets restore only their section, with shared EG resets and safe 
   await expect(page.locator('#pitch-range-value')).toHaveText('13');
   await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#volume-mute').click();
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '127');
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
   for (const id of modes) await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -535,7 +536,7 @@ test('QWERTY ignores typing and shortcuts and clears held notes on layout change
     await expect(page.locator('.key.is-pressed')).toHaveCount(0);
   }
   await expect(page.locator('#typing-fields input')).toHaveValue('a');
-  await page.locator('#volume').focus();
+  await page.locator('#expression').focus();
   const consumed = await page.evaluate(() => ['ctrlKey', 'altKey', 'metaKey', 'isComposing', 'repeat'].map((flag) => {
     const event = new KeyboardEvent('keydown', {
       code: 'KeyA', key: 'a', bubbles: true, cancelable: true, [flag]: true,
@@ -712,14 +713,14 @@ test('wheel respects mute restoration, pitch bend behavior and ignored zoom or h
   await mute.click();
   for (const options of [{ deltaY: -120, ctrlKey: true }, { deltaX: 120, deltaY: 0 },
     { deltaX: 120, deltaY: 1 }, { deltaY: 0 }]) {
-    expect(await wheel('volume', options)).toBe(true);
+    expect(await wheel('expression', options)).toBe(true);
     await expect(mute).toHaveAttribute('aria-disabled', 'false');
-    await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
   }
-  expect(await wheel('volume', { deltaY: 120 })).toBe(false);
+  expect(await wheel('expression', { deltaY: 120 })).toBe(false);
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
-  expect(await wheel('volume', { deltaY: -1, deltaMode: 1 })).toBe(false);
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
+  expect(await wheel('expression', { deltaY: -1, deltaMode: 1 })).toBe(false);
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
   await expect(mute).toHaveAttribute('aria-pressed', 'true');
   expect(await wheel('pitch-bend', { deltaY: -1, deltaMode: 2 })).toBe(false);
   await page.locator('h1').hover();
@@ -733,7 +734,7 @@ test('Home moves every fader to the top and End to the bottom at both travel siz
       await page.locator('#hide-speakers').click();
       await page.locator('#focus-mode').click();
     }
-    for (const fader of await page.getByRole('slider').all()) {
+    for (const fader of await page.locator('#synth').getByRole('slider').all()) {
       await fader.press('Home');
       await expect(fader).toHaveAttribute('aria-valuenow', await fader.getAttribute('aria-valuemax'));
       await expect(fader.locator('.cap')).toHaveAttribute('y', '0');
@@ -750,7 +751,7 @@ test('keyboard fader changes are bounded and update the local looper LEDs', asyn
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
   await expect(looper).toHaveAttribute('aria-valuetext', 'Play');
-  await expect(looper.locator('.selection-led[data-value="2"]')).toHaveClass(/is-on/);
+  await expect(looper.locator('.selection-led[data-value="2"]')).not.toHaveClass(/is-on/);
   await page.keyboard.press('ArrowUp');
   await expect(looper).toHaveAttribute('aria-valuetext', 'Record');
   await expect(looper.locator('.selection-led[data-value="2"]')).not.toHaveClass(/is-on/);
@@ -854,10 +855,10 @@ test('page load and Reset apply the requested fader positions without changing t
   const positions = {
     'pitch-bend': 0.5,
     transpose: 0.5,
-    volume: 99 / 126,
+    expression: 1,
     octave: 0.5,
     looper: 0,
-    tempo: 0,
+    tempo: 0.4,
     'lfo-assign': 0,
     'lfo-depth': 0,
     'lfo-speed': 0,
@@ -899,7 +900,7 @@ test('page load and Reset apply the requested fader positions without changing t
   await expectStartingPositions(80);
   for (const travel of [80, 160]) {
     if (travel === 160) await page.locator('#fader-size').click();
-    for (const fader of await page.getByRole('slider').all()) {
+    for (const fader of await page.locator('#synth').getByRole('slider').all()) {
       await fader.focus();
       await page.keyboard.press('Home');
     }
@@ -937,7 +938,7 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
   for (const element of await page.locator('.focus-looper').all()) {
     await expect(element).toHaveCSS('opacity', '0.2');
   }
-  for (const id of ['pitch-bend', 'volume', 'octave']) {
+  for (const id of ['pitch-bend', 'expression', 'octave']) {
     await expect(page.locator(`#${id}`)).toHaveCSS('opacity', '1');
     expect(await page.locator(`#${id}`).evaluate((fader) =>
       getComputedStyle(fader).getPropertyValue('--cap-fill'))).toBe('');
@@ -1191,7 +1192,7 @@ for (const reset of ['double-click', 'Delete']) {
         await page.locator('#hide-speakers').click();
         await page.locator('#focus-mode').click();
       }
-      for (const fader of await page.getByRole('slider').all()) {
+      for (const fader of await page.locator('#synth').getByRole('slider').all()) {
         const id = await fader.getAttribute('id');
         const min = await fader.getAttribute('aria-valuemin');
         const max = await fader.getAttribute('aria-valuemax');
@@ -1243,8 +1244,8 @@ test('Delete ends an active drag and resets mute state without resetting other c
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
   await expect(page.locator('#preview-filter .graph-curve')).toHaveAttribute('d', initialCurve);
   await page.locator('#volume-mute').click();
-  await page.locator('#volume').press('Delete');
-  await expect(page.locator('#volume')).toHaveAttribute('aria-valuenow', '100');
+  await page.locator('#expression').press('Delete');
+  await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
   await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#pitch-range-up').click();
   await page.locator('#pitch-bend').press('Home');
@@ -1390,7 +1391,7 @@ test('five-position labels select exact values without dragging in normal and co
           await expect(fader.locator('.cap')).toHaveAttribute('y', String(travel * (1 - step / 4)));
           await expect(page.locator(`#fader-value-${id}`)).toHaveText(String(step));
           expect(await snapshot()).toEqual({ ...before, [id]: String(step) });
-          for (const led of await fader.locator('.selection-led').all()) {
+          for (const led of id === 'looper' ? [] : await fader.locator('.selection-led').all()) {
             const selected = await led.getAttribute('data-value') === String(step);
             if (selected) await expect(led).toHaveClass(/is-on/);
             else await expect(led).not.toHaveClass(/is-on/);
@@ -1478,17 +1479,17 @@ test('glow eases in and out even with reduced motion, without animating handle m
   await expect(page.locator('#osc-saw-led')).toHaveCSS('transition-duration', '0s');
 });
 
-test('MUTE preserves velocity across view changes and supports keyboard activation', async ({ page }) => {
-  const volume = page.locator('#volume');
+test('MUTE preserves expression across view changes and supports keyboard activation', async ({ page }) => {
+  const expression = page.locator('#expression');
   const mute = page.locator('#volume-mute');
   const label = page.locator('#mute-label');
   await expect(label).toHaveText('MUTE');
-  await volume.focus();
-  await page.keyboard.press('PageUp');
+  await expression.focus();
+  await page.keyboard.press('PageDown');
   await page.keyboard.press('ArrowDown');
-  await expect(volume).toHaveAttribute('aria-valuenow', '109');
+  await expect(expression).toHaveAttribute('aria-valuenow', '116');
   await mute.click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '109');
+  await expect(expression).toHaveAttribute('aria-valuenow', '116');
   await expect(label).toHaveText('UNMUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'true');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
@@ -1498,43 +1499,43 @@ test('MUTE preserves velocity across view changes and supports keyboard activati
     await page.locator(`#${id}`).click();
     await expect(label).toHaveText('UNMUTE');
     await expect(mute).toHaveAttribute('aria-disabled', 'false');
-    await expect(volume).toHaveAttribute('aria-valuenow', '109');
+    await expect(expression).toHaveAttribute('aria-valuenow', '116');
   }
   await mute.click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '109');
-  await expect(page.locator('#fader-value-volume')).toHaveText('109');
+  await expect(expression).toHaveAttribute('aria-valuenow', '116');
+  await expect(page.locator('#fader-value-expression')).toHaveText('116');
   await expect(label).toHaveText('MUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
   await mute.focus();
   await page.keyboard.press(' ');
-  await expect(volume).toHaveAttribute('aria-valuenow', '109');
+  await expect(expression).toHaveAttribute('aria-valuenow', '116');
   await page.keyboard.press('Enter');
-  await expect(volume).toHaveAttribute('aria-valuenow', '109');
+  await expect(expression).toHaveAttribute('aria-valuenow', '116');
 
-  await volume.focus();
+  await expression.focus();
   await page.keyboard.press('End');
   await mute.click();
   await expect(label).toHaveText('UNMUTE');
   await mute.click();
   await expect(label).toHaveText('MUTE');
-  await expect(volume).toHaveAttribute('aria-valuenow', '1');
+  await expect(expression).toHaveAttribute('aria-valuenow', '0');
 });
 
-test('adjusting velocity while muted preserves mute until reset', async ({ page }) => {
-  const volume = page.locator('#volume');
+test('adjusting expression while muted preserves mute until reset', async ({ page }) => {
+  const expression = page.locator('#expression');
   const mute = page.locator('#volume-mute');
   const label = page.locator('#mute-label');
   await mute.click();
-  await volume.press('End');
-  await expect(volume).toHaveAttribute('aria-valuenow', '1');
+  await expression.press('End');
+  await expect(expression).toHaveAttribute('aria-valuenow', '0');
   await expect(label).toHaveText('UNMUTE');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');
-  await volume.locator('.cap').dblclick();
-  await expect(volume).toHaveAttribute('aria-valuenow', '100');
+  await expression.locator('.cap').dblclick();
+  await expect(expression).toHaveAttribute('aria-valuenow', '127');
   await expect(label).toHaveText('UNMUTE');
   await page.locator('#reset-faders').click();
-  await expect(volume).toHaveAttribute('aria-valuenow', '100');
+  await expect(expression).toHaveAttribute('aria-valuenow', '127');
   await expect(label).toHaveText('MUTE');
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await expect(mute).toHaveAttribute('aria-disabled', 'false');

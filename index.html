@@ -37,20 +37,27 @@
         <button id="midi-connect" type="button">Connect MIDI</button>
         <button id="midi-reset" type="button">MIDI Reset</button>
         <button id="capture-synth" type="button">Capture Synth</button>
-        <label><input id="position-velocity" type="checkbox"> Position-sensitive velocity</label>
+        <label><input id="position-expression" type="checkbox"> Position-sensitive expression</label>
         <div class="midi-ports">
           <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
           <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
           <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
+          <label>Modulation wheel <select id="midi-modwheel-target" title="Choose which CC the controller modulation wheel sends"></select></label>
+          <label>Modulation value
+            <span class="midi-modwheel-slider"><input id="midi-modwheel-value" type="range" min="0" max="127" value="0" aria-label="Modulation wheel value"><output id="midi-modwheel-readout" for="midi-modwheel-value">0</output></span>
+          </label>
         </div>
         <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+        <p id="midi-mapping-status" role="status"></p>
         <p id="capture-status" role="status"></p>
       </section>
       <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="synth"></div>
       </div>
+      <input id="looper-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
       <footer>
+        <p id="looper-status" role="status">Looper stopped.</p>
         <p id="arp-status" role="status">Arpeggiator off.</p>
         <p id="app-status" role="status">Loading panel...</p>
         <p class="help">Hold keys to press them. Drag faders, scroll the wheel over one, or focus one and use arrow keys.
@@ -59,7 +66,7 @@
           A W S E D F T G Y H U J K plays the middle octave; hold multiple letters for chords.
           Focus Mode shows letters and transposed note names.
           Click the left/right ends to shift octave down/up.
-          LEDs show local selections only.</p>
+          Looper LEDs show the UI looper state, not the hardware looper.</p>
       </footer>
       <noscript>Enable JavaScript to use this application.</noscript>
     </main>

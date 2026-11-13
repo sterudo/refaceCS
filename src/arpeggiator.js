@@ -1,3 +1,5 @@
+import { tempoRange } from './synth-midi.js';
+
 const triads = {
   0: [0, 4, 7], 2: [0, 3, 7], 4: [0, 3, 7], 5: [0, 4, 7],
   7: [0, 4, 7], 9: [0, 3, 7], 11: [0, 3, 6],
@@ -7,7 +9,7 @@ const sevenths = {
   8: [0, 4, 7, 10], 10: [0, 3, 7, 10],
 };
 
-export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0) {
+export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0, onTempoChange = () => {}) {
   const enabledButton = document.querySelector('#arp-enabled');
   const latchButton = document.querySelector('#arp-latch');
   const chordButton = document.querySelector('#arp-chord');
@@ -30,7 +32,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
   let enabled = false;
   let latch = true;
   let chord = false;
-  let tempo = 120;
+  let tempo = tempoRange.default;
   let rate = 16;
   let mode = 'up';
   let step = 0;
@@ -81,17 +83,20 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     });
     tempoControl.dataset.value = String(tempo);
     tempoControl.setAttribute('aria-label', `Arpeggiator tempo: ${tempo} BPM`);
-    document.querySelector('#arp-tempo-down').setAttribute('aria-disabled', String(tempo === 40));
-    document.querySelector('#arp-tempo-up').setAttribute('aria-disabled', String(tempo === 240));
+    document.querySelector('#arp-tempo-down').setAttribute('aria-disabled', String(tempo === tempoRange.min));
+    document.querySelector('#arp-tempo-up').setAttribute('aria-disabled', String(tempo === tempoRange.max));
   }
 
-  function setTempo(value) {
-    const next = Math.max(40, Math.min(240, value));
-    if (next === tempo) return;
-    tempo = next;
-    updateTempoDisplay();
-    status.textContent = `Tempo: ${tempo} BPM.`;
-    restart();
+  function setTempo(value, notify = false, forceNotify = false) {
+    const next = Math.max(tempoRange.min, Math.min(tempoRange.max, Math.round(value)));
+    const changed = next !== tempo;
+    if (changed) {
+      tempo = next;
+      updateTempoDisplay();
+      status.textContent = `Tempo: ${tempo} BPM.`;
+      restart();
+    }
+    if (notify && (changed || forceNotify)) onTempoChange(next);
   }
 
   function closeMenu(focusButton = false) {
@@ -193,13 +198,13 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
   });
   window.addEventListener('blur', () => closeMenu());
   for (const [id, direction] of [['#arp-tempo-down', -1], ['#arp-tempo-up', 1]]) {
-    bindActivate(document.querySelector(id), (event) => setTempo(tempo + direction * (event.shiftKey ? 10 : 1)));
+    bindActivate(document.querySelector(id), (event) => setTempo(tempo + direction * (event.shiftKey ? 10 : 1), true));
   }
-  document.querySelector('#arp-tempo-display').addEventListener('dblclick', () => setTempo(120));
+  document.querySelector('#arp-tempo-display').addEventListener('dblclick', () => setTempo(tempoRange.default, true, true));
   tempoControl.addEventListener('wheel', (event) => {
     if (event.ctrlKey || event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
     event.preventDefault();
-    setTempo(tempo - Math.sign(event.deltaY) * (event.altKey ? 10 : 1));
+    setTempo(tempo - Math.sign(event.deltaY) * (event.altKey ? 10 : 1), true);
   }, { passive: false });
   updateTempoDisplay();
 
@@ -312,8 +317,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       latched.clear();
       changeRouting(false);
     } else {
-      tempo = 120;
-      updateTempoDisplay();
+      setTempo(tempoRange.default, true, true);
       changeRouting(true);
       enabled = true;
       if (latch) {
@@ -342,6 +346,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
 
   return {
     get enabled() { return enabled; },
+    setTempo,
     getHeld() { return [...held.entries()]; },
     transposeChanged() {
       if (enabled && timer === undefined && sounding === undefined && notes().length) tick();

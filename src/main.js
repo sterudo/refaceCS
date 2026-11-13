@@ -21,8 +21,10 @@ const standardKeys = panel.querySelector('#standard-keys');
 const transposeFader = panel.querySelector('#transpose');
 const transposeValue = panel.querySelector('#transpose-value');
 const octaveFader = panel.querySelector('#octave');
+const tempoFader = panel.querySelector('#tempo');
+const looperFader = panel.querySelector('#looper');
 const octaveButtons = [...panel.querySelectorAll('.octave-step')];
-const volumeFader = panel.querySelector('#volume');
+const expressionFader = panel.querySelector('#expression');
 const muteButton = panel.querySelector('#volume-mute');
 const muteLabel = panel.querySelector('#mute-label');
 const pitchRangeControl = panel.querySelector('#pitch-range');
@@ -83,6 +85,11 @@ const midi = setupMidiDiscovery(() => {
     const fader = panel.querySelector(`#${id}`);
     if (fader) updateFader(fader, value, false);
   }
+}, (bpm) => {
+  updateFader(tempoFader, bpm, false);
+  midi.setControl('tempo', bpm);
+}, (mode) => {
+  updateFader(looperFader, mode, false);
 });
 const computerKeyBindings = new Map([
   ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
@@ -97,6 +104,7 @@ function readValue(fader) {
 function valueText(fader) {
   const value = readValue(fader);
   if (fader === transposeFader) return `${signedValue(value)} semitones`;
+  if (fader === tempoFader) return `${value} BPM`;
   return selections[fader.id]?.[value] ?? String(value);
 }
 
@@ -157,6 +165,8 @@ function updateFader(fader, value, announce = true) {
   updateFaderTooltip(fader);
   readouts.get(fader).textContent = fader === transposeFader ? signedValue(value) : String(value);
   if (fader === transposeFader) transposeValue.textContent = signedValue(value);
+  if (fader === tempoFader) midi.setArpeggiatorTempo(value);
+  if (fader === looperFader && changed) midi.setLooperMode(value);
 
   if (fader === octaveFader) {
     for (const button of octaveButtons) {
@@ -171,9 +181,11 @@ function updateFader(fader, value, announce = true) {
     updateHeldDisplay();
   }
 
-  fader.querySelectorAll('.selection-led').forEach((led) => {
-    led.classList.toggle('is-on', Number(led.dataset.value) === value);
-  });
+  if (fader !== looperFader) {
+    fader.querySelectorAll('.selection-led').forEach((led) => {
+      led.classList.toggle('is-on', Number(led.dataset.value) === value);
+    });
+  }
 
   updateVisualizations(fader.id);
   if (announce) {
@@ -354,8 +366,7 @@ function updateKey(key) {
     || [...activePointers.values()].some((item) => item.element === key);
   if (localDown && !locallyHeldKeys.has(key)) {
     locallyHeldKeys.add(key);
-    const pointer = [...activePointers.values()].find((item) => item.element === key);
-    midi.startNote(key, Number(key.dataset.midiNote), pointer?.velocity ?? readValue(volumeFader));
+    midi.startNote(key, Number(key.dataset.midiNote), 100);
     updateHeldDisplay();
   } else if (!localDown && locallyHeldKeys.delete(key)) {
     midi.endNote(key);
@@ -431,13 +442,12 @@ for (const key of keys) {
     event.preventDefault();
     key.focus({ preventScroll: true });
     key.setPointerCapture(event.pointerId);
-    let velocity = readValue(volumeFader);
-    if (document.querySelector('#position-velocity').checked) {
+    if (document.querySelector('#position-expression').checked) {
       const bounds = key.getBoundingClientRect();
       const position = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
-      velocity = Math.min(127, Math.max(1, Math.round(1 + position / 0.8 * 126)));
+      updateFaderFromInput(expressionFader, Math.min(127, Math.round(position / 0.8 * 127)));
     }
-    activePointers.set(event.pointerId, { element: key, velocity });
+    activePointers.set(event.pointerId, { element: key });
     updateKey(key);
     status.textContent = `${key.getAttribute('aria-label')} pressed`;
   });

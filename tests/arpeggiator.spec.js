@@ -82,7 +82,7 @@ test('panel buttons cycle and expose selectable menus with keyboard support', as
   await expect(mode).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('tempo control supports steps, wheel, bounds and independent activation reset', async ({ page }) => {
+test('tempo control supports steps, wheel, bounds and shared activation reset', async ({ page }) => {
   const tempo = page.locator('#arp-tempo');
   const up = page.locator('#arp-tempo-up');
   const down = page.locator('#arp-tempo-down');
@@ -109,7 +109,11 @@ test('tempo control supports steps, wheel, bounds and independent activation res
   await expect(tempo).toHaveAttribute('data-value', '130');
   await page.locator('#arp-tempo-display').dblclick();
   await expect(tempo).toHaveAttribute('data-value', '120');
-  await expect(synthTempo).toHaveAttribute('aria-valuenow', '0');
+  await expect(synthTempo).toHaveAttribute('aria-valuenow', '120');
+  await synthTempo.press('ArrowUp');
+  await expect(tempo).toHaveAttribute('data-value', '121');
+  await up.click();
+  await expect(synthTempo).toHaveAttribute('aria-valuenow', '122');
   await page.evaluate(() => window.arpTest.tempo(40));
   await expect(down).toHaveAttribute('aria-disabled', 'true');
   await page.evaluate(() => window.arpTest.click('#arp-tempo-down'));
@@ -208,6 +212,20 @@ test('tempo and rate determine step length and the 50 percent gate', async ({ pa
   await page.clock.runFor(50);
   expect(await page.evaluate(() => window.arpTest.sent.map(({ data }) => data))).toEqual([
     [0x90, 60, 87], [0x80, 60, 0], [0x90, 60, 87],
+  ]);
+});
+
+test('moving the tempo fader changes the running arpeggiator timing', async ({ page }) => {
+  await page.evaluate(() => {
+    window.arpTest.select('#arp-rate', '16');
+    window.arpTest.click('#arp-enabled');
+    window.arpTest.emit('ci', [0x92, 60, 87]);
+  });
+  await page.locator('#tempo').press('Home');
+  await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '240');
+  await page.clock.runFor(63);
+  expect(await page.evaluate(() => window.arpTest.sent.map(({ data }) => data))).toEqual([
+    [0x90, 60, 87], [0x80, 60, 0], [0x90, 60, 87], [0x80, 60, 0], [0x90, 60, 87],
   ]);
 });
 

@@ -109,10 +109,34 @@ h1 span {
   font: inherit;
 }
 
+.midi-modwheel-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+}
+
+.midi-modwheel-slider input {
+  width: 9rem;
+  max-width: 100%;
+  margin: 0;
+  accent-color: #75c6d3;
+}
+
+.midi-modwheel-slider output {
+  min-width: 2.5ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .midi-settings p {
   flex-basis: 100%;
   margin: 0;
   color: #a3b0b8;
+}
+
+#midi-mapping-status:empty {
+  display: none;
 }
 
 button {
@@ -138,6 +162,7 @@ button[aria-pressed="true"] {
 
 button:focus-visible,
 select:focus-visible,
+input[type="range"]:focus-visible,
 .instrument-scroll:focus-visible {
   outline: 3px solid #6bdeea;
   outline-offset: 4px;
