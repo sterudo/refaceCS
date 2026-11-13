@@ -630,6 +630,7 @@ test('pause preserves position, stop rewinds, and clear removes the phrase', asy
   await page.clock.runFor(200);
   expect(await sent(page)).toEqual([[0x80, 60, 0]]);
   await mode(page, 0);
+  await sent(page);
   await mode(page, 2);
   expect(await sent(page)).toEqual([[0x90, 60, 90]]);
   await mode(page, 4);

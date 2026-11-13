@@ -61,6 +61,33 @@ test('transposed held notes retain their original note-off pitches', async ({ pa
   ]);
 });
 
+test('overlapping local and controller notes retrigger cleanly without stacking or stale releases', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.down('a');
+  await page.evaluate(() => window.testNotes.emit('ci', [0x90, 60, 90]));
+  await page.keyboard.up('a');
+  expect(await page.evaluate(() => window.testNotes.sent.map((event) => event.data))).toEqual([
+    [0x90, 60, 100], [0x80, 60, 0], [0x90, 60, 90],
+  ]);
+  await page.evaluate(() => window.testNotes.emit('ci', [0x80, 60, 0]));
+  expect(await page.evaluate(() => window.testNotes.sent.at(-1).data)).toEqual([0x80, 60, 0]);
+});
+
+test('repeated controller Note Ons cannot leave stacked notes after their releases', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0x93, 60, 90]);
+    window.testNotes.emit('ci', [0x93, 60, 80]);
+    window.testNotes.emit('ci', [0x83, 60, 0]);
+  });
+  expect(await page.evaluate(() => window.testNotes.sent.map((event) => event.data))).toEqual([
+    [0x93, 60, 90], [0x83, 60, 0], [0x93, 60, 80],
+  ]);
+  await page.evaluate(() => window.testNotes.emit('ci', [0x83, 60, 0]));
+  expect(await page.evaluate(() => window.testNotes.sent.at(-1).data)).toEqual([0x83, 60, 0]);
+});
+
 test('notes shifted outside the MIDI range are reported and not sent', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.locator('#transpose').press('ArrowDown');
@@ -334,7 +361,7 @@ test('MIDI Reset releases controller sustain before resetting notes', async ({ p
   });
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
   const messages = await page.evaluate(() => window.testNotes.sent);
-  expect(messages).toHaveLength(33);
+  expect(messages).toHaveLength(48);
   expect(messages[0]).toEqual({ port: 'ro', data: [0xb2, 64, 0] });
   await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
 });
@@ -378,7 +405,7 @@ test('surfaces output send errors', async ({ page }) => {
   await page.keyboard.up('a');
 });
 
-test('MIDI Reset sends both messages on every channel and clears held notes', async ({ page }) => {
+test('MIDI Reset releases sustain and tracked notes before resetting every channel and clearing held notes', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => document.activeElement.blur());
   await page.keyboard.down('a');
@@ -403,6 +430,10 @@ test('MIDI Reset sends both messages on every channel and clears held notes', as
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([
     { port: 'ro', data: [0x90, 60, 100] },
     { port: 'ro', data: [0x92, 64, 88] },
+    ...Array.from({ length: 16 }, (_, channel) => ({ port: 'ro', data: [0xb0 | channel, 64, 0] })),
+    { port: 'ro', data: [0x80, 60, 0] },
+    { port: 'ro', data: [0x82, 64, 0] },
+    { port: 'ro', data: [0x80, 62, 0] },
     ...expectedReset,
   ]);
   await page.keyboard.down('a');
@@ -421,9 +452,9 @@ test('MIDI Reset reports partial send failures and still tries every message', a
     };
   });
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
-  await expect(page.locator('#midi-status')).toContainText('1 of 32 messages');
+  await expect(page.locator('#midi-status')).toContainText('1 of 48 messages');
   await expect(page.locator('#midi-status')).toContainText('device busy');
-  expect(await page.evaluate(() => window.testNotes.attempts)).toBe(32);
+  expect(await page.evaluate(() => window.testNotes.attempts)).toBe(48);
   await page.evaluate(() => {
     window.testNotes.access.outputs.get('ro').send = () => {};
   });
@@ -435,4 +466,34 @@ test('MIDI Reset reports an unavailable output', async ({ page }) => {
   await page.locator('#midi-reface-output').selectOption('');
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
   await expect(page.locator('#midi-status')).toContainText('MIDI output unavailable');
+});
+
+test('MIDI Reset retries a tracked note-off after the original send failed', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0x94, 72, 90]);
+    const port = window.testNotes.access.outputs.get('ro');
+    const send = port.send;
+    port.send = (data) => {
+      if (data[0] === 0x84) throw new Error('note-off blocked');
+      send(data);
+    };
+    window.testNotes.emit('ci', [0x84, 72, 0]);
+    port.send = send;
+    window.testNotes.sent.length = 0;
+  });
+  await page.getByRole('button', { name: 'MIDI Reset' }).click();
+  expect(await page.evaluate(() => window.testNotes.sent.map((event) => event.data))).toContainEqual([0x84, 72, 0]);
+  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+});
+
+test('Stop releases a repeated reface key on its original MIDI channel', async ({ page }) => {
+  await page.evaluate(() => {
+    window.testNotes.emit('ri', [0x95, 65, 90]);
+    window.testNotes.emit('ri', [0x95, 65, 80]);
+    window.testNotes.emit('ri', [0x85, 65, 0]);
+  });
+  await page.locator('#looper .position-label[data-step="0"]').click();
+  expect(await page.evaluate(() => window.testNotes.sent.map((event) => event.data))).toContainEqual([0x85, 65, 0]);
+  await expect(page.locator('#key-f-2')).toHaveAttribute('aria-pressed', 'false');
 });

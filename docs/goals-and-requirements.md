@@ -42,7 +42,7 @@ These are decisions made during requirements refinement:
 
 ## Deferred scope
 
-- MIDI sequencer and transport workflow.
+- Piano-roll MIDI sequencing and fader automation; the phrase looper and drum step sequencer are implemented.
 - Full-text search across metadata beyond patch names.
 - A saved or generated image of a patch's fader/control state.
 - Settings and additional live-play workflow.
@@ -74,11 +74,23 @@ The UI phrase looper is independent of the hardware looper and records notes fro
 
 Looper automation controls below the slider default to 4/4, zero bars, and quantization off. Click the signature to toggle 4/4 and 3/4, use −/+ for a length up to the 1,200-beat limit, and cycle or open the quantization menu for note divisions 1 through 32. Zero bars retains manual recording. A fixed-length first take starts on the first note, counts down the remaining bars, and wraps into overdubbing until PLAY is selected; early PLAY starts the full-length loop with empty remaining space. The countdown repeats during overdubbing. Recorded note starts are quantized to the nearest grid point while retaining their duration; live notes remain immediate and quantized overdubs are heard on a subsequent pass. Settings changed during a phrase apply to the next new recording.
 
-For notes on the same MIDI channel and pitch, a newer overdub at the same quantized position replaces the previous duration. A later note start cuts the preceding duration, including across the loop boundary. When a loop note retriggers a sounding note, send note-off first and ignore any subsequent release of the interrupted note.
+For notes on the same MIDI channel and pitch, a newer overdub at the same quantized position replaces the previous duration. A later note start cuts the preceding duration, including across the loop boundary. All app-routed same-channel/pitch retriggers send Note Off before Note On instead of stacking voices; a subsequent release of the interrupted note does not cut the newer one.
 
 Looper load/save icons import and export Standard MIDI Files independently of MIDI connection. Save asks for a filename and adds `.mid` when needed; the browser controls the download location. Import supports beat-timed type 0 and synchronized type 1, notes only; ignored non-note events and unsupported or later tempo/signature changes are reported. The initial tempo is applied only within 40–240 BPM, and the initial signature only for 3/4 or 4/4. General files end at the next bar after their last note; looper exports include exact loop-length metadata for reimport, including trailing silence. Loading confirms replacement and leaves the phrase stopped. Saving during recording or overdubbing finalizes held and scheduled notes and stops the transport. Files over 2,000 notes, 1,200 beats, or 16 MB are rejected.
 
 The chord readout analyzes currently held on-screen notes and both selected MIDI inputs, independently of generated or latched arpeggiator notes. Recognize major, minor, augmented and diminished triads and dominant, major and minor 7th, 9th and 11th chords, including inversions and omitted fifths in extended chords. Major chords are green and minor chords blue; augmented, diminished and dominant chords remain neutral. Where several chords match, prefer a root at the lowest held pitch; otherwise choose a deterministic match.
+
+### Groove studio and MIDI shutdown
+
+A collapsible Groove studio between the synth and patch library provides an 808-inspired, sample-free Web Audio drum machine. New patterns have kick, snare, closed hi-hat, and open hi-hat lanes; additional voices include three toms, shaker, and clap. Each lane supports Level, Tune, Decay, Tone, solo/mute, and five velocity levels across 16 sixteenth-note steps in 4/4 or 12 in 3/4. Hidden steps are preserved. Named patterns and lane sound settings persist in localStorage, separately from patch ZIP backups; tone-control visibility is not saved.
+
+Drums accept channel-10 MIDI triggering and share tempo and meter with the browser looper. Once drum audio is enabled, looper MIDI uses timestamped look-ahead scheduling on the shared musical timeline. Linked starts join the next available bar; linked Pause/Clear also stops drums. Explicit Stop always stops both transports and performs MIDI Reset, even when linking is unchecked. Space toggles drum play/stop except where existing synth keys, editing, dialogs, or other controls handle it.
+
+MIDI Reset stops note producers, clears arpeggiator held/latch input without changing its enabled/latch/chord settings, clears queued MIDI, sends Sustain Off on all 16 channels and explicit tracked Note Offs, then sends All Notes Off and All Sound Off on all channels. Stop finalizes elapsed recording time silently, without playing overdue notes or restoring a playback pass at a recording boundary. Failed queue cancellation and message submission remain visible; successful sends do not confirm the physical synth response.
+
+The signed looper MIDI offset is adjustable from -600 to +600 ms; positive values delay playback MIDI, without delaying live input. Calibrate MIDI offset plays a standalone 100 BPM kick and keeps only the latest reface Note On delay measured from the kick's scheduled playback time. Done applies that delay positively; Cancel or an error preserves the old value. This aligns playing/input delay, not measured hardware audio latency.
+
+Browser-supported audio output selection applies only to drums. Web Audio requests interactive latency but cannot host native VSTs or directly expose ASIO. Physical interface latency, MIDI shutdown, and reface response require hardware verification. Piano-roll sequencing, fader automation, external drum MIDI output, and a saw/square softsynth remain deferred.
 
 Sources:
 

@@ -6,6 +6,8 @@ import { controlNumber } from './synth-midi.js';
 import { detectChord, noteNames } from './chord-detection.js';
 import { createPatchLibrary } from './patch-library.js';
 import { PATCH_CONTROL_IDS } from './patches.js';
+import { createGrooveClock } from './groove-clock.js';
+import { createDrumMachine } from './drum-machine.js';
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const container = document.querySelector('#synth');
@@ -77,6 +79,7 @@ for (const octave of [0, 4]) {
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
 const locallyHeldKeys = new Set();
+const grooveClock = createGrooveClock();
 const midi = setupMidiDiscovery(() => {
   keys.forEach(updateKey);
   updateHeldDisplay();
@@ -92,6 +95,29 @@ const midi = setupMidiDiscovery(() => {
   midi.setControl('tempo', bpm);
 }, (mode) => {
   updateFader(looperFader, mode, false);
+}, {
+  clock: grooveClock,
+  onDrumNote: (note, velocity) => drums.triggerMidi(note, velocity),
+  onDrumStop: () => drums.stop(),
+  onRefaceNote: (at, portId) => drums.captureCalibrationNote(at, portId),
+  onLooperStartRequest: (mode) => drums.startFromLooper(mode),
+  onLooperStartCancelled: () => drums.cancelPendingStart(),
+  onLooperStopped: () => drums.stopFromLooper(),
+  clearLocalNotes: releaseNotes,
+});
+const drums = createDrumMachine(grooveClock, {
+  onTempo(bpm) {
+    midi.setTempo(bpm);
+  },
+  onStartLooper(at, mode) {
+    midi.setLooperMode(mode, at);
+    updateFader(looperFader, mode, false);
+  },
+  onStopLooper() {
+    midi.setLooperMode(0);
+    updateFader(looperFader, 0, false);
+  },
+  getRefaceInput: () => midi.getRefaceInput(),
 });
 const computerKeyBindings = new Map([
   ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
@@ -168,7 +194,6 @@ function updateFader(fader, value, announce = true) {
   readouts.get(fader).textContent = fader === transposeFader ? signedValue(value) : String(value);
   if (fader === transposeFader) transposeValue.textContent = signedValue(value);
   if (fader === tempoFader) midi.setArpeggiatorTempo(value);
-  if (fader === looperFader && changed) midi.setLooperMode(value);
 
   if (fader === octaveFader) {
     for (const button of octaveButtons) {
@@ -195,8 +220,9 @@ function updateFader(fader, value, announce = true) {
   }
 }
 
-function updateFaderFromInput(fader, value) {
-  updateFader(fader, value);
+function updateFaderFromInput(fader, value, announce = true) {
+  updateFader(fader, value, announce);
+  if (fader === looperFader) midi.setLooperMode(readValue(fader));
   midi.setControl(fader.id, readValue(fader));
 }
 
@@ -573,8 +599,7 @@ function resetSection(section) {
     if (sectionFaders.includes(item.element)) releasePointer({ pointerId });
   }
   for (const fader of sectionFaders) {
-    updateFader(fader, startingValues.get(fader), false);
-    midi.setControl(fader.id, readValue(fader));
+    updateFaderFromInput(fader, startingValues.get(fader), false);
   }
   status.textContent = `${section.toUpperCase()} faders reset to starting positions.`;
 }
@@ -588,8 +613,7 @@ document.querySelector('#reset-faders').addEventListener('click', () => {
   muteButton.setAttribute('aria-pressed', 'false');
   muteButton.querySelector('title').textContent = 'Mute notes';
   for (const [fader, value] of startingValues) {
-    updateFader(fader, value, false);
-    midi.setControl(fader.id, readValue(fader));
+    updateFaderFromInput(fader, value, false);
   }
   updatePitchRange(defaultPitchRange, false);
   midi.setControl('pitch-range', defaultPitchRange);

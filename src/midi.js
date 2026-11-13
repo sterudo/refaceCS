@@ -3,7 +3,7 @@ import { createLooper } from './looper.js';
 import { captureParameters, controlNumber, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
   parameterMessage, requestMessage } from './synth-midi.js';
 
-export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode) {
+export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}) {
   const connect = document.querySelector('#midi-connect');
   const badge = document.querySelector('#midi-badge');
   const status = document.querySelector('#midi-status');
@@ -22,6 +22,8 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   const forwarded = new Map();
   const localNotes = new Map();
   const outputNotes = new Map();
+  const queuedNotes = [];
+  let queueBase;
   const activeSustain = new Map();
   const ccValues = new Map();
   const revisions = new Map();
@@ -64,9 +66,11 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   modwheelTarget.value = String(modwheelCC);
   setModwheelDisplay(ccValues.get(modwheelCC) ?? Number(modwheelValue.value));
   updateMappingStatus();
-  const looper = createLooper((message, owner) => sendOwned(output, message, owner), onLooperMode, (bpm) => {
-    onSynthValue('tempo', bpm);
-    if (output) setControl('tempo', bpm);
+  const looper = createLooper((message, owner) => sendOwned(output, message, owner), onLooperMode, setSharedTempo, {
+    clock: groove.clock,
+    sendScheduled: (message, owner, at) => queueOwned(message, owner, at),
+    cancelScheduled,
+    onStop: () => groove.onLooperStopped?.(),
   });
   const arpeggiator = createArpeggiator((message) => sendLive(output, message, 'arpeggiator'), changeRouting,
     () => muted, () => transpose, onArpeggiatorTempo);
@@ -74,6 +78,11 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   function reportError(message) {
     lastError = message;
     status.textContent = message;
+  }
+
+  function setSharedTempo(bpm) {
+    onSynthValue('tempo', bpm);
+    if (output) setControl('tempo', bpm);
   }
 
   function setControl(id, value) {
@@ -109,13 +118,14 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     return { sent, failed, total: values.length, unavailable: false };
   }
 
-  function send(port, message) {
+  function send(port, message, timestamp) {
     if (!port || port.state !== 'connected') {
       reportError('MIDI output unavailable; message was not sent.');
       return false;
     }
     try {
-      port.send(message);
+      if (timestamp === undefined) port.send(message);
+      else port.send(message, timestamp);
       return true;
     } catch (error) {
       reportError(`MIDI send failed: ${error.message || error}`);
@@ -143,6 +153,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
 
   function sendControllerCC(message, source) {
     const channel = message[0] & 0x0f;
+    if (message[1] >= 120 && queuedNotes.length) looper.invalidateSchedule();
     if (!send(output, message)) return;
     if (message[1] === 64) {
       if (message[2] >= 64) activeSustain.set(channel, source);
@@ -167,20 +178,69 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     }
   }
 
+  function copyOwners(source) {
+    return new Map([...source].map(([key, owners]) => [key,
+      new Map([...owners].map(([owner, queue]) => [owner, [...queue]]))]));
+  }
+
+  function cancelScheduled() {
+    if (queuedNotes.length) {
+      try {
+        output?.clear();
+      } catch (error) {
+        reportError(`Could not cancel scheduled MIDI: ${error.message || error}`);
+      }
+      const now = performance.now();
+      outputNotes.clear();
+      for (const [key, owners] of queueBase) outputNotes.set(key, owners);
+      for (const event of queuedNotes) {
+        if (event.at <= now) applyOwned(event.message, event.owner, outputNotes, () => true);
+      }
+      queuedNotes.length = 0;
+      queueBase = undefined;
+    }
+    const active = [];
+    for (const [key, owners] of outputNotes) {
+      const [channel, pitch] = key.split(':').map(Number);
+      for (const [owner, queue] of owners) {
+        if (typeof owner === 'string' && owner.startsWith('looper:') && queue.includes(true)) {
+          active.push({ id: Number(owner.slice(7)), channel, pitch });
+        }
+      }
+    }
+    return active;
+  }
+
+  function queueOwned(message, owner, at) {
+    const now = performance.now();
+    while (queuedNotes.length && queuedNotes[0].at <= now) {
+      const event = queuedNotes.shift();
+      applyOwned(event.message, event.owner, queueBase, () => true);
+    }
+    if (!queuedNotes.length) queueBase = copyOwners(outputNotes);
+    if (!applyOwned(message, owner, outputNotes, (data) => send(output, data, at))) return false;
+    queuedNotes.push({ message, owner, at });
+    return true;
+  }
+
   function sendOwned(port, message, owner) {
+    if (queuedNotes.length) looper.invalidateSchedule();
+    return applyOwned(message, owner, outputNotes, (data) => send(port, data));
+  }
+
+  function applyOwned(message, owner, state, emit) {
     const channel = message[0] & 0x0f;
     const key = `${channel}:${message[1]}`;
     const on = (message[0] & 0xf0) === 0x90 && message[2] !== 0;
-    let owners = outputNotes.get(key);
+    let owners = state.get(key);
     if (on) {
       const activeOwners = owners ? [...owners].filter(([, queue]) => queue.includes(true)) : [];
-      const isLoopNote = (value) => typeof value === 'string' && value.startsWith('looper:');
-      if (activeOwners.length && (isLoopNote(owner) || activeOwners.some(([value]) => isLoopNote(value)))) {
-        if (!send(port, [0x80 | channel, message[1], 0])) return false;
+      if (activeOwners.length) {
+        if (!emit([0x80 | channel, message[1], 0])) return false;
         for (const queue of owners.values()) queue.fill(false);
       }
-      if (!send(port, message)) return false;
-      if (!owners) outputNotes.set(key, owners = new Map());
+      if (!emit(message)) return false;
+      if (!owners) state.set(key, owners = new Map());
       const queue = owners.get(owner) || [];
       queue.push(true);
       owners.set(owner, queue);
@@ -188,11 +248,14 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     }
     if (!owners?.has(owner)) return true;
     const queue = owners.get(owner);
-    const active = queue.shift();
+    const active = queue[0];
+    const anotherActive = queue.slice(1).includes(true)
+      || [...owners].some(([other, entries]) => other !== owner && entries.includes(true));
+    if (active && !anotherActive && !emit(message)) return false;
+    queue.shift();
     if (!queue.length) owners.delete(owner);
-    if (!owners.size) outputNotes.delete(key);
-    if (!active || [...owners.values()].some((entries) => entries.includes(true))) return true;
-    return send(port, message);
+    if (!owners.size) state.delete(key);
+    return true;
   }
 
   function sendLive(port, message, owner) {
@@ -270,6 +333,17 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     const data = event.data;
     if (!data || data.length !== 3) return;
     const type = data[0] & 0xf0;
+    if (port.id === selected.input && type === 0x90 && data[1] < 128 && data[2] > 0 && data[2] < 128
+      && groove.onRefaceNote?.(event.timeStamp, port.id)) return;
+    if (port.id === selected.controller && (data[0] & 0x0f) === 9) {
+      if (data[1] > 127 || data[2] > 127) {
+        reportError('Invalid drum MIDI data; message was not played.');
+        return;
+      }
+      if (type === 0x90 && data[2] > 0) groove.onDrumNote?.(data[1], data[2]);
+      else if (type === 0xb0 && (data[1] === 120 || data[1] === 123)) groove.onDrumStop?.();
+      return;
+    }
     if (port.id === selected.input) {
       if (type === 0xb0 && data[1] < 128 && data[2] < 128) rememberCC(data[1], data[2]);
       const control = decodeControl(data);
@@ -302,8 +376,8 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     const on = type === 0x90 && data[2] !== 0;
     const key = `${port.id}:${channel}:${note}`;
     const count = received.get(key)?.count || 0;
-    if (on) received.set(key, { port, note, count: count + 1 });
-    else if (count > 1) received.set(key, { port, note, count: count - 1 });
+    if (on) received.set(key, { port, channel, note, count: count + 1 });
+    else if (count > 1) received.set(key, { port, channel, note, count: count - 1 });
     else received.delete(key);
     onNotesChanged();
 
@@ -604,6 +678,78 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     }
   });
 
+  function resetNotes(clearLocalNotes = groove.clearLocalNotes) {
+    const hadScheduled = queuedNotes.length > 0;
+    const notesToRelease = new Map();
+    for (const [key, owners] of outputNotes) {
+      for (const queue of owners.values()) {
+        for (const active of queue) {
+          if (active) notesToRelease.set(key, (notesToRelease.get(key) || 0) + 1);
+        }
+      }
+    }
+    for (const { message } of queuedNotes) {
+      const key = `${message[0] & 0x0f}:${message[1]}`;
+      if (!notesToRelease.has(key)) notesToRelease.set(key, 1);
+    }
+    for (const note of received.values()) {
+      if (note.port.id !== selected.input) continue;
+      const key = `${note.channel}:${note.note}`;
+      notesToRelease.set(key, (notesToRelease.get(key) || 0) + note.count);
+    }
+    groove.onDrumStop?.();
+    looper.stop();
+    arpeggiator.clear();
+    cancelScheduled();
+    let failed = 0;
+    let firstError = '';
+    const channels = new Set([...activeSustain.keys(), ...Array.from({ length: 16 }, (_, channel) => channel)]);
+    const messages = [...channels].map((channel) => [0xb0 | channel, 64, 0]);
+    // Queue clearing can discard note-offs sent while stopping the generators.
+    for (const [key, count] of notesToRelease) {
+      const [channel, pitch] = key.split(':').map(Number);
+      for (let index = 0; index < count; index++) messages.push([0x80 | channel, pitch, 0]);
+    }
+    for (let channel = 0; channel < 16; channel++) {
+      for (const controller of [123, 120]) messages.push([0xb0 | channel, controller, 0]);
+    }
+    if (output && output.state === 'connected') {
+      try {
+        if (typeof output.clear === 'function') output.clear();
+        else if (hadScheduled) throw new Error('The MIDI output cannot cancel scheduled messages');
+      } catch (error) {
+        firstError = `Could not cancel scheduled MIDI: ${error.message || error}`;
+      }
+      for (const message of messages) {
+        try {
+          output.send(message);
+          if ((message[0] & 0xf0) === 0xb0) rememberCC(message[1], message[2]);
+        } catch (error) {
+          failed++;
+          if (!firstError) firstError = error.message || String(error);
+        }
+      }
+    } else {
+      firstError = 'MIDI output unavailable';
+    }
+
+    localNotes.clear();
+    forwarded.clear();
+    outputNotes.clear();
+    activeSustain.clear();
+    updateMappingStatus();
+    received.clear();
+    clearLocalNotes?.();
+    onNotesChanged();
+
+    if (firstError) {
+      reportError(`MIDI reset failed${failed ? ` (${failed} of ${messages.length} messages)` : ''}: ${firstError}. Held-note state cleared.`);
+    } else {
+      lastError = '';
+      status.textContent = 'MIDI reset messages sent. Release and play held keys again.';
+    }
+  }
+
   window.addEventListener('pagehide', () => releaseOutput(output));
 
   return {
@@ -622,52 +768,26 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     },
     setArpeggiatorTempo(value) {
       arpeggiator.setTempo(value);
+      groove.clock?.setTempo(value);
       looper.setTempo(value);
     },
-    setLooperMode(value) {
-      looper.setMode(value);
+    setLooperMode(value, startAt) {
+      if (value === 0) {
+        resetNotes();
+        return;
+      }
+      if (startAt === undefined && groove.onLooperStartRequest?.(value)) return;
+      if (value !== 2 && value !== 3) groove.onLooperStartCancelled?.();
+      looper.setMode(value, startAt);
     },
     sendPatchControls,
     setControl,
-    resetNotes(clearLocalNotes) {
-      looper.stop();
-      let failed = 0;
-      let firstError = '';
-      const messages = [...activeSustain.keys()].map((channel) => [0xb0 | channel, 64, 0]);
-      for (let channel = 0; channel < 16; channel++) {
-        for (const controller of [123, 120]) messages.push([0xb0 | channel, controller, 0]);
-      }
-      if (output && output.state === 'connected') {
-        for (const message of messages) {
-          try {
-            output.send(message);
-            rememberCC(message[1], message[2]);
-          } catch (error) {
-            failed++;
-            if (!firstError) firstError = error.message || String(error);
-          }
-        }
-      } else {
-        firstError = 'MIDI output unavailable';
-      }
-
-      localNotes.clear();
-      forwarded.clear();
-      outputNotes.clear();
-      activeSustain.clear();
-      updateMappingStatus();
-      received.clear();
-      arpeggiator.clear();
-      clearLocalNotes();
-      onNotesChanged();
-
-      if (firstError) {
-        reportError(`MIDI reset failed${failed ? ` (${failed} of ${messages.length} messages)` : ''}: ${firstError}. Held-note state cleared.`);
-      } else {
-        lastError = '';
-        status.textContent = 'MIDI reset messages sent. Release and play held keys again.';
-      }
+    setTempo: setSharedTempo,
+    getRefaceInput() {
+      const input = midiAccess?.inputs.get(selected.input);
+      return input?.state === 'connected' ? input.id : null;
     },
+    resetNotes,
     isNoteHeld(note) {
       return [...received.values()].some((value) => value.note === note);
     },

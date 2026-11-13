@@ -6,7 +6,8 @@ const maxBeats = 1200;
 const minimumLength = 0.25;
 const epsilon = 1e-7;
 
-export function createLooper(sendNote, onModeChange, onFileTempo) {
+export function createLooper(sendNote, onModeChange, onFileTempo, playback = {}) {
+  const clock = playback.clock;
   const status = document.querySelector('#looper-status');
   const recordLed = document.querySelector('#looper .selection-led[data-value="3"]');
   const playLed = document.querySelector('#looper .selection-led[data-value="2"]');
@@ -38,6 +39,15 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
   let timer;
   let muted = false;
   let loadRevision = 0;
+  let syncActive = false;
+  let syncOrigin = 0;
+  let syncStart = 0;
+  let syncFirstBeat = 0;
+  let syncClockBeat = 0;
+  let scheduledBeat = 0;
+  let restoreScheduled = false;
+  let scheduleInvalidated = false;
+  let refreshPending = false;
 
   function updateControls() {
     meterButton.querySelector('text').textContent = `${settings.meter}/4`;
@@ -61,6 +71,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
   }
 
   function settingsChanged() {
+    clock?.setMeter(settings.meter);
     updateControls();
     status.textContent = activeSettings
       ? 'Looper settings will apply to the next new recording.' : 'Looper recording settings updated.';
@@ -75,11 +86,13 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     });
   }
 
-  bindButton(meterButton, () => {
-    settings.meter = settings.meter === 4 ? 3 : 4;
+  function setMeter(value) {
+    if (settings.meter === value) return;
+    settings.meter = value;
     settings.bars = Math.min(settings.bars, maxBeats / settings.meter);
     settingsChanged();
-  });
+  }
+  bindButton(meterButton, () => setMeter(settings.meter === 4 ? 3 : 4));
   for (const [button, step] of [[barsDown, -1], [barsUp, 1]]) {
     bindButton(button, () => {
       settings.bars = Math.max(0, Math.min(maxBeats / settings.meter, settings.bars + step));
@@ -196,36 +209,47 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
   }
 
   function releasePlayback() {
+    invalidateSchedule();
     for (const [id, note] of sounding) sendNote([0x80 | note.channel, note.pitch, 0], `looper:${id}`);
     sounding.clear();
   }
 
-  function playOn(note) {
+  function midiTime(atBeat) {
+    return Math.max(performance.now(), syncOrigin + atBeat * 60000 / tempo + clock.offset);
+  }
+
+  function emitPlayback(message, owner, at) {
+    return at === undefined ? sendNote(message, owner) : playback.sendScheduled(message, owner, at);
+  }
+
+  function playOn(note, at) {
     if (muted || sounding.has(note.id)) return true;
-    if (!sendNote([0x90 | note.channel, note.pitch, note.velocity], `looper:${note.id}`)) return false;
+    if (!emitPlayback([0x90 | note.channel, note.pitch, note.velocity], `looper:${note.id}`, at)) return false;
     sounding.set(note.id, note);
     return true;
   }
 
-  function playOff(note) {
-    if (!sounding.has(note.id)) return;
-    sendNote([0x80 | note.channel, note.pitch, 0], `looper:${note.id}`);
+  function playOff(note, at) {
+    if (!sounding.has(note.id)) return true;
+    if (!emitPlayback([0x80 | note.channel, note.pitch, 0], `looper:${note.id}`, at)) return false;
     sounding.delete(note.id);
+    return true;
   }
 
-  function restorePlayback() {
+  function restorePlayback(atBeat = beat, at = syncActive ? midiTime(atBeat) : undefined) {
     if (!length || muted) return true;
-    const position = ((beat % length) + length) % length;
+    const position = ((atBeat % length) + length) % length;
     for (const note of notes) {
       const age = (position - note.start + length) % length;
-      if (age < note.playDuration - epsilon && !playOn(note)) return false;
+      if (age < note.playDuration - epsilon && !playOn(note, at)) return false;
     }
     return true;
   }
 
-  function processPlayback(from, to) {
+  function processPlayback(from, to, scheduled = false) {
+    if (syncActive && !scheduled) return true;
     if (!length || muted || to <= from) return true;
-    if (to - from > length * 4) {
+    if (!scheduled && to - from > length * 4) {
       releasePlayback();
       return restorePlayback();
     }
@@ -243,11 +267,63 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     events.sort((a, b) => a.at - b.at || Number(a.on) - Number(b.on));
     for (const event of events) {
       if (event.on) {
-        if (!playOn(event.note)) return false;
+        if (!playOn(event.note, scheduled ? midiTime(event.at) : undefined)) return false;
       } else {
-        playOff(event.note);
+        if (!playOff(event.note, scheduled ? midiTime(event.at) : undefined)) return false;
       }
     }
+    return true;
+  }
+
+  function startSync(requestedTime) {
+    if (!clock?.enabled || syncActive || !length) return;
+    syncStart = clock.start('looper', requestedTime, beat);
+    syncClockBeat = clock.beatAt(syncStart);
+    syncFirstBeat = beat;
+    syncOrigin = syncStart - beat * 60000 / tempo;
+    scheduledBeat = beat;
+    syncActive = true;
+    restoreScheduled = false;
+  }
+
+  function invalidateSchedule() {
+    if (!syncActive) return;
+    const active = playback.cancelScheduled();
+    sounding.clear();
+    const now = performance.now();
+    const effectiveBeat = (now - clock.offset - syncOrigin) * tempo / 60000;
+    scheduledBeat = Math.max(syncFirstBeat, effectiveBeat);
+    scheduleInvalidated = true;
+    restoreScheduled = now < syncStart + clock.offset;
+    for (const note of active) {
+      sounding.set(note.id, notes.find((item) => item.id === note.id) || note);
+    }
+    if (!refreshPending) {
+      refreshPending = true;
+      queueMicrotask(() => {
+        refreshPending = false;
+        if (syncActive) schedule();
+      });
+    }
+  }
+
+  function fillSchedule() {
+    if (!syncActive || muted) return true;
+    const now = performance.now();
+    const currentBeat = (now - clock.offset - syncOrigin) * tempo / 60000;
+    if (!scheduleInvalidated && scheduledBeat < currentBeat - epsilon) {
+      invalidateSchedule();
+      reconcileSounding(scheduledBeat);
+      if (!restorePlayback(scheduledBeat)) return false;
+    }
+    if (restoreScheduled) {
+      restoreScheduled = false;
+      if (!restorePlayback(syncFirstBeat)) return false;
+    }
+    const horizon = (now + clock.lead - clock.offset - syncOrigin) * tempo / 60000;
+    if (!processPlayback(scheduledBeat, horizon, true)) return false;
+    scheduledBeat = Math.max(scheduledBeat, horizon);
+    scheduleInvalidated = false;
     return true;
   }
 
@@ -315,8 +391,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     return existing;
   }
 
-  function reconcileSounding() {
-    const position = ((beat % length) + length) % length;
+  function reconcileSounding(atBeat = beat) {
+    const position = ((atBeat % length) + length) % length;
     for (const note of sounding.values()) {
       const age = (position - note.start + length) % length;
       if (age >= note.playDuration - epsilon) playOff(note);
@@ -324,9 +400,10 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
   }
 
   function insertNote(recorded) {
+    invalidateSchedule();
     const merged = mergeNote(recorded);
     recomputeDurations();
-    reconcileSounding();
+    reconcileSounding(syncActive ? scheduledBeat : beat);
     return merged;
   }
 
@@ -354,7 +431,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       for (const note of ready) scheduledNotes.splice(scheduledNotes.indexOf(note), 1);
       for (const note of ready) {
         const merged = insertNote(note);
-        if (merged.start < epsilon && !playOn(merged)) {
+        if (merged.start < epsilon && !playOn(merged, syncActive ? midiTime(due) : undefined)) {
           beat = finalBeat;
           return false;
         }
@@ -372,13 +449,14 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     pending.clear();
   }
 
-  function advance(now = performance.now()) {
-    const elapsed = Math.max(0, now - lastTime) * tempo / 60000;
+  function advance(now = performance.now(), playNotes = true) {
+    const elapsed = syncActive ? Math.max(0, (now - syncOrigin) * tempo / 60000 - beat)
+      : Math.max(0, now - lastTime) * tempo / 60000;
     lastTime = now;
     if (mode === 3 && !firstRecording && !length) {
       const oldGuideBeat = guideBeat;
       guideBeat += elapsed;
-      if (Math.floor(guideBeat) > Math.floor(oldGuideBeat)) guideTick();
+      if (playNotes && Math.floor(guideBeat) > Math.floor(oldGuideBeat)) guideTick();
     } else if (firstRecording || (length && (mode === 2 || mode === 3))) {
       const previous = beat;
       beat += elapsed;
@@ -386,7 +464,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
         const boundary = Math.round(beat / activeSettings.meter) * activeSettings.meter;
         if (Math.abs(beat - boundary) < epsilon) beat = boundary;
       }
-      if (!advancePlayback(previous, beat)) {
+      if (playNotes && !advancePlayback(previous, beat)) {
         stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
         return;
       }
@@ -395,7 +473,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
         length = target;
         firstRecording = false;
         normalizeNotes();
-        if (!restorePlayback()) {
+        if (playNotes) startSync(now);
+        if (playNotes && !restorePlayback()) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
           return;
         }
@@ -408,11 +487,11 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
         normalizeNotes();
         mode = 2;
         beat = 0;
-        if (!restorePlayback()) {
+        if (playNotes && !restorePlayback()) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
           return;
         }
-        onModeChange(2);
+        if (playNotes) onModeChange(2);
         status.textContent = 'Looper reached its maximum length and started playback.';
         setLeds();
         return;
@@ -426,7 +505,11 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     timer = undefined;
     if (mode !== 2 && mode !== 3) return;
     if (mode === 2 && !length) return;
-    let wait = 50;
+    if (!fillSchedule()) {
+      stopTransport('Looper stopped: scheduled MIDI output is unavailable or sending failed.');
+      return;
+    }
+    let wait = syncActive ? 20 : 50;
     if (mode === 3 && activeSettings?.bars) {
       const distance = activeSettings.meter - (beat % activeSettings.meter);
       wait = Math.min(wait, distance * 60000 / tempo);
@@ -451,11 +534,15 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
   }
 
   function stopTransport(message) {
+    const wasRecording = mode === 3;
+    mode = 0;
     clearTimeout(timer);
     timer = undefined;
     stopGuide();
     releasePlayback();
-    if (mode === 3) closePending();
+    syncActive = false;
+    clock?.stop('looper');
+    if (wasRecording) closePending();
     if (firstRecording) {
       length = activeSettings.bars ? activeSettings.bars * activeSettings.meter : Math.max(minimumLength, beat);
       firstRecording = false;
@@ -463,15 +550,20 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     }
     for (const note of scheduledNotes.splice(0)) insertNote(note);
     beat = 0;
-    mode = 0;
     setLeds();
     onModeChange(mode);
     if (message) status.textContent = message;
+    playback.onStop?.();
   }
 
-  function setMode(next) {
-    if (next === mode) return;
-    advance();
+  function setMode(next, startAt) {
+    if (next === mode) {
+      if (next !== 2 && next !== 3) playback.onStop?.();
+      return;
+    }
+    advance(performance.now(), next === 2 || next === 3);
+    invalidateSchedule();
+    const alreadySynced = syncActive;
     const previous = mode;
     const endingFirstRecording = previous === 3 && firstRecording;
     clearTimeout(timer);
@@ -486,7 +578,11 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       }
     }
     if (!((previous === 2 && next === 3) ||
-      (previous === 3 && next === 2 && !endingFirstRecording))) releasePlayback();
+      (previous === 3 && next === 2 && !endingFirstRecording))) {
+      releasePlayback();
+      syncActive = false;
+      clock?.stop('looper');
+    }
     mode = next;
     lastTime = performance.now();
     if (next === 4) {
@@ -512,7 +608,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       } else {
         if (previous !== 1 && (previous !== 3 || endingFirstRecording)) beat = 0;
         status.textContent = 'Looper playing.';
-        if (!restorePlayback()) {
+        startSync(startAt);
+        if (!restorePlayback(alreadySynced && syncActive ? scheduledBeat : beat)) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
           return;
         }
@@ -521,7 +618,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       if (length) {
         if (previous !== 1 && previous !== 2) beat = 0;
         status.textContent = 'Looper overdubbing.';
-        if (!restorePlayback()) {
+        startSync(startAt);
+        if (!restorePlayback(alreadySynced && syncActive ? scheduledBeat : beat)) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
           return;
         }
@@ -534,6 +632,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     }
     setLeds();
     schedule();
+    if (next !== 2 && next !== 3) playback.onStop?.();
   }
 
   bindButton(document.querySelector('#looper-load'), () => fileInput.click());
@@ -552,13 +651,14 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
         status.textContent = 'MIDI load cancelled; the current loop is unchanged.';
         return;
       }
-      advance();
+      advance(performance.now(), false);
       stopTransport();
       notes.length = 0;
       scheduledNotes.length = 0;
       pending.clear();
       length = imported.length;
       settings.meter = imported.meter;
+      clock?.setMeter(settings.meter);
       settings.bars = Math.min(settings.bars, maxBeats / settings.meter);
       const bars = length / imported.meter;
       activeSettings = { ...settings, bars: Number.isInteger(bars) ? bars : 0 };
@@ -593,7 +693,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       }
       const filename = /\.midi?$/i.test(name) ? name : `${name}.mid`;
       if (mode === 3) {
-        advance(saveTime);
+        advance(saveTime, false);
         stopTransport();
       }
       const snapshot = notes.map((note) => ({ ...note }));
@@ -612,20 +712,60 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
     }
   });
 
+  function setTempo(value) {
+    if (tempo === value) return;
+    advance();
+    invalidateSchedule();
+    tempo = value;
+    if (syncActive) {
+      if (performance.now() < syncStart) syncStart = clock.timeAt(syncClockBeat);
+      syncOrigin = (performance.now() < syncStart ? syncStart : performance.now()) - beat * 60000 / tempo;
+      scheduledBeat = Math.max(syncFirstBeat, (performance.now() - clock.offset - syncOrigin) * tempo / 60000);
+      reconcileSounding(scheduledBeat);
+      if (!restorePlayback(scheduledBeat)) {
+        stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
+        return;
+      }
+    }
+    schedule();
+  }
+
+  clock?.subscribe((reason) => {
+    if (reason === 'meter') { setMeter(clock.meter); return; }
+    if (reason === 'tempo') { setTempo(clock.tempo); return; }
+    if (reason === 'suspended' && syncActive) {
+      stopTransport('Looper stopped because drum audio was suspended.');
+      return;
+    }
+    if (reason === 'audio' && !syncActive && length && (mode === 2 || mode === 3)) {
+      advance();
+      releasePlayback();
+      startSync(performance.now());
+      if (!restorePlayback()) {
+        stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
+        return;
+      }
+    } else if ((reason === 'offset' || reason === 'output') && syncActive) {
+      releasePlayback();
+      if (!restorePlayback(scheduledBeat)) {
+        stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
+        return;
+      }
+    }
+    schedule();
+  });
+
   return {
     setMode,
-    setTempo(value) {
-      if (tempo === value) return;
-      advance();
-      tempo = value;
-      schedule();
-    },
+    setTempo,
+    invalidateSchedule,
     setMuted(value) {
       advance();
+      invalidateSchedule();
       muted = value;
       stopGuide();
       if (muted) releasePlayback();
-      else if ((mode === 2 || mode === 3) && length && !restorePlayback()) {
+      else if ((mode === 2 || mode === 3) && length && !restorePlayback(syncActive ? scheduledBeat : beat)) {
         stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
       }
       schedule();
@@ -664,7 +804,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo) {
       schedule();
     },
     stop() {
-      advance();
+      advance(performance.now(), false);
       stopTransport('Looper stopped.');
     },
   };

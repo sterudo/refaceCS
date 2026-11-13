@@ -173,6 +173,59 @@ input[type="range"]:focus-visible,
   padding-bottom: 0.75rem;
 }
 
+.groove-panel {
+  margin: 0.75rem 0 1.5rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.5rem;
+  background: #182128;
+}
+.groove-panel > summary { padding: 0.8rem 1rem; cursor: pointer; font-weight: 650; }
+.groove-panel > summary span { margin-left: 0.7rem; font-size: 0.8rem; color: #a3b0b8; font-weight: 400; }
+.groove-content { padding: 0 1rem 1rem; }
+.groove-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin: 0.6rem 0; }
+.groove-toolbar label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; }
+.groove-panel button { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+.groove-panel .drum-transport-icon { display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; padding: 0.4rem; }
+.drum-transport-icon svg { width: 1.4rem; height: 1.4rem; fill: currentColor; }
+#drum-play { color: #87d9a7; }
+#drum-stop { color: #fff; }
+.groove-panel select, .groove-panel input[type="number"] {
+  padding: 0.35rem; background: #202b33; color: #dce4e8; border: 1px solid #4b5c66; border-radius: 0.3rem; font: inherit;
+}
+.groove-panel select { max-width: 16rem; }
+.groove-panel input[type="number"] { width: 4.5rem; }
+.groove-panel input[type="range"] { accent-color: #efac36; width: 6rem; }
+.groove-panel input[type="checkbox"] { accent-color: #efac36; }
+.groove-help, .groove-panel p[role="status"] { font-size: 0.78rem; color: #a3b0b8; margin: 0.5rem 0; }
+#drum-storage-status:empty { display: none; }
+.drum-grid-scroll { overflow-x: auto; padding: 0.4rem; }
+.drum-lane { display: grid; grid-template-columns: 12rem minmax(32rem, 1fr); gap: 0.4rem 0.75rem; min-width: 47rem; padding: 0.55rem 0; border-top: 1px solid #34434c; }
+.drum-lane-header { display: flex; justify-content: space-between; align-items: center; gap: 0.25rem; }
+.drum-lane-header button:first-child { flex: 1; min-width: 0; padding-inline: 0.3rem; text-align: left; }
+.groove-panel .drum-lane-icon { display: inline-flex; align-items: center; justify-content: center; width: 1.65rem; height: 1.8rem; padding: 0; }
+.drum-lane-icon svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.groove-panel .drum-lane-icon[aria-pressed="true"] { color: #171b1e; background: #efac36; border-color: #efac36; }
+.drum-steps { display: grid; width: 50%; grid-template-columns: repeat(16, minmax(0.85rem, 1fr)); gap: 0.15rem; align-items: center; align-self: center; }
+.drum-steps:has(.drum-step:nth-child(13)[hidden]) { grid-template-columns: repeat(12, minmax(0.85rem, 1fr)); }
+.groove-panel .drum-step {
+  padding: 0; min-width: 0; min-height: 0; width: 100%; aspect-ratio: 1; border-radius: 0.2rem; background: #252e34; border: 1px solid #52616a; color: #171b1e;
+  font-size: 0.975rem; line-height: 1; font-weight: 750; font-variant-numeric: tabular-nums;
+}
+.drum-lane.is-muted .drum-steps { opacity: 0.4; }
+.groove-panel .drum-step:nth-child(4n + 1) { border-left: 3px solid #9faab0; }
+.groove-panel .drum-step[data-level="1"] { background: hsl(38 18% 53%); }
+.groove-panel .drum-step[data-level="2"] { background: hsl(38 36% 53%); }
+.groove-panel .drum-step[data-level="3"] { background: hsl(38 55% 53%); }
+.groove-panel .drum-step[data-level="4"] { background: hsl(38 76% 53%); }
+.groove-panel .drum-step[data-level="5"] { background: hsl(38 100% 53%); }
+.groove-panel .drum-step.is-current { outline: 2px solid #fff1bd; outline-offset: 2px; }
+.drum-voice-controls:not([hidden]) { grid-column: 2; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.drum-voice-controls label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: #a3b0b8; }
+.drum-voice-controls output { min-width: 5ch; font-variant-numeric: tabular-nums; }
+.groove-audio { border-top: 1px solid #34434c; padding-top: 0.75rem; }
+.groove-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
+.groove-panel summary:focus-visible, .drum-grid-scroll:focus-visible { outline: 3px solid #6bdeea; outline-offset: 3px; }
+
 .arp-button { cursor: pointer; }
 .arp-bezel { fill: #b2b7b0; stroke: #929991; stroke-width: 0.6; }
 .arp-lens { fill: url(#arp-button-glass); stroke: #b3b8b2; stroke-width: 0.5; }

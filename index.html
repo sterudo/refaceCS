@@ -55,6 +55,53 @@
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="synth"></div>
       </div>
+      <details id="groove-panel" class="groove-panel" open>
+        <summary>Groove studio <span>808-inspired drum machine</span></summary>
+        <div class="groove-content">
+          <div class="groove-toolbar">
+            <button id="drum-enable" type="button">Enable audio</button>
+            <button id="drum-play" class="drum-transport-icon" type="button" aria-pressed="false" aria-label="Play drums" title="Play drums (Space)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4L20 12L7 20Z"/></svg>
+            </button>
+            <button id="drum-stop" class="drum-transport-icon" type="button" aria-label="Stop drums" title="Stop drums (Space)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5H19V19H5Z"/></svg>
+            </button>
+            <label><input id="drum-linked" type="checkbox"> Start and Stop together with looper</label>
+            <label>Tempo <input id="drum-tempo" type="number" min="40" max="240" step="1" value="120"> BPM</label>
+            <label>Time signature <select id="drum-meter"><option value="4">4/4</option><option value="3">3/4</option></select></label>
+            <label>Master <input id="drum-volume" type="range" min="0" max="100" value="80" aria-label="Drum master volume"></label>
+          </div>
+          <div class="groove-toolbar">
+            <label>Pattern <select id="drum-pattern" aria-label="Drum pattern"></select></label>
+            <button id="drum-new" type="button">New pattern</button>
+            <button id="drum-copy" type="button">Save pattern as</button>
+            <button id="drum-rename" type="button">Rename pattern</button>
+            <button id="drum-delete" type="button">Delete pattern</button>
+            <label>Add instrument <select id="drum-instrument"></select></label>
+            <button id="drum-add" type="button">Add lane</button>
+            <button id="drum-tone-toggle" type="button" aria-pressed="false" aria-controls="drum-lanes">Show tone controls</button>
+          </div>
+          <p class="groove-help">One bar per pattern. Click: 5, 4, 3, 2, 1, 2, 3, 4, 5... Right-click or Delete clears a step.
+            Patterns and sound settings save automatically in this browser. MIDI channel 10 triggers the internal drums.</p>
+          <div class="drum-grid-scroll" role="region" aria-label="Drum sequencer; scroll horizontally on smaller screens" tabindex="0">
+            <div id="drum-lanes"></div>
+          </div>
+          <div class="groove-toolbar groove-audio">
+            <label>Audio output <select id="drum-output"><option value="">System default</option></select></label>
+            <button id="drum-output-choose" type="button">Choose audio output</button>
+            <button id="drum-output-refresh" type="button">Refresh outputs</button>
+            <label title="Negative values send looper MIDI earlier; positive values send it later. Live playing is not delayed.">
+              Looper MIDI offset <input id="drum-offset" type="number" min="-600" max="600" step="1" value="0"> ms
+            </label>
+            <button id="drum-calibrate" type="button">Calibrate MIDI offset</button>
+          </div>
+          <p class="groove-help">Align a short reface sound against the drums by ear. Negative offset sends looper MIDI earlier;
+            positive sends it later. Use headphones or wired audio for tighter timing. Web Audio does not provide direct ASIO access.</p>
+          <p id="drum-output-status" role="status">Audio uses the system default until another output is selected.</p>
+          <p id="drum-storage-status" role="status"></p>
+          <p id="drum-status" role="status">Drums stopped. Enable audio to hear the internal engine.</p>
+        </div>
+      </details>
       <section id="patch-library" class="patch-library" aria-labelledby="patch-library-title">
         <header class="patch-library-header">
           <div>
@@ -84,6 +131,19 @@
       <input id="looper-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
       <input id="patch-import-file" type="file" accept=".zip,application/zip" hidden>
       <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
+      <dialog id="drum-calibration" class="patch-editor" aria-labelledby="drum-calibration-title">
+        <h2 id="drum-calibration-title">Calibrate MIDI offset</h2>
+        <p>Listen to the steady 100 BPM kick and play notes on the selected reface MIDI input.
+          Only the delay from the latest kick to the latest received Note On is kept.</p>
+        <p>This includes your playing timing and MIDI input delay; it is not an audio-latency measurement.
+          Done applies the measured delay positively, sending looper MIDI later.</p>
+        <p id="drum-calibration-status" role="status">Starting test...</p>
+        <p>Latest delay: <output id="drum-calibration-delay" aria-live="polite">No note received</output></p>
+        <div class="patch-editor-actions">
+          <button id="drum-calibration-done" type="button" disabled>Done</button>
+          <button id="drum-calibration-cancel" type="button">Cancel</button>
+        </div>
+      </dialog>
       <dialog id="patch-recorder" class="patch-editor">
         <h2>Record patch audio</h2>
         <p>Connect the synth's audio output to an audio interface. USB MIDI does not carry audio.
