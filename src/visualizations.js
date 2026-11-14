@@ -41,7 +41,7 @@ export function createVisualizations(root, panel, selections, onResetSection) {
     }
     card.innerHTML = `
       <header>
-        <h2>${title}</h2>
+        <h2 style="padding-left:8px">${title} <span class="graph-context" style="letter-spacing: 0px;  font-weight: normal;  font-size: 10px;"></span></h2>   
         <button class="section-reset" type="button" aria-label="Reset ${title} section to defaults">reset</button>
       </header>
       <svg viewBox="0 0 300 150" role="img" aria-labelledby="${id}-graph-title ${id}-graph-description">
@@ -61,8 +61,10 @@ export function createVisualizations(root, panel, selections, onResetSection) {
         <text class="graph-axis-label" x="12" y="144"></text>
         <text class="graph-axis-label graph-end-label" x="288" y="144" text-anchor="end"></text>
       </svg>
-      <p class="graph-values"></p>
-      <p class="graph-context"></p>`;
+      <p>
+      <span class="graph-values" style="margin-left:8px"></span>
+      </p>
+      `;
     card.querySelector('.section-reset').addEventListener('click', () => onResetSection(section));
     root.append(card);
     cards.set(id, card);
@@ -106,7 +108,7 @@ export function createVisualizations(root, panel, selections, onResetSection) {
       - resonance * 43 * Math.exp(-((t - cutoff + 0.055) ** 2) / 0.0012)));
     draw('filter', path,
       `Cutoff ${value('filter-cutoff')} / Resonance ${value('filter-resonance')}`,
-      '24 dB/oct / relative response', 'Low frequency');
+      '24 dB/oct', 'Low frequency');
     cards.get('filter').querySelector('.graph-end-label').textContent = 'High frequency';
   }
 
@@ -125,8 +127,8 @@ export function createVisualizations(root, panel, selections, onResetSection) {
         [decay, levelY(sustain)], [noteOff, levelY(sustain)], [282, levelY(0)], [282, 122], [288, 122]];
       const path = points.map(([x, y], index) => `${index ? 'L' : 'M'}${x} ${y}`).join(' ');
       const context = depth === 0
-        ? amp ? 'No ADSR influence / note gate remains' : 'No filter-envelope influence'
-        : `${amp ? 'AEG' : 'FEG'} relative influence ${(depth * 100).toFixed(0)}%`;
+        ? amp ? 'Note gate remains' : 'No filter'
+        : `${amp ? 'AEG' : 'FEG'} ${(depth * 100).toFixed(0)}%`;
       draw(id, path, details, context, 'Relative time');
       const markers = cards.get(id).querySelector('.graph-markers');
       markers.replaceChildren();
@@ -158,7 +160,7 @@ export function createVisualizations(root, panel, selections, onResetSection) {
       ? oscillatorDestinations[value('osc-type')]
       : selections['lfo-assign'][assign];
     draw('lfo', path, `Depth ${value('lfo-depth')} / Speed ${value('lfo-speed')}`,
-      assign === 0 ? 'Off / no modulation' : `${destination} / illustrative cycle`, 'Relative time');
+      assign === 0 ? 'Off' : `${destination}`, 'Relative time');
   }
 
   function effect() {
@@ -201,7 +203,7 @@ export function createVisualizations(root, panel, selections, onResetSection) {
     }
     const rateName = type === 4 ? 'Tone' : type === 1 ? 'Delay time' : 'Rate';
     draw('effect', path, `Depth ${value('effect-depth')} / ${rateName} ${value('effect-rate')}`,
-      type === 0 ? 'Off / dry signal' : selections['effect-type'][type],
+      type === 0 ? 'Off' : selections['effect-type'][type],
       axis, reference);
   }
 

@@ -7,13 +7,39 @@
   </head>
   <body>
     <main>
-      <header class="toolbar">
+      <header class="toolbar" style="align-items: flex-start;">
         <div>
-          <h1>reface<span>CS</span></h1>
-          <p>Interactive panel study <span id="midi-badge" class="badge" role="status">MIDI not connected</span></p>
-        </div>
-        <div class="toolbar-actions">
-          <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
+          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.1</span>  
+          <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
+            <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
+          </div>
+          </h1>        
+        </div>                          
+         <div class="midi-ports" style="  max-width: calc(100vw - 298px);position: relative;">
+           <span id="midi-badge" class="badge" role="status">MIDI not connected</span> 
+          <button id="midi-connect" type="button" class="notconnectedmidi">Connect MIDI</button>
+           <button id="midi-reset" type="button">MIDI Reset</button>
+          <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
+          <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
+          <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
+          <button id="capture-synth" type="button" disabled="true" style="max-height: 38px;  padding: 5px;">Capture Synth</button>
+           <p id="capture-status" role="status" style="max-width: calc(100vw - 1400px)"></p>
+         <div style="width:100%; position: absolute;  top: 64px;" id="midisettingslog">           
+          <section class="midi-settings" aria-label="MIDI devices">                             
+        <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+        <p id="midi-mapping-status" role="status"></p>      
+      </section>
+     
+        </div>  
+        </div>       
+        
+
+      </header>
+      
+      <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
+      <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
+        <div id="visual-toggles">
+        <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
             Focus Mode
           </button>
           <button id="hide-speakers" type="button" aria-pressed="false" aria-controls="synth">
@@ -31,31 +57,24 @@
           <button id="fader-size" type="button" aria-pressed="false" aria-controls="synth">
             2x <span>fader travel</span>
           </button>
-        </div>
-      </header>
-      <section class="midi-settings" aria-label="MIDI devices">
-        <button id="midi-connect" type="button">Connect MIDI</button>
-        <button id="midi-reset" type="button">MIDI Reset</button>
-        <button id="capture-synth" type="button">Capture Synth</button>
-        <label><input id="position-expression" type="checkbox"> Position-sensitive expression</label>
-        <div class="midi-ports">
-          <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
-          <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
-          <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
-          <label>Modulation wheel <select id="midi-modwheel-target" title="Choose which CC the controller modulation wheel sends"></select></label>
-          <label>Modulation value
-            <span class="midi-modwheel-slider"><input id="midi-modwheel-value" type="range" min="0" max="127" value="0" aria-label="Modulation wheel value"><output id="midi-modwheel-readout" for="midi-modwheel-value">0</output></span>
-          </label>
-        </div>
-        <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
-        <p id="midi-mapping-status" role="status"></p>
-        <p id="capture-status" role="status"></p>
-      </section>
-      <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
-      <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
+      </div>  
         <div id="synth"></div>
       </div>
-      <details id="groove-panel" class="groove-panel" open>
+      
+      <div class="toolbar-actions" style="gap: 64px; justify-content: center;position: relative; top: -10px;">
+         <label>Controller Modulation wheel: <select id="midi-modwheel-target" title="Choose which CC the controller modulation wheel sends"></select></label>
+         
+         <label style="display: flex;  gap: 8px;  align-items: center;">
+           Modulation value:
+            <span class="midi-modwheel-slider"><input id="midi-modwheel-value" type="range" min="0" max="127" value="0" aria-label="Modulation wheel value"><output id="midi-modwheel-readout" for="midi-modwheel-value">0</output></span>
+          </label>
+        
+        
+        <label><input id="position-expression" type="checkbox"> Position-sensitive expression</label>
+          
+        </div>
+         
+      <details id="groove-panel" class="groove-panel">
         <summary>Groove studio <span>808-inspired drum machine</span></summary>
         <div class="groove-content">
           <div class="groove-toolbar">
@@ -102,32 +121,28 @@
           <p id="drum-status" role="status">Drums stopped. Enable audio to hear the internal engine.</p>
         </div>
       </details>
-      <section id="patch-library" class="patch-library" aria-labelledby="patch-library-title">
-        <header class="patch-library-header">
-          <div>
-            <h2 id="patch-library-title">Patch library</h2>
-            <p>Save and recall sound settings, organize patches, and preview attached audio.</p>
-          </div>
-          <div class="patch-library-actions">
-            <button id="patch-save" type="button">Save current sound</button>
-            <button id="patch-import" type="button">Import ZIP</button>
-            <button id="patch-export" type="button" disabled>Export ZIP</button>
-          </div>
-        </header>
-        <div class="patch-filters" aria-label="Filter patches">
+<details  id="footer-panel" class="groove-panel">
+          <summary>Patch library  <button id="patch-save" type="button" style="margin-left:16px">Save current sound</button></summary>
+      <section id="patch-library" class="patch-library" aria-labelledby="patch-library-title" style="padding:16px;margin-top:0px;">
+          <div class="patch-filters" aria-label="Filter patches">
           <label class="patch-favorite-filter"><input id="patch-favorites-only" type="checkbox"> Favorites</label>
           <input id="patch-name-filter" type="search" placeholder="Search patch names" aria-label="Search patch names">
           <button id="patch-clear-filters" type="button">Clear filters</button>
           <div class="patch-filter-actions">
             <button id="patch-view-toggle" type="button" aria-pressed="false" title="Show patch descriptions and labeled fader values instead of compact fader outlines.">Detailed snapshots</button>
             <button id="patch-manage-labels" type="button">Manage categories / tags</button>
+             <button id="patch-import" type="button">Import ZIP</button>
+            <button id="patch-export" type="button" disabled>Export ZIP</button>
           </div>
-          <fieldset><legend>Categories</legend><div id="patch-category-filter" class="patch-filter-chips"></div></fieldset>
-          <fieldset><legend>Tags</legend><div id="patch-tag-filter" class="patch-filter-chips"></div></fieldset>
+          <div style="display: flex;width: 100%;gap: 8px;">
+          <fieldset style="background: #131F21; color: #fff;"><legend>Categories</legend><div id="patch-category-filter" class="patch-filter-chips"></div></fieldset>
+          <fieldset style="background: #131F21; color: #fff;"><legend>Tags</legend><div id="patch-tag-filter" class="patch-filter-chips"></div></fieldset>
+          </div>
         </div>
-        <p id="patch-status" role="status">Opening patch library...</p>
+        <p id="patch-status" role="status" style="display:none">Opening patch library...</p>
         <div id="patch-cards" class="patch-cards"></div>
       </section>
+      </details>
       <input id="looper-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
       <input id="patch-import-file" type="file" accept=".zip,application/zip" hidden>
       <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
@@ -193,18 +208,26 @@
           </div>
         </form>
       </dialog>
-      <footer>
-        <p id="looper-status" role="status">Looper stopped.</p>
-        <p id="arp-status" role="status">Arpeggiator off.</p>
-        <p id="app-status" role="status">Loading panel...</p>
-        <p class="help">Hold keys to press them. Drag faders, scroll the wheel over one, or focus one and use arrow keys.
-          Alt+wheel makes larger changes on continuous faders.
-          Home sets the top; End sets the bottom. Double-click or press Delete on a focused fader to reset it.
-          A W S E D F T G Y H U J K plays the middle octave; hold multiple letters for chords.
-          Focus Mode shows letters and transposed note names.
-          Click the left/right ends to shift octave down/up.
-          Looper LEDs show the UI looper state, not the hardware looper.</p>
-      </footer>
+     
+        <details  id="footer-panel" class="groove-panel">
+          <summary>Help <span> <span style="font-weight:bold;">Looper:</span> <span id="looper-status" role="status">Looper stopped.</span> 
+          <span style="font-weight:bold;">Arpeggiator:</span> <span id="arp-status" role="status">Arpeggiator off.</span> 
+          <span style="font-weight:bold;">App:</span> <span id="app-status" role="status">Loading panel...</span></span></summary>
+        <footer style="padding:16px;padding-top:0px;">
+        
+        <p class="help"><ul style="margin-top:0;">
+          <li>Hold keys to press them.</li>
+          <li>Drag faders, scroll the wheel over one, or focus one and use arrow keys.</li>
+          <li>Alt+wheel makes larger changes on continuous faders.</li>
+          <li>Home sets the top; End sets the bottom. Double-click or press Delete on a focused fader to reset it.</li>
+          <li>A W S E D F T G Y H U J K plays the middle octave; hold multiple letters for chords.</li>
+          <li>Focus Mode shows letters and transposed note names.</li>
+          <li>Click the left/right ends to shift octave down/up.</li>
+          <li>Looper LEDs show the UI looper state, not the hardware looper.</li>
+        </ul></p>
+
+             </footer>
+        </details>         
       <noscript>Enable JavaScript to use this application.</noscript>
     </main>
     <script type="module" src="/src/main.js"></script>

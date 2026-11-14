@@ -4,7 +4,7 @@ import { captureParameters, controlNumber, decodeControl, decodeParameter, encod
   parameterMessage, requestMessage } from './synth-midi.js';
 
 export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}) {
-  const connect = document.querySelector('#midi-connect');
+  const connect = document.querySelector('#midi-connect');   
   const badge = document.querySelector('#midi-badge');
   const status = document.querySelector('#midi-status');
   const refaceInput = document.querySelector('#midi-reface-input');
@@ -613,6 +613,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   }
 
   document.querySelector('#capture-synth').addEventListener('click', captureSynth);
+  document.getElementById("capture-synth").setAttribute("disabled", true);
   modwheelTarget.addEventListener('change', () => {
     const next = Number(modwheelTarget.value);
     modwheelCC = next;
@@ -669,7 +670,11 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       midiAccess = await navigator.requestMIDIAccess();
       midiAccess.addEventListener('statechange', refresh);
       refresh();
-      connect.textContent = 'MIDI access enabled';
+      connect.textContent = 'MIDI connected';
+      connect.classList.remove('notconnectedmidi');
+      connect.classList.add('connectedmidi');
+      document.getElementById('capture-synth').removeAttribute('disabled'); 
+      document.getElementById('capture-synth').classList.add('notconnectedmidi');
     } catch (error) {
       badge.dataset.state = 'error';
       badge.textContent = 'MIDI access failed';

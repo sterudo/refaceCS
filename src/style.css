@@ -9,6 +9,7 @@
 body {
   margin: 0;
   padding: clamp(1rem, 3vw, 3rem);
+  padding-top: 0px;
 }
 
 main {
@@ -19,8 +20,7 @@ main {
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  align-items: center; 
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -29,11 +29,12 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  align-items: baseline;
 }
 
 .toolbar-actions button {
   padding: 0.4rem 0.65rem;
-  font-size: 0.8rem;
+  font-size: 12px;
 }
 
 .toolbar-actions button span {
@@ -74,6 +75,9 @@ h1 span {
   color: #f0ad9e;
 }
 
+a:hover {
+  filter:brightness(1.5) ;
+}
 .midi-settings {
   display: flex;
   flex-wrap: wrap;
@@ -81,6 +85,17 @@ h1 span {
   gap: 0.5rem 1rem;
   margin-bottom: 1rem;
   font-size: 0.8rem;
+}
+
+#midi-badge { 
+  position: absolute;
+top: 4px;
+  left: -8px;
+  display: block;
+  max-width: 219px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .midi-settings button {
@@ -92,6 +107,8 @@ h1 span {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
+  align-items: end;
+  margin-left:16px;
 }
 
 .midi-ports label {
@@ -107,6 +124,7 @@ h1 span {
   background: #202b33;
   color: #dce4e8;
   font: inherit;
+  font-size: 12px;
 }
 
 .midi-modwheel-slider {
@@ -147,7 +165,37 @@ button {
   background: #202b33;
   color: #dce4e8;
   font: inherit;
+  font-size: 12px;
   cursor: pointer;
+}
+
+#visual-toggles > button {
+  background: transparent;
+  border: none;
+  color: darkcyan;
+  text-shadow: 0px 0px 1px black;
+  padding-top: 3px;
+  border-top-left-radius: 0px;
+  border-top-right-radius: 0px;
+  padding-bottom: 4px;
+}
+
+button:hover {
+  filter: saturate(1.5) brightness(1.2) !important;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0px 0px 3px white;
+}
+
+#visual-toggles > button:hover {
+  filter: saturate(1.5) brightness(1.2) !important;
+  transition: all 0.2s ease-in-out;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+#visual-toggles > button[aria-pressed="true"] {
+  background: #75c6d357;
+  border: 1px solid #075b68;
 }
 
 button span {
@@ -158,6 +206,17 @@ button[aria-pressed="true"] {
   background: #335361;
   color: #fff;
   border-color: #75c6d3;
+}
+
+#visual-toggles {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  position: absolute;
+  margin-left: 40px;
+  margin-top: 3px;
 }
 
 button:focus-visible,
@@ -273,8 +332,8 @@ input[type="range"]:focus-visible,
 .visualizations {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
-  gap: 1rem;
-  margin: 0 0 0.4375rem;
+  gap: 8px;
+  margin: 16px;
 }
 
 .visualizations[hidden] {
@@ -283,7 +342,7 @@ input[type="range"]:focus-visible,
 
 .visualization-card {
   min-width: 0;
-  padding: 0.85rem;
+  padding:8px;
   border: 1px solid #415159;
   border-radius: 0.65rem;
   background: linear-gradient(145deg, #253139, #111b22);
@@ -332,7 +391,7 @@ input[type="range"]:focus-visible,
 .visualization-card svg {
   display: block;
   width: 100%;
-  margin-top: 0.5rem;
+  margin-top: 2px;
   overflow: hidden;
 }
 
@@ -394,7 +453,7 @@ input[type="range"]:focus-visible,
 }
 
 .visualization-card .graph-context {
-  min-height: 2.8em;
+  /* min-height: 2.8em; */
   margin-top: 0.25rem;
   color: #95adb5;
 }
@@ -917,7 +976,7 @@ footer {
 }
 
 .fader .cap {
-  transition: filter 180ms ease-in-out;
+   transition: filter 180ms ease-in-out; 
 }
 
 .fader:hover .cap,
@@ -1019,6 +1078,43 @@ footer {
 .selection-led {
   transition: fill 80ms;
   pointer-events: none;
+}
+
+#midi-reset {
+  background: #a44;
+  max-height: 38px;
+  padding: 5px;
+}
+
+#midi-connect {
+  max-height: 38px;
+  padding: 5px;
+}
+
+.notconnectedmidi {
+  background: #ffaa3d;
+  color: black;
+}
+
+.connectedmidi {
+  background: darkgreen;
+  color: white;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1600px) {
+  #capture-status {
+    display:none;
+  }
+}
+@media (max-width: 1300px) {
+  #midisettingslog {
+    display:none;
+  }
 }
 
 @media (max-width: 600px) {
