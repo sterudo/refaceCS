@@ -378,6 +378,29 @@ test('SysEx denial leaves MIDI connected and controls report failures without ch
   await expect(page.locator('#midi-badge')).not.toHaveAttribute('title', /permission denied/);
 });
 
+test('learned controls use the selected receive channel without duplicating the source CC', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.locator('#device-settings-open').click();
+  await dialog(page).getByLabel('MIDI receive channel').selectOption('5');
+  await dialog(page).getByRole('button', { name: 'Apply changes' }).click();
+  await expect(page.locator('#device-settings-status')).toHaveText('Changes confirmed by the synth.');
+  await dialog(page).getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('#midi-learn').click();
+  await page.locator('#filter-cutoff').press('Home');
+  await page.evaluate(() => {
+    window.deviceTest.sent.length = 0;
+    window.deviceTest.emit([0xb2, 21, 0]);
+    window.deviceTest.emit([0xb2, 21, 127]);
+    window.deviceTest.emit([0xb2, 21, 60]);
+  });
+  expect(await page.evaluate(() => window.deviceTest.sent)).toEqual([
+    [0xb5, 74, 127], [0xb5, 74, 60],
+  ]);
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '60');
+  await page.locator('#midi-modwheel-value').press('ArrowRight');
+  expect(await page.evaluate(() => window.deviceTest.sent.at(-1))).toEqual([0xb5, 1, 1]);
+});
+
 test('arpeggiator output follows a specific receive channel', async ({ page }) => {
   const receive = page.locator('#device-midi-receive');
   await receive.click({ button: 'right' });

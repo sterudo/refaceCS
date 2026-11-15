@@ -265,10 +265,14 @@ test('capture applies valid replies, reports missing values, and preserves newer
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
 });
 
-test('capture synchronizes the modulation slider for the selected CC without sending it', async ({ page }) => {
-  await page.evaluate(() => { window.testSynth.values['48,0,9'] = [9]; });
+test('capture leaves standard modulation value unchanged when reading sound controls', async ({ page }) => {
+  await page.evaluate(() => {
+    window.testSynth.values['48,0,9'] = [9];
+    window.testSynth.emit('ri', [0xb0, 1, 34]);
+  });
   await reconnectSynth(page);
-  await expect(page.locator('#midi-modwheel-value')).toHaveValue('9', { timeout: 5000 });
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '9', { timeout: 5000 });
+  await expect(page.locator('#midi-modwheel-value')).toHaveValue('34');
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xb0 && message[1] === 74))).toBe(false);
 });
@@ -353,12 +357,10 @@ test('expression sends CC 11 while mute remains app-only and local velocity stay
 });
 
 test('position-sensitive expression sends CC 11 before notes and updates the fader', async ({ page }) => {
-  await page.locator('#midi-modwheel-target').selectOption('11');
   await page.locator('#position-expression').check();
   const bounds = await page.locator('#key-c-2 use').boundingBox();
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.2);
-  const firstValue = await page.locator('#expression').getAttribute('aria-valuenow');
-  await expect(page.locator('#midi-modwheel-value')).toHaveValue(firstValue);
+  await expect(page.locator('#midi-modwheel-value')).toHaveValue('0');
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height * 0.9);
   const sent = await page.evaluate(() => window.testSynth.sent);
   expect(sent).toEqual([

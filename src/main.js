@@ -2,6 +2,7 @@ import './style.css';
 import panelMarkup from './synth.svg?raw';
 import { createVisualizations } from './visualizations.js';
 import { setupMidiDiscovery } from './midi.js';
+import { createMidiLearn } from './midi-learn.js';
 import { controlNumber } from './synth-midi.js';
 import { detectChord, noteNames } from './chord-detection.js';
 import { createPatchLibrary } from './patch-library.js';
@@ -109,6 +110,9 @@ for (const octave of [0, 4]) {
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
 const locallyHeldKeys = new Set();
+const midiLearn = createMidiLearn(faders, (id, value, channel) => {
+  updateFaderFromInput(panel.querySelector(`#${id}`), value, true, channel);
+});
 const grooveClock = createGrooveClock();
 const midi = setupMidiDiscovery(() => {
   keys.forEach(updateKey);
@@ -130,6 +134,9 @@ const midi = setupMidiDiscovery(() => {
   clock: grooveClock,
   onConnect: () => { void drums.enableAudio(); },
   onMidiAccess: (access) => drums.setMidiAccess(access),
+  onControllerChanged: (port) => midiLearn.setController(port),
+  onControllerCC: (port, data) => midiLearn.handleMessage(port, data),
+  onOutputAvailable: () => midiLearn.resetPickup(),
   onDrumNote: (note, velocity) => drums.triggerMidi(note, velocity),
   onDrumStop: () => drums.stop(),
   onMelodicNote: () => drums.startOnKeypress(),
@@ -317,6 +324,7 @@ function updateFader(fader, value, announce = true) {
   const max = Number(fader.dataset.max);
   value = Math.max(min, Math.min(max, Math.round(value)));
   const changed = value !== readValue(fader);
+  if (changed) midiLearn.valueChanged(fader.id);
   fader.dataset.value = String(value);
   fader.setAttribute('aria-valuenow', value);
   fader.setAttribute('aria-valuetext', valueText(fader));
@@ -352,10 +360,10 @@ function updateFader(fader, value, announce = true) {
   }
 }
 
-function updateFaderFromInput(fader, value, announce = true) {
+function updateFaderFromInput(fader, value, announce = true, channel = 0) {
   updateFader(fader, value, announce);
   if (fader === looperFader) midi.setLooperMode(readValue(fader));
-  midi.setControl(fader.id, readValue(fader));
+  midi.setControl(fader.id, readValue(fader), channel);
 }
 
 function resetFader(fader) {
@@ -458,6 +466,7 @@ for (const fader of faders) {
   fader.addEventListener('wheel', (event) => {
     if (event.ctrlKey || event.deltaY === 0 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
     event.preventDefault();
+    midiLearn.selectTarget(fader.id);
     const step = event.altKey ? largeStep : 1;
     updateFaderFromInput(fader, readValue(fader) - Math.sign(event.deltaY) * step);
   }, { passive: false });
@@ -465,6 +474,7 @@ for (const fader of faders) {
   fader.addEventListener('keydown', (event) => {
     if (event.key === 'Delete') {
       event.preventDefault();
+      midiLearn.selectTarget(fader.id);
       resetFader(fader);
       return;
     }
@@ -483,6 +493,7 @@ for (const fader of faders) {
 
     if (next !== undefined) {
       event.preventDefault();
+      midiLearn.selectTarget(fader.id);
       updateFaderFromInput(fader, next);
     }
   });
@@ -490,6 +501,7 @@ for (const fader of faders) {
   fader.addEventListener('dblclick', (event) => {
     if (event.target.closest('.position-label')) return;
     event.preventDefault();
+    midiLearn.selectTarget(fader.id);
     resetFader(fader);
   });
 
@@ -498,6 +510,7 @@ for (const fader of faders) {
       return;
     }
     event.preventDefault();
+    midiLearn.selectTarget(fader.id);
     fader.focus({ preventScroll: true });
     const label = event.target.closest('.position-label');
     if (label) {

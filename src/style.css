@@ -173,7 +173,7 @@ top: 4px;
   gap: 8px;
 }
 
-.midi-actions > button, .midi-ports > button { padding: 5px; }
+.midi-actions > button, .midi-ports > button, .midi-learn-controls > button { padding: 5px; }
 .midi-ports > span:empty, .midi-ports > p:empty { display: none; }
 #midisettingslog { flex-basis: 100%; }
 #midisettingslog .midi-settings { margin: 0; }
@@ -183,7 +183,8 @@ top: 4px;
   gap: 0.2rem;
 }
 
-.midi-ports select {
+.midi-ports select,
+.midi-learn-controls select {
   max-width: min(100%, 16rem);
   padding: 0.35rem;
   border: 1px solid #4b5c66;
@@ -199,6 +200,36 @@ top: 4px;
   align-items: center;
   gap: 0.4rem;
   min-height: 2rem;
+}
+
+.midi-learn-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+}
+
+.midi-learn-controls p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.midi-learn-controls > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.midi-learn-controls select {
+  min-width: 0;
+}
+
+#synth .fader.is-midi-learn-target .cap {
+  filter: drop-shadow(0 0 5px #efac36);
 }
 
 .midi-modwheel-slider input {
@@ -218,10 +249,6 @@ top: 4px;
   flex-basis: 100%;
   margin: 0;
   color: #a3b0b8;
-}
-
-#midi-mapping-status:empty {
-  display: none;
 }
 
 button {
