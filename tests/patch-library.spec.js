@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { readPatchBackup } from '../src/patches.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/static/reface/');
@@ -16,6 +17,73 @@ async function savePatch(page, { name, description = '', category = 'synth', tag
   await page.locator('#patch-editor-form button[type="submit"]').click();
   return page.locator('.patch-card').filter({ has: page.getByRole('heading', { name }) });
 }
+
+test('exports a single patch and its audio separately', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const card = await savePatch(page, { name: 'Export me' });
+  await card.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await card.getByRole('button', { name: 'Export take.mp3' }).click();
+  const audioDialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await audioDialog.getByLabel('File name').fill('my-take');
+  const [audio] = await Promise.all([page.waitForEvent('download'), audioDialog.getByRole('button', { name: 'Export' }).click()]);
+  expect(audio.suggestedFilename()).toBe('my-take.mp3');
+  expect(await readFile(await audio.path())).toEqual(Buffer.from('audio bytes'));
+  await card.getByRole('button', { name: 'Export', exact: true }).click();
+  const exportDialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  const [patch] = await Promise.all([page.waitForEvent('download'), exportDialog.getByRole('button', { name: 'Export' }).click()]);
+  expect(patch.suggestedFilename()).toBe('Export me.zip');
+  expect((await readFile(await patch.path())).length).toBeGreaterThan(0);
+});
+
+test('asks before recalling an imported patch over unsaved browser controls', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await page.locator('#lfo-depth').press('Home');
+  const card = await savePatch(page, { name: 'Imported sound' });
+  await card.getByRole('button', { name: 'Export', exact: true }).click();
+  const [backup] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  const bytes = await readFile(await backup.path());
+  await page.locator('#lfo-depth').press('End');
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-file').setInputFiles({
+    name: 'patch.zip', mimeType: 'application/zip', buffer: bytes,
+  });
+  const confirm = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#backup-dialog')).not.toBeVisible();
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+});
+
+test('offers current, saved, and cancel choices when exporting an edited active patch', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const card = await savePatch(page, { name: 'Edited sound' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await page.locator('#lfo-depth').press('Home');
+  await card.getByRole('button', { name: 'Export', exact: true }).click();
+  const dialog = page.locator('#patch-export-choice');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel Export' }).click();
+  await expect(dialog).not.toBeVisible();
+  await card.getByRole('button', { name: 'Export', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Export current unsaved state' }).click();
+  const [current] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  expect((await readPatchBackup(new Blob([await readFile(await current.path())])))[0].controls['lfo-depth']).toBe(127);
+  await card.getByRole('button', { name: 'Export', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Export last saved state' }).click();
+  const [saved] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  expect((await readPatchBackup(new Blob([await readFile(await saved.path())])))[0].controls['lfo-depth']).toBe(0);
+});
 
 async function connectMockMidi(page) {
   await page.addInitScript(() => {
@@ -578,8 +646,8 @@ test('deletes unused categories persistently and removes a tag from every patch 
   await manager.getByRole('button', { name: 'Delete category Unused later', exact: true }).click();
   await expect(page.locator('#patch-label-status')).toContainText('Unused later deleted.');
   await manager.getByRole('button', { name: 'Delete category FM', exact: true }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   await manager.getByRole('button', { name: 'Delete tag shared', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Delete tag' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('#patch-label-status')).toContainText('shared removed');
   await page.locator('#patch-label-manager-close').click();
   await expect(first.locator('.patch-tags')).toHaveText('keep');
@@ -596,8 +664,8 @@ test('confirms replacement when renaming a patch to an existing name', async ({ 
   const source = await savePatch(page, { name: 'New Pad', description: 'Replacement' });
   await source.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.locator('#patch-name').fill('Existing Pad');
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('#patch-editor-form button[type="submit"]').click();
+  await page.getByRole('dialog', { name: 'Replace patch' }).getByRole('button', { name: 'Replace' }).click();
 
   await expect(page.locator('.patch-card')).toHaveCount(1);
   await page.locator('#patch-view-toggle').click();
@@ -695,13 +763,16 @@ test('attaches, reorders, removes, and persists MP3s on a patch card', async ({ 
   await page.reload();
   await expect(page.locator('.patch-card .patch-audio-item').nth(0)).toContainText('two.mp3');
 
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('.patch-card').getByRole('button', { name: 'Remove one.mp3' }).click();
+  await page.getByRole('dialog', { name: 'Remove audio' }).getByRole('button', { name: 'Remove' }).click();
   await expect(page.locator('.patch-card .patch-audio-item')).toHaveCount(2);
   await expect(card.getByRole('button', { name: 'Record', exact: true })).toBeEnabled();
 });
 
 test('exports and imports a ZIP backup with patch metadata, favorite state, and audio', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await expect(page.getByRole('button', { name: 'Import ZIP' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export ZIP' })).toHaveCount(0);
   const card = await savePatch(page, {
     name: 'Backup Pad',
     description: 'Included in the backup',
@@ -716,21 +787,22 @@ test('exports and imports a ZIP backup with patch metadata, favorite state, and 
   });
   await card.getByRole('button', { name: 'Add Backup Pad to favorites' }).click();
 
-  const downloadPromise = page.waitForEvent('download');
-  await page.locator('#patch-export').click();
-  const download = await downloadPromise;
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-section').selectOption('patches');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-export').click()]);
   const backupPath = await download.path();
   const backup = await readFile(backupPath);
 
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('.patch-card').getByRole('button', { name: 'Delete Backup Pad', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Delete patch' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('.patch-card')).toHaveCount(0);
-  await page.locator('#patch-import').click();
-  await page.locator('#patch-import-file').setInputFiles({
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-file').setInputFiles({
     name: 'patches.zip',
     mimeType: 'application/zip',
     buffer: backup,
   });
+  await expect(page.locator('#backup-dialog')).not.toBeVisible();
 
   const imported = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Backup Pad' }) });
   await page.locator('#patch-view-toggle').click();

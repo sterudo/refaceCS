@@ -8,6 +8,27 @@ import { createPatchLibrary } from './patch-library.js';
 import { PATCH_CONTROL_IDS } from './patches.js';
 import { createGrooveClock } from './groove-clock.js';
 import { createDrumMachine } from './drum-machine.js';
+import { getPreference, setPreference } from './preferences.js';
+import { setupBackup } from './backup.js';
+import { setupCloudBackup } from './cloud-ui.js';
+
+const dataInfo = document.querySelector('#data-info');
+const dataInfoOpen = document.querySelector('#data-info-open');
+const dataInfoClose = document.querySelector('#data-info-close');
+function setDataInfoVisible(visible, save = true) {
+  dataInfo.hidden = !visible;
+  dataInfoOpen.hidden = visible;
+  if (save) setPreference('dataInfoVisible', visible);
+}
+setDataInfoVisible(getPreference('dataInfoVisible', (value) => typeof value === 'boolean', true), false);
+dataInfoClose.addEventListener('click', () => {
+  setDataInfoVisible(false);
+  dataInfoOpen.focus();
+});
+dataInfoOpen.addEventListener('click', () => {
+  setDataInfoVisible(true);
+  dataInfoClose.focus();
+});
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const container = document.querySelector('#synth');
@@ -44,6 +65,9 @@ const computerKeys = new Map();
 let travel = baseTravel;
 let volumeMuted = false;
 let pitchRange = defaultPitchRange;
+const savedPitchRange = getPreference('pitchRange',
+  (value) => Number.isInteger(value) && value >= 0 && value <= 24, null);
+let restorePitchRange = savedPitchRange !== null;
 
 const selections = {
   octave: ['-2', '-1', '0', '+1', '+2'],
@@ -104,6 +128,9 @@ const midi = setupMidiDiscovery(() => {
   onLooperStartCancelled: () => drums.cancelPendingStart(),
   onLooperStopped: () => drums.stopFromLooper(),
   clearLocalNotes: releaseNotes,
+  onOutputAvailable: () => {
+    if (restorePitchRange) midi.setControl('pitch-range', pitchRange);
+  },
 });
 const drums = createDrumMachine(grooveClock, {
   onTempo(bpm) {
@@ -156,6 +183,8 @@ function updatePitchRange(value, announce = true) {
     button.setAttribute('aria-disabled', String(next < 0 || next > 24));
   }
   if (announce) {
+    restorePitchRange = true;
+    setPreference('pitchRange', pitchRange);
     midi.setControl('pitch-range', pitchRange);
     status.textContent = description;
   }
@@ -589,6 +618,7 @@ sizeButton.addEventListener('click', () => {
   const doubled = sizeButton.getAttribute('aria-pressed') !== 'true';
   sizeButton.setAttribute('aria-pressed', String(doubled));
   travel = baseTravel * (doubled ? 2 : 1);
+  setPreference('faderTravel', doubled);
   layoutPanel();
   status.textContent = `${doubled ? 'Double' : 'Normal'} fader travel. Control values preserved.`;
 });
@@ -616,6 +646,8 @@ document.querySelector('#reset-faders').addEventListener('click', () => {
     updateFaderFromInput(fader, value, false);
   }
   updatePitchRange(defaultPitchRange, false);
+  restorePitchRange = true;
+  setPreference('pitchRange', defaultPitchRange);
   midi.setControl('pitch-range', defaultPitchRange);
   status.textContent = 'Faders reset to starting positions.';
 });
@@ -639,12 +671,14 @@ document.querySelector('#focus-mode').addEventListener('click', (event) => {
   displays.classList.toggle('focus-mode', enabled);
   faders.forEach(updateFaderTooltip);
   event.currentTarget.setAttribute('aria-pressed', String(enabled));
+  setPreference('focusMode', enabled);
   status.textContent = `Focus Mode ${enabled ? 'on' : 'off'}. Control values preserved.`;
 });
 
 document.querySelector('#hide-displays').addEventListener('click', (event) => {
   displays.hidden = !displays.hidden;
   event.currentTarget.setAttribute('aria-pressed', String(displays.hidden));
+  setPreference('hideDisplays', displays.hidden);
   status.textContent = `Displays ${displays.hidden ? 'hidden' : 'shown'}. Control values preserved.`;
 });
 
@@ -652,6 +686,7 @@ document.querySelector('#hide-speakers').addEventListener('click', (event) => {
   releaseAll();
   const hidden = panel.classList.toggle('speakers-hidden');
   event.currentTarget.setAttribute('aria-pressed', String(hidden));
+  setPreference('hideSpeakers', hidden);
   layoutPanel();
   status.textContent = `Speakers ${hidden ? 'hidden' : 'shown'}. Control values preserved.`;
 });
@@ -660,6 +695,7 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   releaseAll();
   const expanded = panel.classList.toggle('five-octaves');
   event.currentTarget.setAttribute('aria-pressed', String(expanded));
+  setPreference('fiveOctaves', expanded);
   keyboardKeys.setAttribute('transform', `scale(${expanded ? 22 / 36 : 1} 1)`);
   standardKeys.setAttribute('transform', `translate(${expanded ? 7 * 62 : 0} 0)`);
   panel.querySelector('#panel-description').textContent =
@@ -667,10 +703,19 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   status.textContent = `${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`;
 });
 
-updatePitchRange(defaultPitchRange, false);
+updatePitchRange(savedPitchRange ?? defaultPitchRange, false);
 updateKeyNotes();
 layoutPanel();
-createPatchLibrary({
+for (const [name, id] of [
+  ['focusMode', 'focus-mode'], ['hideDisplays', 'hide-displays'],
+  ['hideSpeakers', 'hide-speakers'], ['fiveOctaves', 'five-octaves'], ['faderTravel', 'fader-size'],
+]) {
+  if (getPreference(name, (value) => typeof value === 'boolean', false)) document.querySelector(`#${id}`).click();
+}
+const positionExpression = document.querySelector('#position-expression');
+positionExpression.checked = getPreference('positionExpression', (value) => typeof value === 'boolean', false);
+positionExpression.addEventListener('change', () => setPreference('positionExpression', positionExpression.checked));
+const patchLibrary = createPatchLibrary({
   root: document.querySelector('#patch-library'),
   getControls: () => Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [
     id,
@@ -683,4 +728,6 @@ createPatchLibrary({
     return midi.sendPatchControls(controls);
   },
 });
+setupBackup({ patches: patchLibrary, drums, looper: midi });
+setupCloudBackup({ patches: patchLibrary, drums, looper: midi });
 status.textContent = 'Panel ready. Connect MIDI to send notes and supported controls.';

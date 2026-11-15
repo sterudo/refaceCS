@@ -9,7 +9,7 @@
     <main>
       <header class="toolbar" style="align-items: flex-start;">
         <div>
-          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.1</span>  
+          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.2</span>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
@@ -19,6 +19,9 @@
            <span id="midi-badge" class="badge" role="status">MIDI not connected</span> 
           <button id="midi-connect" type="button" class="notconnectedmidi">Connect MIDI</button>
            <button id="midi-reset" type="button">MIDI Reset</button>
+           <button id="backup-open" type="button">Import / Export</button>
+           <button id="data-info-open" class="data-info-open" type="button" aria-label="Show information about saving and backups" aria-controls="data-info" title="Show information about saving and backups" hidden>?</button>
+           <span id="backup-result" role="status"></span>
           <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
           <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
           <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
@@ -35,8 +38,33 @@
         
 
       </header>
-      
+
+      <section id="data-info" class="data-info" aria-labelledby="data-info-title">
+        <div class="data-info-header">
+          <h2 id="data-info-title">Your data and backups</h2>
+          <button id="data-info-close" type="button" aria-label="Close information about saving and backups">Close</button>
+        </div>
+        <div class="data-info-content">
+          <div>
+            <h3>Saved in this browser</h3>
+            <p>Groove patterns save automatically. Save patches and loops to keep them in this browser; unsaved patch changes and the current loop are not backed up automatically. Patch audio and some settings are stored here too.</p>
+            <p><strong>Keep a backup:</strong> clearing site data, browser storage eviction, or using private browsing can remove saved data. Data is separate for each browser profile and website address.</p>
+          </div>
+          <div>
+            <h3>Import and export files</h3>
+            <p>Use <strong>Import / Export</strong> above to download a ZIP of one section or everything, and to import a backup. Imports merge saved items and ask how to handle differing matches.</p>
+            <p>Individual patches, audio, patterns and loops can also be exported. MIDI exports omit app-specific data.</p>
+          </div>
+          <div>
+            <h3>Google Drive</h3>
+            <p>Optional Google Drive backups are available from <strong>Import / Export</strong>. Connect your account to save named backups or restore a version; setup instructions are in the dialog.</p>
+            <p>Backups are manual: automatic sync and deletion sharing between devices are not available. Browser-only preferences are excluded from file and cloud backups.</p>
+          </div>
+        </div>
+      </section>
+
       <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
+      <p id="preferences-status" role="status" hidden></p>
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="visual-toggles">
         <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
@@ -73,6 +101,84 @@
         <label><input id="position-expression" type="checkbox"> Position-sensitive expression</label>
           
         </div>
+      <dialog id="looper-transfer" class="patch-editor" aria-labelledby="looper-transfer-title">
+        <h2 id="looper-transfer-title">Looper Import / Export</h2>
+        <p>Import a loop JSON or MIDI file, or export the current loop.</p>
+        <p id="looper-transfer-status" role="status"></p>
+        <div class="patch-editor-actions">
+          <button id="looper-midi-import" type="button">Import loop file</button>
+          <button id="looper-midi-export" type="button">Export loop</button>
+          <button id="looper-transfer-close" type="button">Close</button>
+        </div>
+      </dialog>
+      <dialog id="looper-library" class="patch-editor" aria-labelledby="looper-library-title">
+        <h2 id="looper-library-title">Saved loops</h2>
+        <label>Loop <select id="looper-library-select"></select></label>
+        <p id="looper-library-status" role="status"></p>
+        <div class="patch-editor-actions">
+          <button id="looper-library-load" type="button">Load</button>
+          <button id="looper-library-delete" type="button">Delete</button>
+          <button id="looper-library-close" type="button">Close</button>
+        </div>
+      </dialog>
+      <dialog id="patch-export-choice" class="patch-editor" aria-labelledby="patch-export-choice-title">
+        <h2 id="patch-export-choice-title">Unsaved patch changes</h2>
+        <p>Choose which sound to export. The current state will not be saved to the library.</p>
+        <div class="patch-editor-actions">
+          <button type="button" value="cancel">Cancel Export</button>
+          <button type="button" value="current">Export current unsaved state</button>
+          <button type="button" value="saved">Export last saved state</button>
+        </div>
+      </dialog>
+      <dialog id="backup-dialog" class="patch-editor" aria-labelledby="backup-title">
+        <h2 id="backup-title">Import / Export</h2>
+        <label>Select data to export <select id="backup-section">
+          <option value="all">Everything</option>
+          <option value="loops">Looper</option>
+          <option value="patterns">Groove Studio</option>
+          <option value="patches">Patch Library</option>
+        </select></label>
+        <p>Browser preferences are not included. Imports merge and ask before replacing saved items.</p>
+        <p id="backup-status" role="status"></p>
+        <input id="backup-file" type="file" accept=".zip,application/zip" hidden>
+        <div class="patch-editor-actions">
+          <button id="backup-import" type="button">Import backup</button>
+          <button id="backup-export" type="button">Export backup</button>
+          <button id="cloud-open" type="button">Google Drive backups</button>
+          <button id="backup-close" type="button">Close</button>
+        </div>
+      </dialog>
+      <dialog id="cloud-dialog" class="patch-editor" aria-labelledby="cloud-title">
+        <h2 id="cloud-title">Google Drive backups</h2>
+        <p>Backups are stored in a visible refaceCS folder in your Google Drive. They can contain patches, loops, patterns and audio. Google Drive storage and account access are your responsibility; sync and deletion mistakes can affect other devices. Browser preferences are not included.</p>
+        <p>Use the same Google OAuth client ID and account on each device. Google may require you to reconnect after a reload or token expiry. Automatic sync is not yet available.</p>
+        <details class="cloud-setup">
+          <summary>How to set up Google Drive access</summary>
+          <ol>
+            <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create or select a project. Enable the Google Drive API for that project.</li>
+            <li>In Google Auth Platform, configure the consent screen. Under Data Access, add the <code>https://www.googleapis.com/auth/drive.file</code> scope.</li>
+            <li>If the app is in Testing mode, open Audience and add your Google account under Test users. Otherwise Google may block access.</li>
+            <li>Under Clients, create an OAuth client ID of type Web application. Add this app's current origin as an Authorized JavaScript origin: <code id="cloud-origin"></code>. Add each other origin you use, including its port. Redirect URIs are not needed for this app.</li>
+            <li>Copy the client ID into the field below, click Connect Google Drive, and approve access using the same account on each device. Do not enter or share the client secret.</li>
+          </ol>
+          <p>Google settings can take time to take effect. For more details, see <a href="https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid" target="_blank" rel="noopener noreferrer">Google's setup guide</a>.</p>
+        </details>
+        <label>Google OAuth client ID <input id="cloud-client-id" type="text" autocomplete="off"></label>
+        <div class="patch-editor-actions">
+          <button id="cloud-connect" type="button" disabled>Connect Google Drive</button>
+          <button id="cloud-disconnect" type="button" disabled>Disconnect</button>
+        </div>
+        <label>Backup name <input id="cloud-name" type="text" value="Backup"></label>
+        <label>Backup version <select id="cloud-versions" disabled></select></label>
+        <p id="cloud-status" role="status"></p>
+        <div class="patch-editor-actions">
+          <button id="cloud-save" type="button" disabled>Save named backup</button>
+          <button id="cloud-refresh" type="button" disabled>Refresh versions</button>
+          <button id="cloud-merge" type="button" disabled>Restore and merge</button>
+          <button id="cloud-replace" type="button" disabled>Restore and replace</button>
+          <button id="cloud-close" type="button">Close</button>
+        </div>
+      </dialog>
          
       <details id="groove-panel" class="groove-panel">
         <summary>Groove studio <span>808-inspired drum machine</span></summary>
@@ -96,6 +202,9 @@
             <button id="drum-copy" type="button">Save pattern as</button>
             <button id="drum-rename" type="button">Rename pattern</button>
             <button id="drum-delete" type="button">Delete pattern</button>
+            <button id="drum-import" type="button">Import pattern</button>
+            <button id="drum-export" type="button">Export pattern</button>
+            <input id="drum-import-file" type="file" accept=".json,application/json" hidden>
             <label>Add instrument <select id="drum-instrument"></select></label>
             <button id="drum-add" type="button">Add lane</button>
             <button id="drum-tone-toggle" type="button" aria-pressed="false" aria-controls="drum-lanes">Show tone controls</button>
@@ -131,8 +240,6 @@
           <div class="patch-filter-actions">
             <button id="patch-view-toggle" type="button" aria-pressed="false" title="Show patch descriptions and labeled fader values instead of compact fader outlines.">Detailed snapshots</button>
             <button id="patch-manage-labels" type="button">Manage categories / tags</button>
-             <button id="patch-import" type="button">Import ZIP</button>
-            <button id="patch-export" type="button" disabled>Export ZIP</button>
           </div>
           <div style="display: flex;width: 100%;gap: 8px;">
           <fieldset style="background: #131F21; color: #fff;"><legend>Categories</legend><div id="patch-category-filter" class="patch-filter-chips"></div></fieldset>
@@ -143,8 +250,7 @@
         <div id="patch-cards" class="patch-cards"></div>
       </section>
       </details>
-      <input id="looper-file" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
-      <input id="patch-import-file" type="file" accept=".zip,application/zip" hidden>
+      <input id="looper-file" type="file" accept=".mid,.midi,.json,audio/midi,audio/x-midi,application/json" hidden>
       <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
       <dialog id="drum-calibration" class="patch-editor" aria-labelledby="drum-calibration-title">
         <h2 id="drum-calibration-title">Calibrate MIDI offset</h2>

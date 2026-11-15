@@ -200,7 +200,7 @@ function u32(value) {
   return [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255];
 }
 
-export function writeMidi(notes, length, tempo, meter) {
+export function writeMidi(notes, length, tempo, meter, { includeLoopMetadata = true } = {}) {
   if (!notes.length || !Number.isFinite(length) || length <= 0 || length > maxBeats) {
     throw new Error('There is no valid loop to save.');
   }
@@ -211,14 +211,17 @@ export function writeMidi(notes, length, tempo, meter) {
   const events = [
     { tick: 0, priority: 0, data: [0xff, 0x51, 3, (micros >> 16) & 255, (micros >> 8) & 255, micros & 255] },
     { tick: 0, priority: 0, data: [0xff, 0x58, 4, meter, 2, 24, 8] },
-    { tick: 0, priority: 0, data: [0xff, 0x7f, marker.length + exactLength.length, ...marker, ...exactLength] },
   ];
+  if (includeLoopMetadata) {
+    events.push({ tick: 0, priority: 0, data: [0xff, 0x7f, marker.length + exactLength.length, ...marker, ...exactLength] });
+  }
   for (const note of notes) {
     const start = Math.min(lengthTicks - 1, Math.max(0, Math.round(note.start * exportDivision)));
     const duration = Math.max(1, Math.min(lengthTicks, Math.round(note.playDuration * exportDivision)));
     events.push({ tick: start, priority: 2, data: [0x90 | note.channel, note.pitch, note.velocity] });
     events.push({ tick: start + duration, priority: 1, data: [0x80 | note.channel, note.pitch, 0] });
   }
+
   events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
   const track = [];
   let previous = 0;
@@ -231,5 +234,45 @@ export function writeMidi(notes, length, tempo, meter) {
     ...[...`MThd`].map((character) => character.charCodeAt(0)), ...u32(6), 0, 0, 0, 1,
     exportDivision >> 8, exportDivision & 255,
     ...[...`MTrk`].map((character) => character.charCodeAt(0)), ...u32(track.length), ...track,
+  ]);
+}
+
+export function writeGrooveMidi(pattern, tempo, meter, voices) {
+  const micros = Math.round(60000000 / tempo);
+  const ticks = meter * exportDivision;
+  const track = (events) => {
+    events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
+    const bytes = [];
+    let previous = 0;
+    for (const event of events) {
+      bytes.push(...variable(event.tick - previous), ...event.data);
+      previous = event.tick;
+    }
+    bytes.push(...variable(Math.max(ticks, previous) - previous), 0xff, 0x2f, 0);
+    return [...[...`MTrk`].map((character) => character.charCodeAt(0)), ...u32(bytes.length), ...bytes];
+  };
+  const tracks = [track([
+    { tick: 0, priority: 0, data: [0xff, 0x51, 3, (micros >> 16) & 255, (micros >> 8) & 255, micros & 255] },
+    { tick: 0, priority: 0, data: [0xff, 0x58, 4, meter, 2, 24, 8] },
+  ])];
+  for (const lane of pattern.lanes) {
+    const voice = voices.find((item) => item.id === lane.voice);
+    if (!voice) throw new Error('Unknown drum voice');
+    const name = new TextEncoder().encode(voice.name);
+    const events = [{ tick: 0, priority: 0, data: [0xff, 0x03, ...variable(name.length), ...name] }];
+    for (let index = 0; index < meter * 4; index++) {
+      const level = lane.steps[index];
+      if (!level) continue;
+      const start = index * exportDivision / 4;
+      const velocity = Math.round(level * 127 / 5);
+      events.push({ tick: start, priority: 2, data: [0x99, voice.note, velocity] });
+      events.push({ tick: start + exportDivision / 8, priority: 1, data: [0x89, voice.note, 0] });
+    }
+    tracks.push(track(events));
+  }
+  return new Uint8Array([
+    ...[...`MThd`].map((character) => character.charCodeAt(0)), ...u32(6), 0, 1,
+    tracks.length >> 8, tracks.length & 255, exportDivision >> 8, exportDivision & 255,
+    ...tracks.flat(),
   ]);
 }

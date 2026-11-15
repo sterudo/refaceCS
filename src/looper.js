@@ -1,10 +1,80 @@
 import { tempoRange } from './synth-midi.js';
 import { readMidi, writeMidi } from './midi-file.js';
+import { askName, choose, confirmAction, exportDialog } from './dialogs.js';
+import { equalValue, resolveImport } from './import-conflicts.js';
 
 const maxNotes = 2000;
 const maxBeats = 1200;
 const minimumLength = 0.25;
 const epsilon = 1e-7;
+
+function openLoopStore() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('refaceCS-loops', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('loops', { keyPath: 'id' });
+    request.onerror = () => reject(request.error || new Error('Could not open loop storage'));
+    request.onblocked = () => reject(new Error('Loop storage is blocked by another tab'));
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+  });
+}
+
+async function loopStoreRequest(mode, operation) {
+  const db = await openLoopStore();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction('loops', mode);
+      const request = operation(transaction.objectStore('loops'));
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = transaction.onerror = () => reject(transaction.error || request.error || new Error('Loop storage failed'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export function validateSavedLoops(records) {
+  if (!Array.isArray(records)) throw new Error('Invalid loop list');
+  const ids = new Set();
+  for (const record of records) {
+    if (!record || typeof record.id !== 'string' || !record.id
+      || typeof record.name !== 'string' || !record.name.trim() || ids.has(record.id)) {
+      throw new Error('Invalid saved loop metadata');
+    }
+    ids.add(record.id);
+    validateSavedLoop(record.loop);
+  }
+}
+
+function validateSavedLoop(loop) {
+  if (!loop || !Number.isFinite(loop.length) || loop.length <= 0 || loop.length > maxBeats
+    || ![3, 4].includes(loop.meter) || !Number.isInteger(loop.tempo)
+    || loop.tempo < tempoRange.min || loop.tempo > tempoRange.max
+    || !Array.isArray(loop.notes) || !loop.notes.length || loop.notes.length > maxNotes
+    || !loop.notes.every((note) => Number.isFinite(note.start) && note.start >= 0 && note.start < loop.length
+      && Number.isFinite(note.duration) && note.duration > 0 && note.duration <= loop.length
+      && Number.isInteger(note.channel) && note.channel >= 0 && note.channel <= 15
+      && Number.isInteger(note.pitch) && note.pitch >= 0 && note.pitch <= 127
+      && Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)) {
+    throw new Error('Saved loop data is invalid');
+  }
+  return loop;
+}
+
+function comparableLoop(loop) {
+  return {
+    length: loop.length, meter: loop.meter, tempo: loop.tempo,
+    notes: loop.notes.map(({ start, duration, channel, pitch, velocity }) =>
+      ({ start, duration, channel, pitch, velocity }))
+      .sort((a, b) => a.start - b.start || a.channel - b.channel || a.pitch - b.pitch),
+  };
+}
+
+async function equalLoopRecords(a, b) {
+  return equalValue({ ...a, loop: comparableLoop(a.loop) }, { ...b, loop: comparableLoop(b.loop) });
+}
 
 export function createLooper(sendNote, onModeChange, onFileTempo, playback = {}) {
   const clock = playback.clock;
@@ -19,6 +89,11 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
   const singleDigitWidth = barsValue.getComputedTextLength();
   const menuLayer = document.querySelector('#looper-menu-layer');
   const fileInput = document.querySelector('#looper-file');
+  const transfer = document.querySelector('#looper-transfer');
+  const transferStatus = document.querySelector('#looper-transfer-status');
+  const library = document.querySelector('#looper-library');
+  const librarySelect = document.querySelector('#looper-library-select');
+  const libraryStatus = document.querySelector('#looper-library-status');
   const notes = [];
   const scheduledNotes = [];
   const pending = new Map();
@@ -39,6 +114,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
   let timer;
   let muted = false;
   let loadRevision = 0;
+  let savedLoop = null;
+  let savedLoopName = 'reface-loop';
   let syncActive = false;
   let syncOrigin = 0;
   let syncStart = 0;
@@ -353,7 +430,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     else notes.push(recorded);
   }
 
-  function recomputeDurations(collection = notes) {
+  function recomputeDurations(collection = notes, phraseLength = length) {
     const groups = new Map();
     for (const note of collection) {
       const key = `${note.channel}:${note.pitch}`;
@@ -366,7 +443,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       for (let index = 0; index < group.length; index++) {
         const note = group[index];
         const next = group[(index + 1) % group.length];
-        const distance = group.length === 1 ? length : (next.start - note.start + length) % length;
+        const distance = group.length === 1 ? phraseLength
+          : (next.start - note.start + phraseLength) % phraseLength;
         note.playDuration = Math.min(note.duration, distance);
       }
     }
@@ -635,7 +713,135 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     if (next !== 2 && next !== 3) playback.onStop?.();
   }
 
-  bindButton(document.querySelector('#looper-load'), () => fileInput.click());
+  function applyImportedLoop(imported) {
+    advance(performance.now(), false);
+    stopTransport();
+    notes.length = 0;
+    scheduledNotes.length = 0;
+    pending.clear();
+    length = imported.length;
+    settings.meter = imported.meter;
+    clock?.setMeter(settings.meter);
+    settings.bars = Math.min(settings.bars, maxBeats / settings.meter);
+    const bars = length / imported.meter;
+    activeSettings = { ...settings, bars: Number.isInteger(bars) ? bars : 0 };
+    for (const note of imported.notes) {
+      const id = nextId++;
+      mergeNote({ id, firstId: id, lastId: id, rawStart: note.start, start: note.start,
+        duration: Math.min(note.duration, length), channel: note.channel, pitch: note.pitch,
+        velocity: note.velocity, availableAt: 0 });
+    }
+    recomputeDurations();
+    setLeds();
+    if (imported.tempo !== undefined) onFileTempo(imported.tempo);
+  }
+
+  function snapshotLoop() {
+    if (!notes.length && !scheduledNotes.length && !pending.size) {
+      throw new Error('There is no valid loop to save.');
+    }
+    if (mode === 3) {
+      advance(performance.now(), false);
+      stopTransport();
+    }
+    const snapshot = notes.map((note) => ({ ...note }));
+    for (const note of scheduledNotes) mergeNote({ ...note }, snapshot);
+    recomputeDurations(snapshot);
+    const meter = activeSettings?.meter ?? settings.meter;
+    writeMidi(snapshot, length, tempo, meter);
+    return {
+      length, meter, tempo,
+      notes: snapshot.map(({ start, duration, channel, pitch, velocity }) =>
+        ({ start, duration, channel, pitch, velocity })),
+    };
+  }
+
+  async function renderLibrary() {
+    const loops = await loopStoreRequest('readonly', (store) => store.getAll());
+    loops.sort((a, b) => a.name.localeCompare(b.name));
+    librarySelect.replaceChildren(...loops.map((loop) => new Option(loop.name, loop.id)));
+    libraryStatus.textContent = loops.length ? '' : 'No loops saved in this browser.';
+    document.querySelector('#looper-library-load').disabled = !loops.length;
+    document.querySelector('#looper-library-delete').disabled = !loops.length;
+  }
+
+  async function activateImportedLoop(record) {
+    const hasCurrent = length || notes.length || scheduledNotes.length || pending.size;
+    const same = mode !== 3 && (notes.length || scheduledNotes.length)
+      && await equalValue(comparableLoop(snapshotLoop()), comparableLoop(record.loop));
+    if (hasCurrent && !same
+      && !await confirmAction('Import loop', 'Replace the current looper phrase with this imported loop?', 'Replace')) return;
+    ++loadRevision;
+    applyImportedLoop(record.loop);
+    savedLoop = structuredClone(record.loop);
+    savedLoopName = record.name;
+    status.textContent = `Loaded imported loop "${record.name}".`;
+  }
+
+  bindButton(document.querySelector('#looper-load'), async () => {
+    try {
+      await renderLibrary();
+      library.showModal();
+    } catch (error) {
+      status.textContent = `Could not open saved loops: ${error.message || error}.`;
+    }
+  });
+  bindButton(document.querySelector('#looper-save'), async () => {
+    try {
+      const name = await askName('Save loop', 'Save the loop in this browser as:', savedLoopName);
+      if (name === null) return;
+      const loops = await loopStoreRequest('readonly', (store) => store.getAll());
+      const existing = loops.find((loop) => loop.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+      if (existing && !await confirmAction('Replace loop', `Replace saved loop "${existing.name}"?`, 'Replace')) return;
+      const loop = snapshotLoop();
+      await loopStoreRequest('readwrite', (store) => store.put({
+        id: existing?.id ?? crypto.randomUUID(), name, loop, updatedAt: new Date().toISOString(),
+      }));
+      savedLoop = structuredClone(loop);
+      savedLoopName = name;
+      status.textContent = `Saved loop "${name}" in this browser.`;
+    } catch (error) {
+      status.textContent = `Could not save loop: ${error.message || error}.`;
+    }
+  });
+  document.querySelector('#looper-library-close').addEventListener('click', () => library.close());
+  document.querySelector('#looper-library-load').addEventListener('click', async () => {
+    try {
+      const loop = await loopStoreRequest('readonly', (store) => store.get(librarySelect.value));
+      if (!loop) throw new Error('The saved loop no longer exists');
+      const imported = validateSavedLoop(loop.loop);
+      if ((length || notes.length || scheduledNotes.length || pending.size)
+        && !await confirmAction('Load loop', 'Replace the current looper phrase with this saved loop?', 'Replace')) return;
+      ++loadRevision;
+      applyImportedLoop(imported);
+      savedLoop = structuredClone(imported);
+      savedLoopName = loop.name;
+      library.close();
+      status.textContent = `Loaded saved loop "${loop.name}".`;
+    } catch (error) {
+      libraryStatus.textContent = `Could not load loop: ${error.message || error}.`;
+    }
+  });
+  document.querySelector('#looper-library-delete').addEventListener('click', async () => {
+    try {
+      const loop = await loopStoreRequest('readonly', (store) => store.get(librarySelect.value));
+      if (!loop || !await confirmAction('Delete loop', `Delete saved loop "${loop.name}"?`, 'Delete')) return;
+      await loopStoreRequest('readwrite', (store) => store.delete(loop.id));
+      await renderLibrary();
+      libraryStatus.textContent = `Deleted "${loop.name}".`;
+    } catch (error) {
+      libraryStatus.textContent = `Could not delete loop: ${error.message || error}.`;
+    }
+  });
+  bindButton(document.querySelector('#looper-transfer-open'), () => {
+    transferStatus.textContent = '';
+    transfer.showModal();
+  });
+  document.querySelector('#looper-transfer-close').addEventListener('click', () => transfer.close());
+  document.querySelector('#looper-midi-import').addEventListener('click', () => {
+    transferStatus.textContent = '';
+    fileInput.click();
+  });
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files?.[0];
     fileInput.value = '';
@@ -645,70 +851,78 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       if (file.size > 16 * 1024 * 1024) throw new Error('The MIDI file exceeds the 16 MB size limit.');
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (revision !== loadRevision) return;
-      const imported = readMidi(bytes, settings.meter);
+      let imported;
+      if (file.name.toLowerCase().endsWith('.json')) {
+        const data = JSON.parse(new TextDecoder().decode(bytes));
+        if (data?.format !== 'refaceCS-loop' || data.version !== 1) throw new Error('Unsupported loop format or version');
+        imported = validateSavedLoop(data.loop);
+      } else {
+        imported = readMidi(bytes, settings.meter);
+      }
       if ((length || notes.length || scheduledNotes.length || pending.size) &&
-        !window.confirm('Replace the current looper phrase with this MIDI file?')) {
+        !await confirmAction('Import loop', 'Replace the current looper phrase with this file?', 'Replace')) {
         status.textContent = 'MIDI load cancelled; the current loop is unchanged.';
+        transferStatus.textContent = status.textContent;
         return;
       }
-      advance(performance.now(), false);
-      stopTransport();
-      notes.length = 0;
-      scheduledNotes.length = 0;
-      pending.clear();
-      length = imported.length;
-      settings.meter = imported.meter;
-      clock?.setMeter(settings.meter);
-      settings.bars = Math.min(settings.bars, maxBeats / settings.meter);
-      const bars = length / imported.meter;
-      activeSettings = { ...settings, bars: Number.isInteger(bars) ? bars : 0 };
-      for (const note of imported.notes) {
-        const id = nextId++;
-        mergeNote({ id, firstId: id, lastId: id, rawStart: note.start, start: note.start,
-          duration: Math.min(note.duration, length), channel: note.channel, pitch: note.pitch,
-          velocity: note.velocity, availableAt: 0 });
-      }
-      recomputeDurations();
-      setLeds();
-      if (imported.tempo !== undefined) onFileTempo(imported.tempo);
-      status.textContent = `Loaded ${file.name} (${imported.notes.length} notes). ${imported.warnings.join(' ')}`.trim();
+      applyImportedLoop(imported);
+      savedLoop = null;
+      savedLoopName = file.name.replace(/\.(midi?|json)$/i, '');
+      status.textContent = `Loaded ${file.name} (${imported.notes.length} notes). ${(imported.warnings ?? []).join(' ')}`.trim();
+      if (transfer.open) transfer.close();
     } catch (error) {
-      if (revision === loadRevision) status.textContent = `MIDI load failed: ${error.message || error}.`;
+      if (revision === loadRevision) {
+        status.textContent = `MIDI load failed: ${error.message || error}.`;
+        transferStatus.textContent = status.textContent;
+      }
     }
   });
 
-  bindButton(document.querySelector('#looper-save'), () => {
+  document.querySelector('#looper-midi-export').addEventListener('click', async () => {
+    transferStatus.textContent = '';
     try {
       if (!notes.length && !scheduledNotes.length && !pending.size) {
         status.textContent = 'MIDI save failed: There is no valid loop to save.';
+        transferStatus.textContent = status.textContent;
         return;
       }
-      const saveTime = performance.now();
-      const enteredName = window.prompt('Save MIDI file as:', 'reface-loop.mid');
-      if (enteredName === null) return;
-      const name = enteredName.trim();
-      if (!name) {
-        status.textContent = 'MIDI save cancelled: Enter a file name.';
-        return;
+      const current = mode === 3 ? null : snapshotLoop();
+      const dirty = !savedLoop || !current || JSON.stringify(current) !== JSON.stringify(savedLoop);
+      let selected = 'current';
+      if (dirty) {
+        selected = await choose('Unsaved loop changes', 'Choose which loop to export.', [
+          ['Cancel Export', 'cancel'], ['Export current unsaved state', 'current'],
+          ['Export last saved state', 'saved', !savedLoop],
+        ]);
+        if (!selected || selected === 'cancel') return;
       }
-      const filename = /\.midi?$/i.test(name) ? name : `${name}.mid`;
-      if (mode === 3) {
-        advance(saveTime, false);
-        stopTransport();
+      const result = await exportDialog(savedLoopName, [
+        { id: 'loop', label: 'Loop (JSON)', extension: '.json' },
+        { id: 'midi', label: 'Pure MIDI', extension: '.mid', extensions: ['.mid', '.midi'],
+          warning: 'Pure MIDI omits the app-specific exact loop length; note timing is rounded to MIDI resolution and trailing silence may not be restored on reimport.' },
+      ]);
+      if (!result) return;
+      const loop = selected === 'saved' ? savedLoop : (current ?? snapshotLoop());
+      let blob;
+      if (result.format === 'midi') {
+        const snapshot = loop.notes.map((note) => ({ ...note }));
+        recomputeDurations(snapshot, loop.length);
+        blob = new Blob([writeMidi(snapshot, loop.length, loop.tempo, loop.meter, { includeLoopMetadata: false })],
+          { type: 'audio/midi' });
+      } else {
+        blob = new Blob([JSON.stringify({ format: 'refaceCS-loop', version: 1, loop })], { type: 'application/json' });
       }
-      const snapshot = notes.map((note) => ({ ...note }));
-      for (const note of scheduledNotes) mergeNote({ ...note }, snapshot);
-      recomputeDurations(snapshot);
-      const bytes = writeMidi(snapshot, length, tempo, activeSettings?.meter ?? settings.meter);
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/midi' }));
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      link.download = result.filename;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 0);
-      status.textContent = `Saved loop as ${filename}.`;
+      status.textContent = `Exported loop as ${result.filename}.`;
+      if (transfer.open) transfer.close();
     } catch (error) {
       status.textContent = `MIDI save failed: ${error.message || error}.`;
+      transferStatus.textContent = status.textContent;
     }
   });
 
@@ -759,6 +973,46 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     setMode,
     setTempo,
     invalidateSchedule,
+    listSavedLoops() {
+      return loopStoreRequest('readonly', (store) => store.getAll());
+    },
+    async replaceSavedLoops(records) {
+      validateSavedLoops(records);
+      await loopStoreRequest('readwrite', (store) => {
+        let request = store.clear();
+        for (const record of records) request = store.put(record);
+        return request;
+      });
+      savedLoop = null;
+    },
+    async importSavedLoops(records, { activateSingle = true } = {}) {
+      validateSavedLoops(records);
+      const existing = await loopStoreRequest('readonly', (store) => store.getAll());
+      const pendingWrites = [];
+      for (const record of records) {
+        const resolution = await resolveImport(record, existing, 'loop', equalLoopRecords);
+        if (resolution.action === 'ignore') continue;
+        if (resolution.action === 'identical') {
+          if (records.length === 1 && activateSingle) await activateImportedLoop(resolution.item);
+          continue;
+        }
+        const next = resolution.item;
+        if (resolution.match) existing.splice(existing.indexOf(resolution.match), 1);
+        existing.push(next);
+        pendingWrites.push(next);
+      }
+      if (pendingWrites.length) {
+        await loopStoreRequest('readwrite', (store) => {
+          let request;
+          for (const record of pendingWrites) request = store.put(record);
+          return request;
+        });
+      }
+      if (activateSingle && records.length === 1 && pendingWrites.length === 1) {
+        await activateImportedLoop(pendingWrites[0]);
+      }
+      return pendingWrites.length;
+    },
     setMuted(value) {
       advance();
       invalidateSchedule();

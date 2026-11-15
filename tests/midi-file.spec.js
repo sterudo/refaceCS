@@ -77,37 +77,70 @@ test('rejects unsupported, malformed, unpaired and oversized files', () => {
   expect(() => readMidi(midi([longNote]), 4)).toThrow('1,200-beat');
 });
 
+test('looper transfer icon opens a dialog and reports errors without closing it', async ({ page }) => {
+  await page.goto('/static/reface/');
+  const icon = page.getByRole('button', { name: 'Looper import and export' });
+  const load = page.getByRole('button', { name: 'Load saved loop' });
+  const save = page.getByRole('button', { name: 'Save loop', exact: true });
+  const [iconBox, loadBox, saveBox] = await Promise.all([icon.boundingBox(), load.boundingBox(), save.boundingBox()]);
+  expect(iconBox.x + iconBox.width).toBeLessThan(loadBox.x);
+  expect(loadBox.x + loadBox.width).toBeLessThan(saveBox.x);
+  await icon.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Looper Import / Export' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Export loop' }).click();
+  await expect(dialog.getByRole('status')).toContainText('There is no valid loop to save');
+  await page.locator('#looper-file').setInputFiles({ name: 'bad.mid', mimeType: 'audio/midi', buffer: Buffer.from([1, 2]) });
+  await expect(dialog.getByRole('status')).toContainText('MIDI load failed');
+  await dialog.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await icon.press('Space');
+  await expect(dialog.getByRole('status')).toBeEmpty();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).not.toBeVisible();
+});
+
 test('loads and saves without MIDI access, preserving a phrase on invalid input or cancellation', async ({ page }) => {
   await page.goto('/static/reface/');
   const phrase = writeMidi([{ start: 1, playDuration: 0.5, channel: 3, pitch: 64, velocity: 75 }],
     6, 150, 3);
   const input = page.locator('#looper-file');
+  await page.getByRole('button', { name: 'Looper import and export' }).press('Enter');
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Load MIDI loop' }).press('Enter'),
+    page.getByRole('button', { name: 'Import loop file' }).press('Enter'),
   ]);
   await chooser.setFiles({ name: 'phrase.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
   await expect(page.locator('#looper-status')).toContainText('Loaded phrase.mid');
+  await expect(page.locator('#looper-transfer')).not.toBeVisible();
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
   await expect(page.locator('#looper-meter text')).toHaveText('3/4');
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '150');
+  await page.getByRole('button', { name: 'Looper import and export' }).click();
   await input.setInputFiles({ name: 'bad.mid', mimeType: 'audio/midi', buffer: Buffer.from([1, 2, 3]) });
   await expect(page.locator('#looper-status')).toContainText('MIDI load failed');
-  page.once('dialog', (dialog) => dialog.dismiss());
   await input.setInputFiles({ name: 'new.mid', mimeType: 'audio/midi', buffer: Buffer.from(midi([oneNote])) });
+  await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Cancel' }).click();
   await expect(page.locator('#looper-status')).toContainText('load cancelled');
-  page.once('dialog', (dialog) => dialog.accept('my loop'));
+  await expect(page.locator('#looper-transfer-status')).toContainText('load cancelled');
+  await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
+  await page.getByRole('dialog', { name: 'Unsaved loop changes' })
+    .getByRole('button', { name: 'Export current unsaved state' }).click();
+  const exportDialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await exportDialog.getByLabel('File name').fill('my loop');
+  await exportDialog.getByLabel('Format').selectOption('midi');
+  await expect(exportDialog).toContainText('trailing silence');
   const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Save MIDI loop' }).click(),
+    page.waitForEvent('download'), exportDialog.getByRole('button', { name: 'Export' }).click(),
   ]);
   expect(download.suggestedFilename()).toBe('my loop.mid');
-  await expect(page.locator('#looper-status')).toHaveText('Saved loop as my loop.mid.');
+  await expect(page.locator('#looper-transfer')).not.toBeVisible();
+  await expect(page.locator('#looper-status')).toHaveText('Exported loop as my loop.mid.');
   const result = readMidi(new Uint8Array(await readFile(await download.path())), 4);
-  expect(result).toMatchObject({ length: 6, meter: 3, tempo: 150 });
+  expect(result).toMatchObject({ length: 3, meter: 3, tempo: 150 });
   expect(result.notes[0]).toMatchObject({ start: 1, duration: 0.5, channel: 3, pitch: 64, velocity: 75 });
-  page.once('dialog', (dialog) => dialog.accept());
   await input.setInputFiles({ name: 'phrase.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
+  await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Replace' }).click();
   await expect(page.locator('#looper-status')).toContainText('Loaded phrase.mid');
 });
 
@@ -119,9 +152,34 @@ test('reports ignored events and retains unsupported tempo and meter on import',
   await page.locator('#looper-file').setInputFiles({
     name: 'external.mid', mimeType: 'audio/midi', buffer: Buffer.from(bytes),
   });
+
   await expect(page.locator('#looper-meter text')).toHaveText('3/4');
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '120');
   await expect(page.locator('#looper-status')).toContainText('outside 40–240 BPM');
   await expect(page.locator('#looper-status')).toContainText('Unsupported time signature');
   await expect(page.locator('#looper-status')).toContainText('Ignored 1 non-note');
+});
+
+test('native loop JSON preserves exact length and can be reimported', async ({ page }) => {
+  await page.goto('/static/reface/');
+  const phrase = writeMidi([{ start: 0.5, playDuration: 0.25, channel: 2, pitch: 60, velocity: 37 }], 8, 120, 4);
+  await page.locator('#looper-file').setInputFiles({ name: 'source.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
+  await expect(page.locator('#looper-status')).toContainText('Loaded source.mid');
+  await page.getByRole('button', { name: 'Looper import and export' }).click();
+  await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
+  await page.getByRole('dialog', { name: 'Unsaved loop changes' }).getByRole('button', { name: 'Export current unsaved state' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await dialog.getByLabel('File name').fill('phrase');
+  const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Export' }).click()]);
+  expect(download.suggestedFilename()).toBe('phrase.json');
+  const bytes = await readFile(await download.path());
+  expect(JSON.parse(bytes.toString()).loop.length).toBe(8);
+  await page.locator('#looper-file').setInputFiles({ name: 'phrase.json', mimeType: 'application/json', buffer: bytes });
+  await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Replace' }).click();
+  await expect(page.locator('#looper-status')).toContainText('Loaded phrase.json');
+  await page.getByRole('button', { name: 'Looper import and export' }).click();
+  await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
+  await page.getByRole('dialog', { name: 'Unsaved loop changes' }).getByRole('button', { name: 'Export current unsaved state' }).click();
+  const [restored] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Export' }).click()]);
+  expect(JSON.parse((await readFile(await restored.path())).toString()).loop.length).toBe(8);
 });

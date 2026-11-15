@@ -48,6 +48,23 @@ test('discovers reface ports, supports a separate controller and follows hot-plu
   await expect(page.locator('#midi-controller-input')).toHaveValue('keyboard');
 });
 
+test('restores the selected controller when available and otherwise uses the default', async ({ page }) => {
+  await mockMidi(page, {
+    inputs: [{ id: 'ri', name: 'Yamaha reface CS' }, { id: 'keyboard', name: 'Controller' }],
+    outputs: [{ id: 'ro', name: 'Yamaha reface CS' }],
+  });
+  await page.getByRole('button', { name: 'Connect MIDI' }).click();
+  await page.locator('#midi-controller-input').selectOption('keyboard');
+  await page.reload();
+  await page.getByRole('button', { name: 'Connect MIDI' }).click();
+  await expect(page.locator('#midi-controller-input')).toHaveValue('keyboard');
+  await page.evaluate(() => window.testMidi.inputs.delete('keyboard'));
+  await page.reload();
+  await page.evaluate(() => window.testMidi.inputs.delete('keyboard'));
+  await page.getByRole('button', { name: 'Connect MIDI' }).click();
+  await expect(page.locator('#midi-controller-input')).toHaveValue('ri');
+});
+
 test('requires manual correction for ambiguous or unmatched ports', async ({ page }) => {
   await mockMidi(page, {
     inputs: [{ id: 'a', name: 'reface A' }, { id: 'b', name: 'reface B' }],

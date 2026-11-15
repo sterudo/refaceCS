@@ -59,6 +59,46 @@ h1 span {
   font-size: 0.85rem;
 }
 
+.data-info {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #526873;
+  border-radius: 0.5rem;
+  background: #182128;
+}
+
+.data-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.data-info h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.data-info-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0.5rem 1.5rem;
+}
+
+.data-info h3 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.data-info p {
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+}
+
+.data-info-open {
+  min-width: 2rem;
+}
+
 .badge {
   display: inline-block;
   margin-left: 0.5rem;
@@ -901,6 +941,20 @@ input[type="range"]:focus-visible,
 .patch-editor h2 {
   margin: 0;
   font-size: 1.2rem;
+}
+
+.cloud-setup {
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.cloud-setup summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.cloud-setup a {
+  color: #8bdce8;
 }
 
 .patch-editor input,

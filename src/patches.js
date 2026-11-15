@@ -177,6 +177,23 @@ export class PatchStore {
     return result.map(validatePatch);
   }
 
+  async replaceAll(patches, categories) {
+    const records = patches.map(validatePatch);
+    assert(new Set(records.map((record) => record.id)).size === records.length, 'Patch IDs must be unique.');
+    assert(Array.isArray(categories) && categories.every((value) => typeof value === 'string' && value.trim()),
+      'Patch categories are invalid.');
+    const database = await this.open();
+    const transaction = database.transaction([PATCH_STORE_NAME, 'library-settings'], 'readwrite');
+    const done = transactionComplete(transaction);
+    const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    objectStore.clear();
+    for (const record of records) objectStore.put(record);
+    transaction.objectStore('library-settings').put({
+      id: 'categories', values: [...new Set([...categories, ...records.map((record) => record.category)])],
+    });
+    await done;
+  }
+
   async put(patch) {
     const record = validatePatch(patch);
     const database = await this.open();
@@ -230,6 +247,17 @@ export class PatchStore {
     settings.put({ id: 'categories', values });
     await done;
     return values;
+  }
+
+  async addCategories(categories) {
+    const values = categories.map((value) => normalizeText(value, 'Category'));
+    const database = await this.open();
+    const transaction = database.transaction('library-settings', 'readwrite');
+    const done = transactionComplete(transaction);
+    const settings = transaction.objectStore('library-settings');
+    const current = await requestResult(settings.get('categories'));
+    settings.put({ id: 'categories', values: [...new Set([...current.values, ...values])] });
+    await done;
   }
 
   async deleteCategory(category) {
@@ -307,7 +335,18 @@ export async function createPatchBackup(patches) {
 export async function readPatchBackup(file) {
   let entries;
   try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    let total = 0;
+    const names = new Set();
+    entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
+      filter: (entry) => {
+        total += entry.originalSize;
+        if (names.has(entry.name) || total > 256 * 1024 * 1024) {
+          throw new Error('ZIP contains duplicate files or exceeds the 256 MB expanded size limit');
+        }
+        names.add(entry.name);
+        return true;
+      },
+    });
   } catch (error) {
     throw new Error(`Could not read ZIP backup: ${error.message || error}`);
   }

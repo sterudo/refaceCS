@@ -2,10 +2,11 @@ import {
   createPatchBackup,
   PATCH_CONTROL_IDS,
   PatchStore,
-  readPatchBackup,
   validatePatch,
 } from './patches.js';
 import { createAudioRecorder } from './audio-recording.js';
+import { confirmAction, exportDialog } from './dialogs.js';
+import { resolveImport } from './import-conflicts.js';
 
 const CONTROL_GROUPS = [
   ['LFO', ['lfo-assign', 'lfo-depth', 'lfo-speed']],
@@ -93,9 +94,6 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   const managedCategories = document.querySelector('#patch-managed-categories');
   const managedTags = document.querySelector('#patch-managed-tags');
   const saveButton = document.querySelector('#patch-save');
-  const exportButton = document.querySelector('#patch-export');
-  const importButton = document.querySelector('#patch-import');
-  const importFile = document.querySelector('#patch-import-file');
   const audioFile = document.querySelector('#patch-audio-file');
   const editor = document.querySelector('#patch-editor');
   const editorForm = document.querySelector('#patch-editor-form');
@@ -125,6 +123,8 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   let activePreviewUrl = null;
   let activePreviewAttachment = null;
   let draggingAudio = null;
+  let savedControls = getControls();
+  let activePatchId = null;
   const recording = createAudioRecorder({
     onSave: async (patchId, data) => {
       const patch = patches.find((item) => item.id === patchId);
@@ -239,7 +239,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       const label = document.createElement('span');
       label.textContent = tag;
       const remove = iconButton(`Delete tag ${tag}`, 'trash', 'patch-small-button', async () => {
-        if (!window.confirm(`Delete "${tag}" from every patch? This cannot be undone.`)) return;
+        if (!await confirmAction('Delete tag', `Delete "${tag}" from every patch? This cannot be undone.`, 'Delete')) return;
         try {
           await store.deleteTag(tag);
           selectedTags.delete(tag);
@@ -379,6 +379,15 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
         item.lastElementChild.disabled = index === 0;
         item.append(iconButton(`Move ${attachment.name} later`, 'down', 'patch-small-button', () => moveAudio(patch.id, attachment.id, 1)));
         item.lastElementChild.disabled = index === patch.audio.length - 1;
+        const exportAudio = button('Export', 'patch-small-button', async () => {
+          const result = await exportDialog(attachment.name.replace(/\.mp3$/i, ''),
+            [{ id: 'mp3', label: 'MP3 audio', extension: '.mp3' }]);
+          if (!result) return;
+          download(attachment.data, result.filename);
+          setStatus(`Exported ${attachment.name}.`);
+        });
+        exportAudio.setAttribute('aria-label', `Export ${attachment.name}`);
+        item.append(exportAudio);
         item.append(iconButton(`Remove ${attachment.name}`, 'trash', 'patch-small-button', () => removeAudio(patch.id, attachment.id)));
         item.addEventListener('dragstart', (event) => {
           draggingAudio = { patchId: patch.id, audioId: attachment.id };
@@ -478,6 +487,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     actions.append(
       select,
       button('Edit', 'patch-edit', () => openEditor(patch)),
+      button('Export', 'patch-export-one', () => exportPatch(patch)),
       iconButton(`Delete ${patch.name}`, 'trash', 'patch-delete', () => deletePatch(patch)),
       addButton,
       recordButton,
@@ -514,7 +524,6 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     } else {
       visible.forEach((patch) => cards.append(makeCard(patch)));
     }
-    exportButton.disabled = patches.length === 0;
     if (selectedPatchId && restoreCardFocus) {
       [...cards.children].find((card) => card.dataset.patchId === selectedPatchId)?.focus({ preventScroll: true });
     }
@@ -581,7 +590,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     const conflict = patches.find((patch) => patch.id !== candidate.id
       && patch.name.toLocaleLowerCase() === candidate.name.toLocaleLowerCase());
     if (conflict) {
-      if (!window.confirm(`Replace the existing "${conflict.name}" patch?`)) return;
+      if (!await confirmAction('Replace patch', `Replace the existing "${conflict.name}" patch?`, 'Replace')) return;
       if (editingPatch) {
         try {
           await store.replace(editingPatch.id, { ...candidate, id: conflict.id });
@@ -596,6 +605,8 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
           updatedAt: now,
         };
         if (!(await persist(candidate, `${conflict.name} updated.`))) return;
+        savedControls = { ...candidate.controls };
+        activePatchId = candidate.id;
       }
       editingPatch = null;
       editor.close();
@@ -605,6 +616,10 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     }
 
     if (await persist(candidate, `${candidate.name} saved.`)) {
+      if (!editingPatch) {
+        savedControls = { ...candidate.controls };
+        activePatchId = candidate.id;
+      }
       editingPatch = null;
       editor.close();
     }
@@ -616,7 +631,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   }
 
   async function deletePatch(patch) {
-    if (!window.confirm(`Delete "${patch.name}"? This cannot be undone.`)) return;
+    if (!await confirmAction('Delete patch', `Delete "${patch.name}"? This cannot be undone.`, 'Delete')) return;
     try {
       await store.delete(patch.id);
       patches = patches.filter((item) => item.id !== patch.id);
@@ -634,6 +649,8 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   async function loadPatch(patch) {
     try {
       const result = await applyControls(patch.controls);
+      savedControls = { ...patch.controls };
+      activePatchId = patch.id;
       if (!result.unavailable && result.failed === 0
         && result.sent === result.total && result.sent === PATCH_CONTROL_IDS.length) {
         setStatus(`${patch.name} loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
@@ -678,7 +695,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     const patch = patches.find((item) => item.id === patchId);
     const attachment = patch?.audio.find((item) => item.id === audioId);
     if (!patch || !attachment) return;
-    if (!window.confirm(`Remove "${attachment.name}" from "${patch.name}"?`)) return;
+    if (!await confirmAction('Remove audio', `Remove "${attachment.name}" from "${patch.name}"?`, 'Remove')) return;
     const wasPlaying = activePreviewAttachment?.patchId === patch.id
       && activePreviewAttachment.audioId === attachment.id;
     if (wasPlaying) stopPreview();
@@ -716,71 +733,99 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     }, `${additions.length} MP3 attachment(s) added to ${patch.name}.`);
   }
 
-  async function exportBackup() {
+  function download(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportPatch(patch) {
+    let item = patch;
+    const controls = getControls();
+    if (patch.id === activePatchId && PATCH_CONTROL_IDS.some((id) => controls[id] !== savedControls[id])) {
+      const dialog = document.querySelector('#patch-export-choice');
+      const choice = await new Promise((resolve) => {
+        const finish = (event) => {
+          event.preventDefault();
+          dialog.removeEventListener('click', click);
+          dialog.removeEventListener('cancel', finish);
+          dialog.close();
+          resolve(event.type === 'cancel' ? 'cancel' : event.target.value);
+        };
+        const click = (event) => {
+          if (event.target instanceof HTMLButtonElement) finish(event);
+        };
+        dialog.addEventListener('click', click);
+        dialog.addEventListener('cancel', finish);
+        dialog.showModal();
+      });
+      if (choice === 'cancel') return;
+      if (choice === 'current') item = { ...patch, controls, updatedAt: new Date().toISOString() };
+    }
+    const result = await exportDialog(item.name, [{ id: 'zip', label: 'Patch ZIP', extension: '.zip' }]);
+    if (result) await exportBackup([item], result.filename);
+  }
+
+  async function exportBackup(items, filename) {
     try {
-      const blob = await createPatchBackup(patches);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'refaceCS-patches.zip';
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus(`Exported ${patches.length} patch(es), including audio, to a ZIP backup.`);
+      const blob = await createPatchBackup(items);
+      download(blob, filename);
+      setStatus(`Exported ${items.length} patch(es), including audio, to a ZIP backup.`);
     } catch (error) {
       setStatus(`Could not export patch backup: ${error.message || error}`);
     }
   }
 
-  async function importBackup(file) {
-    let imported;
-    try {
-      imported = await readPatchBackup(file);
-    } catch (error) {
-      setStatus(`Could not import patch backup: ${error.message || error}`);
-      return;
-    }
-
+  async function importPatches(imported, { activateSingle = true } = {}) {
     let saved = 0;
     let skipped = 0;
+    let importedPatch;
     try {
       for (const patch of imported) {
-        const conflict = patches.find((item) => item.name.toLocaleLowerCase() === patch.name.toLocaleLowerCase());
-        if (conflict && !window.confirm(`Replace the existing "${conflict.name}" patch?`)) {
+        const resolution = await resolveImport(patch, patches, 'patch');
+        if (resolution.action === 'ignore') {
           skipped++;
           continue;
         }
-        const idConflict = patches.find((item) => item.id === patch.id);
+        if (resolution.action === 'identical') {
+          importedPatch = resolution.item;
+          skipped++;
+          continue;
+        }
         const savedPatch = await store.put({
-          ...patch,
-          id: conflict?.id ?? (idConflict ? crypto.randomUUID() : patch.id),
-          favorite: patch.favorite,
+          ...resolution.item,
           updatedAt: new Date().toISOString(),
         });
         const existingIndex = patches.findIndex((item) => item.id === savedPatch.id);
         if (existingIndex < 0) patches.push(savedPatch);
         else patches[existingIndex] = savedPatch;
+        importedPatch = savedPatch;
         saved++;
       }
       await reload();
       setStatus(`Imported ${saved} patch(es); skipped ${skipped}.`);
+      if (activateSingle && imported.length === 1 && importedPatch) {
+        const current = getControls();
+        const changed = PATCH_CONTROL_IDS.some((id) => current[id] !== savedControls[id]);
+        if (!changed || await confirmAction('Unsaved sound',
+          'The current sound has unsaved changes. Replace it with the imported patch?', 'Replace')) {
+          await loadPatch(importedPatch);
+        }
+      }
+      return saved;
     } catch (error) {
       await reload();
       setStatus(`Import stopped after ${saved} patch(es): ${error.message || error}`);
+      throw new Error(`Patch import stopped after ${saved} patch(es): ${error.message || error}`);
     }
   }
 
   saveButton.addEventListener('click', () => openEditor());
-  exportButton.addEventListener('click', exportBackup);
-  importButton.addEventListener('click', () => {
-    importFile.value = '';
-    importFile.click();
-  });
-  importFile.addEventListener('change', () => {
-    const file = importFile.files?.[0];
-    if (file) void importBackup(file);
-  });
   audioFile.addEventListener('change', () => {
     void addAudio([...(audioFile.files ?? [])]);
   });
@@ -821,4 +866,20 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
 
   reload().then(() => setStatus('Patch library ready.'))
     .catch((error) => setStatus(`Patch library unavailable: ${error.message || error}`));
+  return {
+    list: () => store.list(),
+    listCategories: () => store.listCategories(),
+    async replaceAll(records, values) {
+      await store.replaceAll(records, values);
+      stopPreview();
+      selectedPatchId = null;
+      activePatchId = null;
+      await reload();
+    },
+    async importCategories(categories) {
+      await store.addCategories(categories);
+      await reload();
+    },
+    importPatches,
+  };
 }

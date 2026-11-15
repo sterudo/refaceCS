@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { DRUM_VOICES, createDrumAudio, defaultDrumLane } from '../src/drum-audio.js';
-import { writeMidi } from '../src/midi-file.js';
+import { readMidi, writeMidi } from '../src/midi-file.js';
+import { readFile } from 'node:fs/promises';
 
 const storageKey = 'refaceCS.drumPatterns.v1';
 
@@ -107,6 +108,67 @@ test.beforeEach(async ({ page }) => {
 const lane = (page, voice) => page.locator(`.drum-lane[data-voice="${voice}"]`);
 const step = (page, voice, index) => lane(page, voice).locator('.drum-step').nth(index);
 const stored = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key)), storageKey);
+
+test('exports and imports a pattern without starting playback', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-export').click();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  const path = await download.path();
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-import-file').setInputFiles(path);
+  await page.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
+  await expect(page.locator('#drum-status')).toContainText('playback stopped');
+  await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('exports every groove lane as pure multitrack MIDI with an omission warning', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await step(page, 'kick', 0).click();
+  await step(page, 'snare', 4).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Mute Kick', exact: true }).click();
+  await lane(page, 'snare').getByRole('button', { name: 'Solo Snare', exact: true }).click();
+  await page.locator('#drum-export').click();
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await dialog.getByLabel('File name').fill('drums');
+  await dialog.getByLabel('Format').selectOption('midi');
+  await expect(dialog).toContainText('tone settings');
+  await expect(dialog).toContainText('mute and solo');
+  const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Export' }).click()]);
+  expect(download.suggestedFilename()).toBe('drums.mid');
+  const bytes = new Uint8Array(await readFile(await download.path()));
+  expect([...bytes.slice(8, 12)]).toEqual([0, 1, 0, 5]);
+  const midi = readMidi(bytes, 4);
+  expect(midi.notes.map(({ channel, pitch }) => ({ channel, pitch }))).toEqual([
+    { channel: 9, pitch: 36 }, { channel: 9, pitch: 38 },
+  ]);
+});
+
+test('pattern import can keep a differently named copy without overwriting', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-export').click();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  const bytes = await readFile(await download.path());
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-import-file').setInputFiles({ name: 'pattern.json', mimeType: 'application/json', buffer: bytes });
+  await page.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Create new' }).click();
+  const rename = page.getByRole('dialog', { name: 'Create new pattern' });
+  await expect(rename.getByLabel('Name')).toHaveValue('Pattern 1 (2)');
+  await rename.getByLabel('Name').fill('My pattern');
+  await rename.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('#drum-status')).toContainText('playback stopped');
+  await expect(page.locator('#drum-pattern option')).toHaveText(['Pattern 1', 'My pattern']);
+  await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
+});
+
 async function loadLoop(page, notes = [{ start: 0, playDuration: 0.25, channel: 0, pitch: 60, velocity: 90 }]) {
   const phrase = writeMidi(notes, 4, 120, 4);
   await page.locator('#looper-file').setInputFiles({
@@ -157,8 +219,9 @@ test('named patterns persist independent lanes, velocities, and sound settings a
   await lane(page, 'kick').getByRole('slider', { name: 'Kick tune', exact: true }).fill('7');
   await page.locator('#drum-instrument').selectOption('low-tom');
   await page.locator('#drum-add').click();
-  page.once('dialog', (dialog) => dialog.accept('Breakbeat'));
   await page.locator('#drum-copy').click();
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByLabel('Name').fill('Breakbeat');
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByRole('button', { name: 'Save' }).click();
   await step(page, 'snare', 4).click();
   await lane(page, 'low-tom').getByRole('button', { name: 'Remove Low tom lane' }).click();
   await page.locator('#drum-instrument').selectOption('clap');
@@ -174,10 +237,11 @@ test('named patterns persist independent lanes, velocities, and sound settings a
   await page.locator('#drum-pattern').selectOption({ label: 'Pattern 1' });
   await expect(step(page, 'snare', 4)).toHaveAttribute('data-level', '0');
   await expect(lane(page, 'low-tom')).toHaveCount(1);
-  page.once('dialog', (dialog) => dialog.accept('Original'));
   await page.locator('#drum-rename').click();
-  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByLabel('Name').fill('Original');
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByRole('button', { name: 'Save' }).click();
   await page.locator('#drum-delete').click();
+  await page.getByRole('dialog', { name: 'Delete pattern' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('#drum-pattern option')).toHaveCount(1);
   expect((await stored(page)).patterns[0].name).toBe('Breakbeat');
 });
@@ -780,8 +844,9 @@ test('older eight-lane patterns are preserved while new patterns start with four
   await expect(page.locator('.drum-lane')).toHaveCount(8);
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '4');
   await expect(lane(page, 'kick').getByRole('button', { name: 'Mute Kick', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  page.once('dialog', (dialog) => dialog.accept('New groove'));
   await page.locator('#drum-new').click();
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByLabel('Name').fill('New groove');
+  await page.getByRole('dialog', { name: 'Drum pattern name' }).getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('.drum-lane')).toHaveCount(4);
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '0');
   await page.locator('#drum-pattern').selectOption('existing');

@@ -83,6 +83,19 @@ test('SysEx settings use explicit permission and app-routed notes are transposed
   expect(sent).toContainEqual([0x90, 61, 100]);
 });
 
+test('restores a saved pitch range to the synth after MIDI connects', async ({ page }) => {
+  await page.locator('#pitch-range-up').click();
+  await expect.poll(() => page.evaluate(() => window.testSynth.sent.length)).toBe(1);
+  await page.reload();
+  await expect(page.locator('#pitch-range-value')).toHaveText('13');
+  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([]);
+  await page.locator('#midi-connect').click();
+  await expect.poll(() => page.evaluate(() => window.testSynth.sent)).toContainEqual(
+    [0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 15, 77, 0xf7],
+  );
+  expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary', 'sysex']);
+});
+
 test('capture applies valid replies, reports missing values, and preserves newer edits', async ({ page }) => {
   await page.locator('#capture-synth').click();
   await expect(page.locator('#capture-status')).toContainText('requesting filter-cutoff');

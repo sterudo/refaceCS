@@ -1,5 +1,6 @@
 import { createArpeggiator } from './arpeggiator.js';
 import { createLooper } from './looper.js';
+import { getPreference, setPreference } from './preferences.js';
 import { captureParameters, controlNumber, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
   parameterMessage, requestMessage } from './synth-midi.js';
 
@@ -42,6 +43,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   let lastError = '';
   let modwheelCC = 74;
   let mappingError = '';
+  let savedController = getPreference('controllerInput', (value) => typeof value === 'string', null);
   const mappingKey = 'refaceCS.modwheelCC';
   const panelFaders = [...document.querySelectorAll('#synth .fader[data-label]')];
   const controlLabels = new Map(panelFaders
@@ -467,12 +469,21 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   function refresh() {
     const inputs = availablePorts(midiAccess.inputs);
     const outputs = availablePorts(midiAccess.outputs);
+    if (savedController !== null) {
+      if (!savedController || inputs.some((port) => port.id === savedController)) {
+        selected.controller = savedController;
+        manuallySelected.controller = true;
+      }
+      savedController = null;
+    }
     if (!selected.input && !manuallySelected.input) selected.input = findReface(inputs);
     if (!selected.output && !manuallySelected.output) selected.output = findReface(outputs);
     if (!selected.controller && !manuallySelected.controller) selected.controller = selected.input;
     const nextOutput = outputs.find((port) => port.id === selected.output);
+    const outputChanged = output !== nextOutput;
     if (output && output !== nextOutput) releaseOutput(output);
     output = nextOutput;
+    if (outputChanged && output) groove.onOutputAvailable?.();
     updateListeners(inputs);
     bindSysexInput();
     renderSelect(refaceInput, inputs, selected.input);
@@ -653,6 +664,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     lastError = '';
     manuallySelected.controller = true;
     selected.controller = controllerInput.value;
+    setPreference('controllerInput', selected.controller);
     refresh();
   });
 
@@ -787,6 +799,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     },
     sendPatchControls,
     setControl,
+    listSavedLoops: looper.listSavedLoops,
+    replaceSavedLoops: looper.replaceSavedLoops,
+    importSavedLoops: looper.importSavedLoops,
     setTempo: setSharedTempo,
     getRefaceInput() {
       const input = midiAccess?.inputs.get(selected.input);

@@ -1,4 +1,7 @@
 import { createDrumAudio, defaultDrumLane, DRUM_VOICES } from './drum-audio.js';
+import { askName, confirmAction, exportDialog } from './dialogs.js';
+import { resolveImport } from './import-conflicts.js';
+import { writeGrooveMidi } from './midi-file.js';
 
 const storageKey = 'refaceCS.drumPatterns.v1';
 const maxOffset = 600;
@@ -16,13 +19,17 @@ function validLane(lane) {
       .every(([key, min, max]) => Number.isFinite(lane[key]) && lane[key] >= min && lane[key] <= max);
 }
 
-function validStore(store) {
-  return store?.version === 1 && Array.isArray(store.patterns) && store.patterns.length > 0
-    && store.patterns.every((pattern) => typeof pattern.id === 'string'
+export function validPatterns(patterns) {
+  return Array.isArray(patterns) && patterns.length > 0
+    && patterns.every((pattern) => typeof pattern?.id === 'string'
       && typeof pattern.name === 'string' && pattern.name.trim().length > 0
       && Array.isArray(pattern.lanes) && pattern.lanes.every(validLane)
       && new Set(pattern.lanes.map((lane) => lane.voice)).size === pattern.lanes.length)
-    && new Set(store.patterns.map((pattern) => pattern.id)).size === store.patterns.length
+    && new Set(patterns.map((pattern) => pattern.id)).size === patterns.length;
+}
+
+function validStore(store) {
+  return store?.version === 1 && validPatterns(store.patterns)
     && store.patterns.some((pattern) => pattern.id === store.selected)
     && Number.isFinite(store.volume) && store.volume >= 0 && store.volume <= 100
     && Number.isInteger(store.offset) && Math.abs(store.offset) <= maxOffset
@@ -377,19 +384,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     updateLaneStates();
   }
 
-  function patternName(defaultName) {
-    const entered = window.prompt('Drum pattern name:', defaultName);
-    if (entered === null) return null;
-    const name = entered.trim();
-    if (!name) {
-      status.textContent = 'Enter a drum pattern name.';
-      return null;
-    }
-    if (store.patterns.some((item) => item.name.toLowerCase() === name.toLowerCase() && item.id !== store.selected)) {
-      status.textContent = 'A drum pattern with that name already exists.';
-      return null;
-    }
-    return name;
+  function patternName(defaultName, excludeSelected = false) {
+    return askName('Drum pattern name', 'Choose a name for the pattern.', defaultName,
+      (name) => store.patterns.some((item) => item.name.toLowerCase() === name.toLowerCase()
+        && (!excludeSelected || item.id !== store.selected)) ? 'A drum pattern with that name already exists.' : '');
   }
 
   patternSelect.addEventListener('change', () => {
@@ -399,13 +397,9 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     edited();
   });
   for (const [id, duplicate] of [['new', false], ['copy', true]]) {
-    element(id).addEventListener('click', () => {
-      const name = patternName(duplicate ? `${pattern().name} copy` : `Pattern ${store.patterns.length + 1}`);
+    element(id).addEventListener('click', async () => {
+      const name = await patternName(duplicate ? `${pattern().name} copy` : `Pattern ${store.patterns.length + 1}`);
       if (!name) return;
-      if (store.patterns.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
-        status.textContent = 'A drum pattern with that name already exists.';
-        return;
-      }
       const next = { id: crypto.randomUUID(), name,
         lanes: duplicate ? copy(pattern().lanes) : initialLanes() };
       store.patterns.push(next);
@@ -415,15 +409,15 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       edited();
     });
   }
-  element('rename').addEventListener('click', () => {
-    const name = patternName(pattern().name);
+  element('rename').addEventListener('click', async () => {
+    const name = await patternName(pattern().name, true);
     if (!name) return;
     pattern().name = name;
     render();
     persist();
   });
-  element('delete').addEventListener('click', () => {
-    if (!window.confirm(`Delete drum pattern "${pattern().name}"?`)) return;
+  element('delete').addEventListener('click', async () => {
+    if (!await confirmAction('Delete pattern', `Delete drum pattern "${pattern().name}"?`, 'Delete')) return;
     store.patterns.splice(store.patterns.indexOf(pattern()), 1);
     if (!store.patterns.length) {
       store.patterns.push({ id: crypto.randomUUID(), name: 'Pattern 1', lanes: initialLanes() });
@@ -432,6 +426,52 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     directions.clear();
     render();
     edited();
+  });
+  element('export').addEventListener('click', async () => {
+    try {
+      const selected = copy(pattern());
+      const result = await exportDialog(selected.name, [
+        { id: 'pattern', label: 'Groove pattern (JSON)', extension: '.json' },
+        { id: 'midi', label: 'Pure MIDI (multitrack)', extension: '.mid', extensions: ['.mid', '.midi'],
+          warning: 'MIDI omits instrument tone settings, level, tuning, decay, mute and solo. All lanes are exported; steps hidden by the current meter are omitted.' },
+      ]);
+      if (!result) return;
+      const blob = result.format === 'midi'
+        ? new Blob([writeGrooveMidi(selected, clock.tempo, clock.meter, DRUM_VOICES)], { type: 'audio/midi' })
+        : new Blob([JSON.stringify({ format: 'refaceCS-groove-pattern', version: 1, pattern: selected })],
+          { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = `Exported pattern "${selected.name}".`;
+    } catch (error) {
+      status.textContent = `Could not export pattern: ${error.message || error}.`;
+    }
+  });
+  element('import').addEventListener('click', () => {
+    element('import-file').value = '';
+    element('import-file').click();
+  });
+  element('import-file').addEventListener('change', async () => {
+    const file = element('import-file').files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 1024 * 1024) throw new Error('Pattern file exceeds 1 MB');
+      const data = JSON.parse(await file.text());
+      if (data?.format !== 'refaceCS-groove-pattern' || data.version !== 1) {
+        throw new Error('Unsupported pattern format or version');
+      }
+      const imported = data.pattern;
+      const candidate = { ...store, patterns: [imported], selected: imported?.id };
+      if (!validStore(candidate)) throw new Error('Invalid pattern data');
+      const count = await importPatterns([imported]);
+      status.textContent = count === null ? 'Pattern import ignored.' : `Imported pattern "${imported.name}"; playback stopped.`;
+    } catch (error) {
+      status.textContent = `Could not import pattern: ${error.message || error}.`;
+    }
   });
   element('add').addEventListener('click', () => {
     const voice = DRUM_VOICES.find((item) => item.id === instrumentSelect.value);
@@ -697,7 +737,61 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   window.addEventListener('pagehide', stop);
   render();
 
+  async function importPatterns(patterns, { activateSingle = true } = {}) {
+    if (!Array.isArray(patterns) || !patterns.length) throw new Error('Pattern list is empty or invalid');
+    const candidate = { ...store, patterns, selected: patterns[0]?.id };
+    if (!validStore(candidate)) throw new Error('Invalid pattern data');
+    const next = copy(store);
+    let saved = 0;
+    let last;
+    for (const source of patterns) {
+      const imported = copy(source);
+      for (const lane of imported.lanes) {
+        lane.solo ??= false;
+        lane.muted ??= false;
+      }
+      const resolution = await resolveImport(imported, next.patterns, 'pattern');
+      if (resolution.action === 'ignore') continue;
+      last = resolution.item;
+      if (resolution.action === 'identical') continue;
+      if (resolution.match) next.patterns = next.patterns.map((item) => item.id === resolution.match.id ? last : item);
+      else next.patterns.push(last);
+      saved++;
+    }
+    if (activateSingle && patterns.length === 1 && last) next.selected = last.id;
+    if (saved || (last && next.selected !== store.selected)) localStorage.setItem(storageKey, JSON.stringify(next));
+    if (activateSingle && patterns.length === 1 && last) stop();
+    store = next;
+    directions.clear();
+    render();
+    invalidate();
+    storageStatus.textContent = 'Drum patterns saved in this browser.';
+    return last ? saved : null;
+  }
+
   return {
+    listPatterns() {
+      return copy(store.patterns);
+    },
+    replacePatterns(patterns) {
+      if (!validPatterns(patterns)) throw new Error('Invalid groove patterns');
+      const next = copy(store);
+      next.patterns = copy(patterns);
+      for (const item of next.patterns) {
+        for (const lane of item.lanes) {
+          lane.solo ??= false;
+          lane.muted ??= false;
+        }
+      }
+      if (!next.patterns.some((item) => item.id === next.selected)) next.selected = next.patterns[0].id;
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      stop();
+      store = next;
+      directions.clear();
+      render();
+      invalidate();
+    },
+    importPatterns,
     startFromLooper(mode) {
       if (mode !== 2 && mode !== 3) return false;
       if (calibration) return true;

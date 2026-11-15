@@ -12,6 +12,20 @@ async function faderPoint(page, id, y) {
   }, y);
 }
 
+test('restores browser-only panel preferences after reload', async ({ page }) => {
+  for (const id of ['focus-mode', 'hide-speakers', 'hide-displays', 'five-octaves', 'fader-size']) {
+    await page.locator(`#${id}`).click();
+  }
+  await page.locator('#position-expression').check();
+  await page.locator('#pitch-range [data-step="1"]').first().click();
+  await page.reload();
+  for (const id of ['focus-mode', 'hide-speakers', 'hide-displays', 'five-octaves', 'fader-size']) {
+    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
+  }
+  await expect(page.locator('#position-expression')).toBeChecked();
+  await expect(page.locator('#pitch-range-value')).toHaveText('13');
+});
+
 test('focus mode adds mapped CC numbers to fader tooltips', async ({ page }) => {
   const cutoff = page.locator('#filter-cutoff title');
   await expect(cutoff).toHaveText('Filter cutoff: 127');
