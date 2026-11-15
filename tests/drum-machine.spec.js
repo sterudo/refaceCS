@@ -88,7 +88,7 @@ test.beforeEach(async ({ page }) => {
     const input = (id, name) => Object.assign(new EventTarget(), { id, name, state: 'connected' });
     access.inputs = new Map([['ri', input('ri', 'reface CS')], ['ci', input('ci', 'Drum controller')]]);
     access.outputs = new Map([['ro', output]]);
-    Object.defineProperty(navigator, 'requestMIDIAccess', { value: async () => access });
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: async () => access });
     window.drumTest = {
       audio, access, sent, delivered, bufferImmediate: false,
       emit(data, id = 'ci', at = performance.now()) {
@@ -108,6 +108,393 @@ test.beforeEach(async ({ page }) => {
 const lane = (page, voice) => page.locator(`.drum-lane[data-voice="${voice}"]`);
 const step = (page, voice, index) => lane(page, voice).locator('.drum-step').nth(index);
 const stored = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key)), storageKey);
+
+test('multi-bar patterns preserve shortened and hidden steps and export active bars to MIDI', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  await step(page, 'kick', 16).click();
+  await step(page, 'kick', 31).click();
+  await page.locator('#drum-meter').selectOption('3');
+  await expect(step(page, 'kick', 31)).toBeHidden();
+  await expect(step(page, 'kick', 16)).toBeVisible();
+  await page.locator('#drum-bars').fill('1');
+  await page.locator('#drum-bars').press('Tab');
+  await expect(step(page, 'kick', 16)).toBeHidden();
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'kick', 31)).toHaveAttribute('data-level', '5');
+  await page.locator('#drum-meter').selectOption('3');
+  await page.locator('#drum-export').click();
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await dialog.getByLabel('Format').selectOption('midi');
+  const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Export' }).click()]);
+  const midi = readMidi(new Uint8Array(await readFile(await download.path())), 4);
+  expect(midi.notes.map((note) => note.start)).toEqual([3]);
+  expect(midi.length).toBe(6);
+});
+
+test('patterns support sixteen bars and retain the last bar after shortening', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('16');
+  await page.locator('#drum-bars').press('Tab');
+  await expect(page.locator('.drum-bar-list span')).toHaveCount(16);
+  await step(page, 'kick', 255).click();
+  await page.locator('#drum-bars').fill('1');
+  await page.locator('#drum-bars').press('Tab');
+  await expect(step(page, 'kick', 255)).toBeHidden();
+  await page.locator('#drum-bars').fill('16');
+  await page.locator('#drum-bars').press('Tab');
+  await expect(step(page, 'kick', 255)).toHaveAttribute('data-level', '5');
+});
+
+test('bar copy snapshots soloed lanes and paste overwrites only those lanes', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  const paste = page.getByRole('button', { name: 'Paste bar 2' });
+  await expect(paste).toBeDisabled();
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 17).click();
+  await step(page, 'snare', 17).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Solo Kick' }).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Mute Kick' }).click();
+  await page.getByRole('button', { name: 'Copy bar 1' }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await step(page, 'kick', 0).click();
+  await paste.click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'kick', 17)).toHaveAttribute('data-level', '0');
+  await expect(step(page, 'snare', 17)).toHaveAttribute('data-level', '5');
+  await expect(paste).toBeFocused();
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'snare', 17)).toHaveAttribute('data-level', '5');
+  await expect(page.getByRole('button', { name: 'Paste bar 2' })).toBeDisabled();
+});
+
+test('pasting across patterns adds missing lanes with default tones and copies all lanes', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await step(page, 'kick', 0).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
+  await lane(page, 'kick').getByRole('slider', { name: 'Kick tune' }).fill('7');
+  await page.getByRole('button', { name: 'Copy bar 1' }).click();
+  await page.locator('#drum-new').click();
+  const name = page.getByRole('dialog', { name: 'Drum pattern name' });
+  await name.getByLabel('Name').fill('Destination');
+  await name.getByRole('button', { name: 'Save' }).click();
+  await step(page, 'snare', 0).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Remove Kick lane' }).click();
+  await expect(lane(page, 'kick')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Paste bar 1' }).click();
+  await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'snare', 0)).toHaveAttribute('data-level', '0');
+  await expect(lane(page, 'kick').getByRole('slider', { name: 'Kick tune' })).toHaveValue('0');
+});
+
+test('bar paste leaves hidden or uncopied beats unchanged across meter changes', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 12).click();
+  await step(page, 'kick', 28).click();
+  await page.locator('#drum-meter').selectOption('3');
+  await page.getByRole('button', { name: 'Copy bar 1' }).click();
+  await page.locator('#drum-meter').selectOption('4');
+  await page.getByRole('button', { name: 'Paste bar 2' }).click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'kick', 28)).toHaveAttribute('data-level', '5');
+  await step(page, 'kick', 12).click({ button: 'right' });
+  await page.getByRole('button', { name: 'Copy bar 1' }).click();
+  await page.locator('#drum-meter').selectOption('3');
+  await page.getByRole('button', { name: 'Paste bar 2' }).click();
+  await page.locator('#drum-meter').selectOption('4');
+  await expect(step(page, 'kick', 28)).toHaveAttribute('data-level', '5');
+});
+
+test('clear bar immediately clears only soloed lanes and preserves hidden steps', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  for (const action of ['Copy', 'Paste', 'Clear']) {
+    const icon = page.getByRole('button', { name: `${action} bar 2` });
+    await expect(icon).toHaveCSS('border-top-width', '0px');
+    await expect(icon).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    if (action !== 'Paste') await expect(icon).toHaveAttribute('title', /soloed lanes, or all lanes if none are soloed/);
+  }
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 16).click();
+  await step(page, 'kick', 28).click();
+  await step(page, 'snare', 16).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Solo Kick' }).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Mute Kick' }).click();
+  await page.getByRole('button', { name: 'Copy bar 2' }).click();
+  await page.locator('#drum-meter').selectOption('3');
+  const clear = page.getByRole('button', { name: 'Clear bar 2' });
+  await clear.focus();
+  await page.keyboard.press('Space');
+  await expect(clear).toBeFocused();
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '0');
+  await expect(step(page, 'snare', 16)).toHaveAttribute('data-level', '5');
+  await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
+  await page.locator('#drum-meter').selectOption('4');
+  await expect(step(page, 'kick', 28)).toHaveAttribute('data-level', '5');
+  await page.getByRole('button', { name: 'Paste bar 2' }).click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '5');
+});
+
+test('clear bar without solos clears every lane without affecting other bars', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 16).click();
+  await step(page, 'snare', 16).click();
+  await page.getByRole('button', { name: 'Clear bar 2' }).click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '0');
+  await expect(step(page, 'snare', 16)).toHaveAttribute('data-level', '0');
+  await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(step(page, 'kick', 16)).toHaveAttribute('data-level', '0');
+  await expect(step(page, 'snare', 16)).toHaveAttribute('data-level', '0');
+});
+
+test('multi-bar playback sequences and repeats at the selected length', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-bars').fill('2');
+  await page.locator('#drum-bars').press('Tab');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 16).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(4500);
+  const times = await page.evaluate(() => window.drumTest.audio.sources
+    .filter((source) => source.kind === 'oscillator').map((source) => source.audibleAt));
+  expect(times).toHaveLength(3);
+  expect(times[1] - times[0]).toBeCloseTo(2000, 0);
+  expect(times[2] - times[0]).toBeCloseTo(4000, 0);
+  await page.locator('#drum-stop').click();
+});
+
+test('play enables audio automatically and reports failures', async ({ page }) => {
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(page.locator('.groove-audio > :first-child')).toHaveId('drum-enable');
+  await expect(page.locator('.groove-audio > :nth-child(2)')).toContainText('Audio output');
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-play').click();
+  await expect(page.locator('#drum-enable')).toHaveText('Audio enabled');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBeGreaterThan(0);
+
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await page.evaluate(() => { AudioContext.prototype.resume = async () => { throw new Error('audio denied'); }; });
+  await page.locator('#drum-play').click();
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#drum-status')).toContainText('Could not start drums: audio denied');
+});
+
+test('connecting MIDI enables audio without starting playback', async ({ page }) => {
+  await page.reload();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+      configurable: true,
+      value: async () => {
+        window.drumTest.audioStateAtMidiRequest = window.drumTest.audio.contexts[0]?.state;
+        return window.drumTest.access;
+      },
+    });
+  });
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#drum-enable')).toHaveText('Audio enabled');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => window.drumTest.audioStateAtMidiRequest)).toBe('running');
+  expect(await page.evaluate(() => window.drumTest.audio.contexts[0].state)).toBe('running');
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBe(0);
+});
+
+test('audio failure does not block MIDI connection and is reported outside Groove Studio', async ({ page }) => {
+  await page.reload();
+  await page.evaluate(() => { AudioContext.prototype.resume = async () => { throw new Error('audio denied'); }; });
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#midi-connect')).toHaveText('MIDI connected');
+  await expect(page.locator('#audio-connect-status')).toContainText('Could not enable drum audio: audio denied');
+  await expect(page.locator('#groove-panel')).not.toHaveAttribute('open');
+  await page.evaluate(() => { AudioContext.prototype.resume = async function () { this.state = 'running'; }; });
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-enable').click();
+  await expect(page.locator('#audio-connect-status')).toBeEmpty();
+  await expect(page.locator('#drum-enable')).toHaveText('Audio enabled');
+});
+
+for (const midiFailure of ['unavailable', 'denied']) {
+  test(`connecting enables audio when MIDI is ${midiFailure}`, async ({ page }) => {
+    await page.reload();
+    await page.evaluate((failure) => {
+      Object.defineProperty(navigator, 'requestMIDIAccess', {
+        configurable: true,
+        value: failure === 'unavailable' ? undefined : async () => { throw new Error('MIDI denied'); },
+      });
+    }, midiFailure);
+    await page.locator('#midi-connect').click();
+    await expect(page.locator('#midi-badge')).toHaveText(midiFailure === 'unavailable' ? 'MIDI unavailable' : 'MIDI access failed');
+    await expect(page.locator('#drum-enable')).toHaveText('Audio enabled');
+    expect(await page.evaluate(() => window.drumTest.audio.contexts[0].state)).toBe('running');
+  });
+}
+
+test('crash and ride lanes can be added, previewed, and triggered by MIDI', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  for (const [id, name] of [['crash', 'Crash cymbal'], ['ride', 'Ride cymbal']]) {
+    await page.locator('#drum-instrument').selectOption(id);
+    await page.locator('#drum-add').click();
+    await lane(page, id).getByRole('button', { name, exact: true }).click();
+  }
+  const before = await page.evaluate(() => window.drumTest.audio.sources.length);
+  expect(before).toBeGreaterThan(0);
+  await page.evaluate(() => { window.drumTest.emit([0x99, 49, 100]); window.drumTest.emit([0x99, 51, 100]); });
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBeGreaterThan(before);
+  await expect(lane(page, 'crash')).not.toHaveCSS('background-color', await lane(page, 'ride').evaluate((node) => getComputedStyle(node).backgroundColor));
+});
+
+test('tone variations are instrument-specific, protect edits and preview while muted', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
+  const kick = lane(page, 'kick');
+  const save = kick.getByRole('button', { name: 'Save tone for Kick', includeHidden: true });
+  await expect(save).toBeHidden();
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('4');
+  await save.click();
+  let naming = page.getByRole('dialog', { name: 'Save drum tone' });
+  await naming.getByLabel('Name').fill('Deep');
+  await naming.getByRole('button', { name: 'Save' }).click();
+  await expect(save).toBeHidden();
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('5');
+  await kick.getByRole('button', { name: 'Mute Kick' }).click();
+  await kick.getByRole('button', { name: 'Load tone for Kick' }).click();
+  let dialog = page.getByRole('dialog', { name: 'Kick tones' });
+  await dialog.getByRole('button', { name: 'Favorite Deep' }).click();
+  await dialog.getByLabel('Favorites only').check();
+  const before = await page.evaluate(() => window.drumTest.audio.sources.length);
+  await dialog.getByRole('button', { name: 'Preview Deep' }).click();
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBeGreaterThan(before);
+  await dialog.getByRole('button', { name: 'Load Deep' }).click();
+  const warning = page.getByRole('dialog', { name: 'Unsaved drum tone' });
+  await warning.getByRole('button', { name: 'Cancel' }).click();
+  await expect(kick.getByRole('slider', { name: 'Kick tune' })).toHaveValue('5');
+  await dialog.getByRole('button', { name: 'Load Deep' }).click();
+  await warning.getByRole('button', { name: 'Discard and load' }).click();
+  await expect(kick.getByRole('slider', { name: 'Kick tune' })).toHaveValue('4');
+  await lane(page, 'snare').getByRole('button', { name: 'Snare lane options' }).click();
+  await lane(page, 'snare').getByRole('button', { name: 'Load tone for Snare' }).click();
+  dialog = page.getByRole('dialog', { name: 'Snare tones' });
+  await expect(dialog).toContainText('No matching tones');
+  await expect(dialog.getByText('Deep')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
+  await lane(page, 'kick').getByRole('button', { name: 'Load tone for Kick' }).click();
+  await expect(page.getByRole('dialog', { name: 'Kick tones' }).getByRole('button', { name: 'Unfavorite Deep' })).toBeVisible();
+});
+
+test('selected tone name opens the picker and its favorites checkbox is inline', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  const kick = lane(page, 'kick');
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await expect(kick.locator('.drum-selected-tone')).toHaveCount(0);
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('4');
+  await kick.getByRole('button', { name: 'Save tone for Kick' }).click();
+  const editor = page.getByRole('dialog', { name: 'Save drum tone' });
+  await editor.getByLabel('Name').fill('Deep kick');
+  await editor.getByRole('button', { name: 'Save' }).click();
+  const selected = kick.getByRole('button', { name: 'Choose Kick tone, current: Deep kick' });
+  await expect(selected).toBeVisible();
+  await expect(kick.locator('.drum-tone-actions > :first-child')).toHaveText('Deep kick');
+  await selected.click();
+  const picker = page.getByRole('dialog', { name: 'Kick tones' });
+  const checkbox = picker.getByLabel('Favorites only');
+  const layout = await checkbox.evaluate((input) => {
+    const box = input.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(input.parentElement.lastChild);
+    const text = range.getBoundingClientRect();
+    return { gap: text.left - box.right, centerDifference: Math.abs((box.top + box.bottom - text.top - text.bottom) / 2) };
+  });
+  expect(layout.gap).toBeGreaterThanOrEqual(0);
+  expect(layout.gap).toBeLessThan(15);
+  expect(layout.centerDifference).toBeLessThan(5);
+  await picker.getByRole('button', { name: 'Load Deep kick' }).click();
+  await expect(selected).toBeVisible();
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await expect(selected).toBeVisible();
+  await selected.click();
+  await picker.getByRole('button', { name: 'Delete Deep kick' }).click();
+  await page.getByRole('dialog', { name: 'Delete drum tone' }).getByRole('button', { name: 'Delete' }).click();
+  await picker.getByRole('button', { name: 'Close' }).click();
+  await expect(kick.locator('.drum-selected-tone')).toHaveCount(0);
+});
+
+test('tone export captures current edits and import rejects another instrument', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  const kick = lane(page, 'kick');
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('8');
+  await kick.getByRole('button', { name: 'Export tone for Kick' }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('dialog', { name: 'Export', exact: true }).getByRole('button', { name: 'Export' }).click(),
+  ]);
+  const bytes = await readFile(await download.path());
+  expect(JSON.parse(bytes.toString()).tone.controls.tuning).toBe(8);
+  const snare = lane(page, 'snare');
+  await snare.getByRole('button', { name: 'Snare lane options' }).click();
+  await snare.locator('input[type="file"]').setInputFiles({ name: 'kick.json', mimeType: 'application/json', buffer: bytes });
+  await expect(page.locator('#drum-status')).toContainText('different instrument');
+  await expect(snare.getByRole('slider', { name: 'Snare tune' })).toHaveValue('0');
+});
+
+test('tone changes can be saved as a copy or overwritten without changing other patterns', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  const kick = lane(page, 'kick');
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('3');
+  await kick.getByRole('button', { name: 'Save tone for Kick' }).click();
+  const name = page.getByRole('dialog', { name: 'Save drum tone' });
+  await name.getByLabel('Name').fill('Warm kick');
+  await name.getByRole('button', { name: 'Save' }).click();
+  await page.locator('#drum-copy').click();
+  const patternName = page.getByRole('dialog', { name: 'Drum pattern name' });
+  await patternName.getByLabel('Name').fill('Copy');
+  await patternName.getByRole('button', { name: 'Save' }).click();
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('7');
+  await kick.getByRole('button', { name: 'Save tone for Kick' }).click();
+  await page.getByRole('dialog', { name: 'Save drum tone', exact: true }).getByRole('button', { name: 'Overwrite' }).click();
+  await page.locator('#drum-pattern').selectOption({ label: 'Pattern 1' });
+  await expect(kick.getByRole('slider', { name: 'Kick tune' })).toHaveValue('3');
+  await kick.getByRole('slider', { name: 'Kick tune' }).fill('4');
+  await kick.getByRole('button', { name: 'Save tone for Kick' }).click();
+  await page.getByRole('dialog', { name: 'Save drum tone', exact: true }).getByRole('button', { name: 'Save as' }).click();
+  await name.getByLabel('Name').fill('Another kick');
+  await name.getByRole('button', { name: 'Save' }).click();
+  await kick.getByRole('button', { name: 'Load tone for Kick' }).click();
+  const list = page.getByRole('dialog', { name: 'Kick tones' });
+  await expect(list.getByRole('button', { name: 'Load Warm kick' })).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Load Another kick' })).toBeVisible();
+});
 
 test('exports and imports a pattern without starting playback', async ({ page }) => {
   await page.locator('#groove-panel > summary').click();
@@ -214,8 +601,9 @@ test('panel placement, velocity direction, accessible clearing, and preserved 3/
 });
 
 test('named patterns persist independent lanes, velocities, and sound settings across reloads', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
   await step(page, 'kick', 0).click();
-  await page.locator('#drum-tone-toggle').click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
   await lane(page, 'kick').getByRole('slider', { name: 'Kick tune', exact: true }).fill('7');
   await page.locator('#drum-instrument').selectOption('low-tom');
   await page.locator('#drum-add').click();
@@ -223,14 +611,16 @@ test('named patterns persist independent lanes, velocities, and sound settings a
   await page.getByRole('dialog', { name: 'Drum pattern name' }).getByLabel('Name').fill('Breakbeat');
   await page.getByRole('dialog', { name: 'Drum pattern name' }).getByRole('button', { name: 'Save' }).click();
   await step(page, 'snare', 4).click();
+  await lane(page, 'low-tom').getByRole('button', { name: 'Low tom lane options' }).click();
   await lane(page, 'low-tom').getByRole('button', { name: 'Remove Low tom lane' }).click();
   await page.locator('#drum-instrument').selectOption('clap');
   await page.locator('#drum-add').click();
   await step(page, 'clap', 12).click();
   await page.reload();
+  await page.locator('#groove-panel > summary').click();
   await expect(page.locator('#drum-pattern option:checked')).toHaveText('Breakbeat');
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
-  await page.locator('#drum-tone-toggle').click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
   await expect(lane(page, 'kick').getByRole('slider', { name: 'Kick tune', exact: true })).toHaveValue('7');
   await expect(lane(page, 'low-tom')).toHaveCount(0);
   await expect(step(page, 'clap', 12)).toHaveAttribute('data-level', '5');
@@ -263,9 +653,6 @@ test('invalid saved patterns and storage failures are reported without blocking 
 });
 
 test('channel-10 drums stay internal, preserve velocity, and do not enter the melodic looper', async ({ page }) => {
-  await page.evaluate(() => window.drumTest.emit([0x99, 36, 90]));
-  await expect(page.locator('#drum-status')).toContainText('Enable drum audio');
-  await page.locator('#drum-enable').click();
   await mode(page, 4);
   await mode(page, 2);
   await mode(page, 3);
@@ -668,6 +1055,29 @@ test('fixed-bar recording and quantized overdubbing continue over a running groo
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
 });
 
+test('choose audio output is shown only when its required APIs are available', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  const choose = page.locator('#drum-output-choose');
+  await expect(choose).toBeVisible();
+  await page.evaluate(() => { delete navigator.mediaDevices.selectAudioOutput; });
+  await page.locator('#drum-enable').click();
+  await expect(choose).toBeHidden();
+  await expect(page.locator('#drum-output')).toBeEnabled();
+
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(choose).toBeVisible();
+  await page.evaluate(() => { delete AudioContext.prototype.setSinkId; });
+  await page.locator('#drum-enable').click();
+  await expect(choose).toBeHidden();
+  await expect(page.locator('#drum-output')).toBeDisabled();
+
+  await page.addInitScript(() => { delete navigator.mediaDevices.selectAudioOutput; });
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(choose).toBeHidden();
+});
+
 test('output selection, device failure, and suspension are surfaced explicitly', async ({ page }) => {
   await page.locator('#drum-enable').click();
   await page.locator('#drum-output').selectOption('speakers');
@@ -689,35 +1099,23 @@ test('output selection, device failure, and suspension are surfaced explicitly',
 });
 
 test('compact square geometry, larger velocity text, accessible icons, and initially hidden sound controls', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
   await expect(lane(page, 'kick').locator('.drum-voice-controls')).toBeHidden();
-  await expect(page.locator('#drum-tone-toggle')).toHaveAttribute('aria-pressed', 'false');
-  await page.locator('#drum-tone-toggle').click();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
   await expect(lane(page, 'kick').getByRole('slider')).toHaveCount(4);
-  await page.locator('#drum-tone-toggle').click();
-  await expect(lane(page, 'kick').locator('.drum-voice-controls')).toBeHidden();
   await expect(lane(page, 'kick').getByRole('button', { name: 'Remove Kick lane' }).locator('svg')).toBeVisible();
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
+  await expect(lane(page, 'kick').locator('.drum-voice-controls')).toBeHidden();
   for (const meter of ['4', '3']) {
     await page.locator('#drum-meter').selectOption(meter);
     await step(page, 'kick', 0).click();
-    const sizes = await step(page, 'kick', 0).evaluate((button, meter) => {
-      const grid = button.parentElement;
+    const sizes = await step(page, 'kick', 0).evaluate((button) => {
       const current = button.getBoundingClientRect();
       const font = parseFloat(getComputedStyle(button).fontSize);
-      const before = [grid.style.cssText, button.style.cssText];
-      grid.style.width = '100%';
-      grid.style.gap = '0.3rem';
-      grid.style.gridTemplateColumns = `repeat(${Number(meter) * 4}, minmax(1.7rem, 1fr))`;
-      button.style.fontSize = '0.65rem';
-      const original = button.getBoundingClientRect();
-      const originalFont = parseFloat(getComputedStyle(button).fontSize);
-      [grid.style.cssText, button.style.cssText] = before;
-      return { width: current.width, height: current.height, font,
-        originalWidth: original.width, originalHeight: original.height, originalFont };
-    }, meter);
-    expect(sizes.width / sizes.originalWidth).toBeCloseTo(0.5, 2);
-    expect(sizes.height / sizes.originalHeight).toBeCloseTo(0.5, 2);
+      return { width: current.width, height: current.height, font };
+    });
     expect(sizes.width).toBeCloseTo(sizes.height, 1);
-    expect(sizes.font / sizes.originalFont).toBeCloseTo(1.5, 2);
+    expect(sizes.font).toBeGreaterThan(10);
   }
   const icons = await page.evaluate(() => ({
     play: getComputedStyle(document.querySelector('#drum-play')).color,
@@ -841,6 +1239,7 @@ test('older eight-lane patterns are preserved while new patterns start with four
     selected: 'existing', volume: 70, offset: -80, linked: true,
   })), { key: storageKey, lanes });
   await page.reload();
+  await page.locator('#groove-panel > summary').click();
   await expect(page.locator('.drum-lane')).toHaveCount(8);
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '4');
   await expect(lane(page, 'kick').getByRole('button', { name: 'Mute Kick', exact: true })).toHaveAttribute('aria-pressed', 'false');

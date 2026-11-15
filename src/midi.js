@@ -669,6 +669,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   });
 
   connect.addEventListener('click', async () => {
+    groove.onConnect?.();
     if (!navigator.requestMIDIAccess) {
       badge.dataset.state = 'error';
       badge.textContent = 'MIDI unavailable';

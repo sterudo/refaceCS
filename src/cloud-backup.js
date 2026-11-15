@@ -1,4 +1,5 @@
 import { validPatterns } from './drum-machine.js';
+import { validTones } from './drum-tones.js';
 import { validateSavedLoops } from './looper.js';
 import { validatePatch } from './patches.js';
 
@@ -15,6 +16,7 @@ export async function saveCloudBackup(drive, folder, sources, name, kind = 'name
   const patches = await sources.patches.list();
   const categories = await sources.patches.listCategories();
   const patterns = sources.drums.listPatterns();
+  const tones = sources.drums.listTones();
   const loops = await sources.looper.listSavedLoops();
   const createdAt = new Date().toISOString();
   const audioSize = patches.reduce((sum, patch) => sum + patch.audio.reduce((size, item) => size + item.data.size, 0), 0);
@@ -32,8 +34,8 @@ export async function saveCloudBackup(drive, folder, sources, name, kind = 'name
     records.push({ ...patch, audio });
   }
   const snapshot = {
-    format, version: 1, sections: { patches: 1, patterns: 1, loops: 1 }, name, createdAt, kind,
-    patches: records, categories, patterns, loops,
+    format, version: 1, sections: { patches: 1, patterns: 2, loops: 1 }, name, createdAt, kind,
+    patches: records, categories, patterns, tones, loops,
   };
   const data = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
   if (data.size > maxBytes) throw new Error('Cloud backup metadata exceeds 256 MB.');
@@ -54,12 +56,13 @@ export async function readCloudBackup(drive, id) {
   const data = JSON.parse(await blob.text());
   const sections = data?.sections;
   if (data?.format !== format || data.version !== 1 || !sections || Array.isArray(sections)
-    || Object.keys(sections).length !== 3 || ['patches', 'patterns', 'loops'].some((key) => sections[key] !== 1)) {
+    || Object.keys(sections).length !== 3 || sections.patches !== 1 || sections.loops !== 1
+    || ![1, 2].includes(sections.patterns)) {
     throw new Error('Unsupported cloud backup format or section version.');
   }
   if (!Array.isArray(data.patches) || !Array.isArray(data.categories)
     || !data.categories.every((value) => typeof value === 'string' && value.trim())
-    || !validPatterns(data.patterns)) throw new Error('Invalid cloud backup data.');
+    || !validPatterns(data.patterns) || (sections.patterns === 2 && !validTones(data.tones))) throw new Error('Invalid cloud backup data.');
   validateSavedLoops(data.loops);
   const patches = [];
   let total = 0;
@@ -80,7 +83,7 @@ export async function readCloudBackup(drive, id) {
     patches.push(validatePatch({ ...patch, audio }));
   }
   if (new Set(patches.map((patch) => patch.id)).size !== patches.length) throw new Error('Duplicate patch IDs in cloud backup.');
-  return { patches, categories: data.categories, patterns: data.patterns, loops: data.loops };
+  return { patches, categories: data.categories, patterns: data.patterns, tones: data.tones, loops: data.loops };
 }
 
 export async function applyCloudBackup(sources, snapshot, replace) {
@@ -95,6 +98,11 @@ export async function applyCloudBackup(sources, snapshot, replace) {
     if (replace) sources.drums.replacePatterns(snapshot.patterns);
     else await sources.drums.importPatterns(snapshot.patterns, { activateSingle: false });
     completed.push('patterns');
+    if (snapshot.tones) {
+      if (replace) sources.drums.replaceTones(snapshot.tones);
+      else await sources.drums.importTones(snapshot.tones);
+      completed.push('drum tones');
+    }
     if (replace) await sources.looper.replaceSavedLoops(snapshot.loops);
     else await sources.looper.importSavedLoops(snapshot.loops, { activateSingle: false });
   } catch (error) {

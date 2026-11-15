@@ -239,7 +239,8 @@ export function writeMidi(notes, length, tempo, meter, { includeLoopMetadata = t
 
 export function writeGrooveMidi(pattern, tempo, meter, voices) {
   const micros = Math.round(60000000 / tempo);
-  const ticks = meter * exportDivision;
+  const bars = pattern.bars ?? 1;
+  const ticks = meter * bars * exportDivision;
   const track = (events) => {
     events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
     const bytes = [];
@@ -260,8 +261,9 @@ export function writeGrooveMidi(pattern, tempo, meter, voices) {
     if (!voice) throw new Error('Unknown drum voice');
     const name = new TextEncoder().encode(voice.name);
     const events = [{ tick: 0, priority: 0, data: [0xff, 0x03, ...variable(name.length), ...name] }];
-    for (let index = 0; index < meter * 4; index++) {
-      const level = lane.steps[index];
+    for (let index = 0; index < meter * 4 * bars; index++) {
+      const bar = Math.floor(index / (meter * 4));
+      const level = lane.steps[bar * 16 + index % (meter * 4)];
       if (!level) continue;
       const start = index * exportDivision / 4;
       const velocity = Math.round(level * 127 / 5);

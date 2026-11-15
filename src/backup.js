@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { createPatchBackup, readPatchBackup } from './patches.js';
 import { validPatterns } from './drum-machine.js';
+import { validTones } from './drum-tones.js';
 import { validateSavedLoops } from './looper.js';
 
 const paths = { patches: 'patches.zip', patterns: 'patterns.json', loops: 'loops.json' };
@@ -34,11 +35,14 @@ export function setupBackup({ patches, drums, looper }) {
         files[paths.patches] = new Uint8Array(await (await createPatchBackup(await patches.list())).arrayBuffer());
         files['patch-categories.json'] = strToU8(JSON.stringify(await patches.listCategories()));
       }
-      if (selected.includes('patterns')) files[paths.patterns] = strToU8(JSON.stringify(drums.listPatterns()));
+      if (selected.includes('patterns')) {
+        files[paths.patterns] = strToU8(JSON.stringify(drums.listPatterns()));
+        files['drum-tones.json'] = strToU8(JSON.stringify(drums.listTones()));
+      }
       if (selected.includes('loops')) files[paths.loops] = strToU8(JSON.stringify(await looper.listSavedLoops()));
       files['manifest.json'] = strToU8(JSON.stringify({
         format: 'refaceCS-backup', version: 1,
-        sections: Object.fromEntries(selected.map((name) => [name, 1])),
+        sections: Object.fromEntries(selected.map((name) => [name, name === 'patterns' ? 2 : 1])),
       }));
       const blob = new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
@@ -87,11 +91,13 @@ export function setupBackup({ patches, drums, looper }) {
         throw new Error('Unsupported backup format or version; update the app if this backup is newer');
       }
       const names = Object.keys(manifest.sections);
-      if (!names.length || names.some((name) => !Object.hasOwn(paths, name) || manifest.sections[name] !== 1)) {
+      if (!names.length || names.some((name) => !Object.hasOwn(paths, name)
+        || !(name === 'patterns' ? [1, 2] : [1]).includes(manifest.sections[name]))) {
         throw new Error('Unsupported backup section or version; update the app');
       }
       const expected = new Set(['manifest.json', ...names.map((name) => paths[name])]);
       if (names.includes('patches') && files['patch-categories.json']) expected.add('patch-categories.json');
+      if (manifest.sections.patterns === 2) expected.add('drum-tones.json');
       if (Object.keys(files).some((name) => !expected.has(name))
         || [...expected].some((name) => !files[name])) throw new Error('Backup files do not match its manifest');
       const data = {};
@@ -107,6 +113,10 @@ export function setupBackup({ patches, drums, looper }) {
       if (names.includes('patterns')) {
         data.patterns = JSON.parse(strFromU8(files[paths.patterns]));
         if (!validPatterns(data.patterns)) throw new Error('Invalid groove patterns');
+        if (manifest.sections.patterns === 2) {
+          data.tones = JSON.parse(strFromU8(files['drum-tones.json']));
+          if (!validTones(data.tones)) throw new Error('Invalid drum tones');
+        }
       }
       if (names.includes('loops')) {
         data.loops = JSON.parse(strFromU8(files[paths.loops]));
@@ -119,6 +129,7 @@ export function setupBackup({ patches, drums, looper }) {
         if (data.categories) await patches.importCategories(data.categories);
       }
       if (data.patterns) { await drums.importPatterns(data.patterns, options); applied.push('patterns'); }
+      if (data.tones) { await drums.importTones(data.tones); applied.push('drum tones'); }
       if (data.loops) { await looper.importSavedLoops(data.loops, options); applied.push('loops'); }
       result.textContent = `Imported ${applied.join(', ')}. Existing items were kept unless replacement was confirmed.`;
       dialog.close();

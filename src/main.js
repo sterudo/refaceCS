@@ -122,6 +122,7 @@ const midi = setupMidiDiscovery(() => {
   updateFader(looperFader, mode, false);
 }, {
   clock: grooveClock,
+  onConnect: () => { void drums.enableAudio(); },
   onDrumNote: (note, velocity) => drums.triggerMidi(note, velocity),
   onDrumStop: () => drums.stop(),
   onRefaceNote: (at, portId) => drums.captureCalibrationNote(at, portId),
@@ -134,6 +135,9 @@ const midi = setupMidiDiscovery(() => {
   },
 });
 const drums = createDrumMachine(grooveClock, {
+  onAudioStatus(message) {
+    document.querySelector('#audio-connect-status').textContent = message;
+  },
   onTempo(bpm) {
     midi.setTempo(bpm);
   },

@@ -8,6 +8,8 @@ export const DRUM_VOICES = [
   { id: 'high-tom', name: 'High tom', note: 50, frequency: 190, decay: 0.25, tone: 20 },
   { id: 'shaker', name: 'Shaker', note: 70, frequency: 6000, decay: 0.09, tone: 65 },
   { id: 'clap', name: 'Clap', note: 39, frequency: 1300, decay: 0.18, tone: 60 },
+  { id: 'crash', name: 'Crash cymbal', note: 49, frequency: 5000, decay: 1.2, tone: 70 },
+  { id: 'ride', name: 'Ride cymbal', note: 51, frequency: 6000, decay: 0.8, tone: 60 },
 ];
 
 export function defaultDrumLane(voice) {
@@ -144,6 +146,11 @@ export function createDrumAudio(clock, onError) {
     } else if (voice.id === 'clap') {
       for (const delay of [0, 0.012, 0.024]) {
         filteredNoise('bandpass', frequency * (0.6 + tone), 0.8, delay === 0.024 ? lane.decay : 0.009, delay);
+      }
+    } else if (voice.id === 'crash' || voice.id === 'ride') {
+      filteredNoise('highpass', frequency * (0.5 + tone * 0.6), voice.id === 'crash' ? 0.75 : 0.35, lane.decay);
+      for (const partial of [0.07, 0.113, 0.17]) {
+        oscillator(frequency * partial, frequency * partial, voice.id === 'crash' ? 0.12 : 0.22, lane.decay);
       }
     } else {
       filteredNoise('highpass', frequency * (0.5 + tone * 0.6), 0.8, lane.decay);

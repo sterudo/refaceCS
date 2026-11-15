@@ -47,6 +47,11 @@ test('exports and imports all sections without browser preferences or recalling 
   await expect(card.locator('.patch-audio-item')).toHaveCount(1);
   await page.locator('#groove-panel > summary').click();
   await page.locator('.drum-lane[data-voice="kick"] .drum-step').first().click();
+  await page.getByRole('button', { name: 'Kick lane options' }).click();
+  await page.getByRole('slider', { name: 'Kick tune' }).fill('4');
+  await page.getByRole('button', { name: 'Save tone for Kick' }).click();
+  await page.getByRole('dialog', { name: 'Save drum tone' }).getByLabel('Name').fill('Backup kick');
+  await page.getByRole('dialog', { name: 'Save drum tone' }).getByRole('button', { name: 'Save' }).click();
   const phrase = writeMidi([{ start: 0, playDuration: 0.5, channel: 0, pitch: 60, velocity: 90 }], 4, 120, 4);
   await page.locator('#looper-file').setInputFiles({ name: 'loop.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
   await expect(page.locator('#looper-status')).toContainText('Loaded loop.mid');
@@ -62,7 +67,7 @@ test('exports and imports all sections without browser preferences or recalling 
   const bytes = await readFile(await download.path());
   await expect(page.locator('#backup-dialog')).not.toBeVisible();
   expect(Object.keys(unzipSync(bytes)).sort()).toEqual([
-    'loops.json', 'manifest.json', 'patch-categories.json', 'patches.zip', 'patterns.json',
+    'drum-tones.json', 'loops.json', 'manifest.json', 'patch-categories.json', 'patches.zip', 'patterns.json',
   ]);
 
   const context = await browser.newContext();
@@ -72,13 +77,15 @@ test('exports and imports all sections without browser preferences or recalling 
   await target.locator('#backup-open').click();
   await target.locator('#backup-file').setInputFiles({ name: 'all.zip', mimeType: 'application/zip', buffer: bytes });
   await target.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
-  await expect(target.locator('#backup-result')).toContainText('Imported patches, patterns, loops');
+  await expect(target.locator('#backup-result')).toContainText('Imported patches, patterns, drum tones, loops');
   await expect(target.locator('#backup-dialog')).not.toBeVisible();
   await expect(target.locator('#focus-mode')).toHaveAttribute('aria-pressed', 'false');
   await expect(target.locator('#data-info')).toBeVisible();
   await expect(target.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
   await expect(target.locator('.patch-card')).toHaveCount(1);
   await expect(target.locator('.patch-audio-item')).toHaveCount(1);
+  expect(await target.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.drumTones.v1')).tones.map((tone) => tone.name)))
+    .toEqual(['Backup kick']);
   await target.getByRole('button', { name: 'Load saved loop' }).click();
   await expect(target.locator('#looper-library-select option')).toHaveText('Backup loop');
   await context.close();
@@ -95,6 +102,23 @@ test('rejects unknown newer sections before changing data', async ({ page }) => 
   await expect(page.locator('#backup-status')).toContainText('Unsupported backup section');
   await expect(page.locator('#backup-dialog')).toBeVisible();
   await expect(page.locator('.patch-card')).toHaveCount(0);
+});
+
+test('imports a version 1 Groove Studio backup without a tone library', async ({ page }) => {
+  await page.goto('/static/reface/');
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('.drum-lane[data-voice="kick"] .drum-step').first().click();
+  const existing = await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.drumPatterns.v1')).patterns[0]);
+  const old = { ...existing, name: 'Legacy groove' };
+  const bytes = zipSync({
+    'manifest.json': strToU8(JSON.stringify({ format: 'refaceCS-backup', version: 1, sections: { patterns: 1 } })),
+    'patterns.json': strToU8(JSON.stringify([old])),
+  });
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-file').setInputFiles({ name: 'legacy.zip', mimeType: 'application/zip', buffer: Buffer.from(bytes) });
+  await page.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
+  await expect(page.locator('#backup-result')).toContainText('Imported patterns');
+  await expect(page.locator('#drum-pattern option:checked')).toHaveText('Legacy groove');
 });
 
 test('global import accepts an existing patch ZIP', async ({ page }) => {

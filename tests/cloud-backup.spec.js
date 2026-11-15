@@ -81,6 +81,12 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
     name: 'audio.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
   });
   await expect(card.locator('.patch-audio-item')).toHaveCount(1);
+  await page.locator('#groove-panel > summary').click();
+  await page.getByRole('button', { name: 'Kick lane options' }).click();
+  await page.getByRole('slider', { name: 'Kick tune' }).fill('3');
+  await page.getByRole('button', { name: 'Save tone for Kick' }).click();
+  await page.getByRole('dialog', { name: 'Save drum tone' }).getByLabel('Name').fill('Cloud kick');
+  await page.getByRole('dialog', { name: 'Save drum tone' }).getByRole('button', { name: 'Save' }).click();
   await page.locator('#backup-open').click();
   await page.locator('#cloud-open').click();
   await page.locator('#cloud-client-id').fill('test-client-id');
@@ -94,6 +100,7 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   expect(audioFile.content).toEqual(Buffer.from('audio bytes'));
   const manifest = JSON.parse(backup.content.toString());
   expect(manifest.patches[0].audio[0].fileId).toBe(audioFile.id);
+  expect(manifest.tones.map((tone) => tone.name)).toEqual(['Cloud kick']);
   expect(JSON.stringify(manifest)).not.toContain('test-client-id');
   expect(JSON.stringify(manifest)).not.toContain('test-token');
   audioFile.content = Buffer.from('damaged');
@@ -103,6 +110,10 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   audioFile.content = Buffer.from('audio bytes');
   await page.locator('#cloud-close').click();
   await page.locator('#backup-close').click();
+  await page.getByRole('button', { name: 'Load tone for Kick' }).click();
+  await page.getByRole('dialog', { name: 'Kick tones' }).getByRole('button', { name: 'Delete Cloud kick' }).click();
+  await page.getByRole('dialog', { name: 'Delete drum tone' }).getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog', { name: 'Kick tones' }).getByRole('button', { name: 'Close' }).click();
   await card.getByRole('button', { name: 'Delete Cloud pad' }).click();
   await page.getByRole('dialog', { name: 'Delete patch' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('.patch-card')).toHaveCount(0);
@@ -120,7 +131,10 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   await expect(page.locator('#cloud-versions option')).toHaveCount(2);
   const recovery = [...files.values()].find((file) => file.appProperties?.kind === 'recovery');
   expect(JSON.parse(recovery.content.toString()).patches).toHaveLength(0);
+  expect(JSON.parse(recovery.content.toString()).tones).toHaveLength(0);
   await page.locator('#cloud-close').click();
   await page.locator('#backup-close').click();
   await expect(card.locator('.patch-audio-item')).toContainText('audio.mp3');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.drumTones.v1')).tones.map((tone) => tone.name)))
+    .toEqual(['Cloud kick']);
 });

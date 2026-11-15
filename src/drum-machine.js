@@ -2,6 +2,7 @@ import { createDrumAudio, defaultDrumLane, DRUM_VOICES } from './drum-audio.js';
 import { askName, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
 import { writeGrooveMidi } from './midi-file.js';
+import { createDrumTones, validToneValues } from './drum-tones.js';
 
 const storageKey = 'refaceCS.drumPatterns.v1';
 const maxOffset = 600;
@@ -9,21 +10,27 @@ const velocityFor = (level) => Math.round(level * 127 / 5);
 const copy = (value) => structuredClone(value);
 const initialLanes = () => DRUM_VOICES.slice(0, 4).map(defaultDrumLane);
 const trashIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6H21M9 6V3H15V6M5 6L6 21H18L19 6M10 10V17M14 10V17"/></svg>';
+const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8H20V21H8zM16 8V3H3V16H8"/></svg>';
+const pasteIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5V21H19V4H15M9 3H15V7H9zM8 12H16M8 16H16"/></svg>';
 
 function validLane(lane) {
   return lane && DRUM_VOICES.some((voice) => voice.id === lane.voice)
-    && Array.isArray(lane.steps) && lane.steps.length === 16
+    && Array.isArray(lane.steps) && lane.steps.length >= 16 && lane.steps.length <= 256 && lane.steps.length % 16 === 0
     && lane.steps.every((level) => Number.isInteger(level) && level >= 0 && level <= 5)
     && ['muted', 'solo'].every((key) => lane[key] === undefined || typeof lane[key] === 'boolean')
     && [['level', 0, 100], ['tuning', -24, 24], ['decay', 0.02, 2], ['tone', 0, 100]]
-      .every(([key, min, max]) => Number.isFinite(lane[key]) && lane[key] >= min && lane[key] <= max);
+      .every(([key, min, max]) => Number.isFinite(lane[key]) && lane[key] >= min && lane[key] <= max)
+    && (lane.toneId === undefined || typeof lane.toneId === 'string')
+    && (lane.toneBaseline === undefined || validToneValues(lane.toneBaseline));
 }
 
 export function validPatterns(patterns) {
   return Array.isArray(patterns) && patterns.length > 0
     && patterns.every((pattern) => typeof pattern?.id === 'string'
       && typeof pattern.name === 'string' && pattern.name.trim().length > 0
+      && (pattern.bars === undefined || (Number.isInteger(pattern.bars) && pattern.bars >= 1 && pattern.bars <= 16))
       && Array.isArray(pattern.lanes) && pattern.lanes.every(validLane)
+      && pattern.lanes.every((lane) => lane.steps.length >= (pattern.bars ?? 1) * 16)
       && new Set(pattern.lanes.map((lane) => lane.voice)).size === pattern.lanes.length)
     && new Set(patterns.map((pattern) => pattern.id)).size === patterns.length;
 }
@@ -36,7 +43,7 @@ function validStore(store) {
     && typeof store.linked === 'boolean';
 }
 
-export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper, getRefaceInput }) {
+export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper, getRefaceInput, onAudioStatus }) {
   const element = (id) => document.querySelector(`#drum-${id}`);
   const status = element('status');
   const storageStatus = element('storage-status');
@@ -56,7 +63,8 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   const directions = new Map();
   let playing = false;
   let starting = false;
-  let showToneControls = false;
+  const expandedLanes = new Set();
+  let copiedBar = null;
   let timer;
   let nextBeat = 0;
   let firstBeat = 0;
@@ -93,6 +101,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       + 'Starting a temporary pattern; the stored data will not change until you edit or save.';
   }
   const pattern = () => store.patterns.find((item) => item.id === store.selected);
+  const tones = createDrumTones({
+    onChange: () => { render(); edited(); },
+    onLibraryChange: () => { render(); },
+    onError: (message) => { storageStatus.textContent = message; },
+    preview: async (lane) => { await enable(); audio.trigger(lane, 127); },
+  });
   element('volume').value = String(store.volume);
   element('offset').value = String(store.offset);
   element('linked').checked = store.linked;
@@ -122,10 +136,11 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       element('enable').textContent = 'Audio enabled';
       const supported = typeof audio.context.setSinkId === 'function';
       outputSelect.disabled = !supported;
-      outputChoose.disabled = !supported || !navigator.mediaDevices?.selectAudioOutput;
+      outputChoose.hidden = !supported || !navigator.mediaDevices?.selectAudioOutput;
       outputRefresh.disabled = !supported || !navigator.mediaDevices?.enumerateDevices;
       if (!supported) outputStatus.textContent = 'Output selection is unavailable in this browser; using the system default. No direct ASIO.';
       else await refreshOutputs();
+      onAudioStatus('');
     })();
     try {
       await enabling;
@@ -157,7 +172,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   }
 
   function updateLaneStates() {
-    for (const row of lanesElement.children) {
+    for (const row of lanesElement.querySelectorAll('.drum-lane')) {
       const lane = pattern().lanes.find((item) => item.voice === row.dataset.voice);
       row.classList.toggle('is-muted', !audible(lane));
       for (const key of ['solo', 'muted']) {
@@ -168,10 +183,16 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
 
   function renderPlayhead() {
     const beat = clock.beatAt();
-    const step = playing && beat >= firstBeat ? Math.floor((beat + 1e-8) * 4) % (clock.meter * 4) : -1;
+    const step = playing && beat >= firstBeat ? stepAt(beat) : -1;
     for (const button of lanesElement.querySelectorAll('.drum-step')) {
       button.classList.toggle('is-current', Number(button.dataset.step) === step);
     }
+  }
+
+  function stepAt(beat) {
+    const perBar = clock.meter * 4;
+    const step = Math.floor((beat - firstBeat + 1e-8) * 4) % (perBar * (pattern().bars ?? 1));
+    return Math.floor(step / perBar) * 16 + step % perBar;
   }
 
   function tick() {
@@ -187,7 +208,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       if (nextBeat < currentBeat - 0.25) nextBeat = Math.ceil(currentBeat * 4) / 4;
       const horizon = clock.beatAt(now + clock.lead);
       for (; nextBeat <= horizon + 1e-8; nextBeat += 0.25) {
-        const step = Math.round(nextBeat * 4) % (clock.meter * 4);
+        const step = stepAt(nextBeat);
         for (const lane of pattern().lanes) {
           if (audible(lane) && lane.steps[step]) audio.trigger(lane, velocityFor(lane.steps[step]), clock.timeAt(nextBeat), true);
         }
@@ -237,11 +258,11 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     button.dataset.level = String(level);
     button.setAttribute('aria-pressed', String(level > 0));
     const voice = DRUM_VOICES.find((item) => item.id === lane.voice);
-    const label = `${voice.name}, step ${index + 1}: ${level ? `level ${level}/5, MIDI velocity ${velocityFor(level)}` : 'off'}`;
+    const label = `${voice.name}, bar ${Math.floor(index / 16) + 1}, step ${index % 16 + 1}: ${level ? `level ${level}/5, MIDI velocity ${velocityFor(level)}` : 'off'}`;
     button.title = `${label}. Click to change; right-click or Delete to clear.`;
     button.setAttribute('aria-label', label);
     button.textContent = level || '';
-    button.hidden = index >= clock.meter * 4;
+    button.hidden = index >= (pattern().bars ?? 1) * 16 || index % 16 >= clock.meter * 4;
   }
 
   function edited() {
@@ -253,10 +274,96 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     invalidate();
   }
 
+  function selectedBarLanes() {
+    const lanes = pattern().lanes;
+    return lanes.some((lane) => lane.solo) ? lanes.filter((lane) => lane.solo) : lanes;
+  }
+
+  function copyBar(bar) {
+    const selected = selectedBarLanes();
+    copiedBar = selected.map((lane) => ({
+      voice: lane.voice,
+      steps: lane.steps.slice(bar * 16, bar * 16 + clock.meter * 4),
+    }));
+    for (const button of lanesElement.querySelectorAll('.drum-bar-paste')) button.disabled = false;
+    status.textContent = `Copied bar ${bar + 1} from ${selected.length} lane(s).`;
+  }
+
+  function pasteBar(bar) {
+    if (!copiedBar) return;
+    const scroll = lanesElement.parentElement.scrollLeft;
+    for (const source of copiedBar) {
+      let lane = pattern().lanes.find((item) => item.voice === source.voice);
+      if (!lane) {
+        const voice = DRUM_VOICES.find((item) => item.id === source.voice);
+        lane = defaultDrumLane(voice);
+        lane.steps = Array((pattern().bars ?? 1) * 16).fill(0);
+        pattern().lanes.push(lane);
+      }
+      const count = Math.min(source.steps.length, clock.meter * 4);
+      for (let index = 0; index < count; index++) {
+        const target = bar * 16 + index;
+        lane.steps[target] = source.steps[index];
+        directions.delete(`${lane.voice}:${target}`);
+      }
+    }
+    render();
+    lanesElement.querySelector(`.drum-bar-paste[data-bar="${bar}"]`)?.focus({ preventScroll: true });
+    lanesElement.parentElement.scrollLeft = scroll;
+    edited();
+    status.textContent = `Pasted into bar ${bar + 1}.`;
+  }
+
+  function clearBar(bar) {
+    const selected = selectedBarLanes();
+    for (const lane of selected) {
+      const row = lanesElement.querySelector(`.drum-lane[data-voice="${lane.voice}"]`);
+      for (let index = bar * 16; index < bar * 16 + clock.meter * 4; index++) {
+        lane.steps[index] = 0;
+        directions.delete(`${lane.voice}:${index}`);
+        renderStep(row.querySelector(`.drum-step[data-step="${index}"]`), lane, index);
+      }
+    }
+    edited();
+    status.textContent = `Cleared bar ${bar + 1} in ${selected.length} lane(s).`;
+  }
+
   function render() {
     patternSelect.replaceChildren(...store.patterns.map((item) => new Option(item.name, item.id)));
     patternSelect.value = store.selected;
+    element('bars').value = String(pattern().bars ?? 1);
     lanesElement.replaceChildren();
+    const barLabels = document.createElement('div');
+    barLabels.className = 'drum-bar-labels';
+    const spacer = document.createElement('div');
+    const barList = document.createElement('div');
+    barList.className = 'drum-bar-list';
+    barList.style.setProperty('--steps-per-bar', String(clock.meter * 4));
+    for (let bar = 1; bar <= (pattern().bars ?? 1); bar++) {
+      const group = document.createElement('div');
+      group.className = 'drum-bar';
+      const label = document.createElement('span');
+      label.textContent = `Bar ${bar}`;
+      group.append(label);
+      for (const [name, icon, handler] of [['Copy', copyIcon, copyBar], ['Paste', pasteIcon, pasteBar], ['Clear', trashIcon, clearBar]]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `drum-bar-${name.toLowerCase()}`;
+        button.dataset.bar = String(bar - 1);
+        button.innerHTML = icon;
+        button.setAttribute('aria-label', `${name} bar ${bar}`);
+        button.title = `${name} bar ${bar}${name === 'Paste' ? '' : ' (soloed lanes, or all lanes if none are soloed)'}`;
+        button.disabled = name === 'Paste' ? copiedBar === null : pattern().lanes.length === 0;
+        button.addEventListener('click', () => handler(bar - 1));
+        button.addEventListener('keydown', (event) => {
+          if (event.key === ' ') event.stopPropagation();
+        });
+        group.append(button);
+      }
+      barList.append(group);
+    }
+    barLabels.append(spacer, barList);
+    lanesElement.append(barLabels);
     for (const lane of pattern().lanes) {
       const voice = DRUM_VOICES.find((item) => item.id === lane.voice);
       const row = document.createElement('section');
@@ -304,14 +411,21 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
         });
         header.append(toggle);
       }
-      header.append(remove);
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'drum-lane-icon';
+      more.textContent = '…';
+      more.setAttribute('aria-label', `${voice.name} lane options`);
+      more.setAttribute('aria-expanded', String(expandedLanes.has(lane.voice)));
+      header.append(more);
       const steps = document.createElement('div');
       steps.className = 'drum-steps';
-      for (let index = 0; index < 16; index++) {
+      for (let index = 0; index < lane.steps.length; index++) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'drum-step';
         button.dataset.step = String(index);
+        if (index % 16 === 0) button.classList.add('bar-start');
         const clear = () => {
           lane.steps[index] = 0;
           directions.delete(`${lane.voice}:${index}`);
@@ -342,7 +456,60 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
       const controls = document.createElement('div');
       controls.className = 'drum-voice-controls';
-      controls.hidden = !showToneControls;
+      controls.hidden = !expandedLanes.has(lane.voice);
+      more.addEventListener('click', () => {
+        if (expandedLanes.has(lane.voice)) expandedLanes.delete(lane.voice);
+        else expandedLanes.add(lane.voice);
+        controls.hidden = !expandedLanes.has(lane.voice);
+        more.setAttribute('aria-expanded', String(!controls.hidden));
+      });
+      const actions = document.createElement('div');
+      actions.className = 'drum-tone-actions';
+      const action = (label, text, handler) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        button.title = `${label} ${voice.name}`;
+        button.setAttribute('aria-label', `${label} ${voice.name}`);
+        button.addEventListener('click', async () => {
+          try { await handler(); }
+          catch (error) { status.textContent = `${label} failed: ${error.message || error}`; }
+        });
+        actions.append(button);
+        return button;
+      };
+      const toneName = tones.name(lane);
+      if (toneName) {
+        const selectedTone = document.createElement('button');
+        selectedTone.type = 'button';
+        selectedTone.className = 'drum-selected-tone';
+        selectedTone.textContent = toneName;
+        selectedTone.title = `Choose ${voice.name} tone (current: ${toneName})`;
+        selectedTone.setAttribute('aria-label', `Choose ${voice.name} tone, current: ${toneName}`);
+        selectedTone.addEventListener('click', () => tones.open(lane));
+        actions.append(selectedTone);
+      }
+      actions.append(remove);
+      const saveTone = action('Save tone for', '', () => tones.save(lane));
+      saveTone.className = 'drum-lane-icon';
+      saveTone.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3H18L21 6V21H3V3H4ZM7 3V9H17V3M7 21V13H17V21"/></svg>';
+      saveTone.hidden = !tones.changed(lane);
+      const loadTone = action('Load tone for', '', () => tones.open(lane));
+      loadTone.className = 'drum-lane-icon';
+      loadTone.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6H9L11 8H21V20H3V6ZM12 10V17M9 14L12 17L15 14"/></svg>';
+      action('Export tone for', 'Export tone', () => tones.exportLane(lane));
+      const toneFile = document.createElement('input');
+      toneFile.type = 'file';
+      toneFile.accept = '.json,application/json';
+      toneFile.hidden = true;
+      action('Import tone for', 'Import tone', () => { toneFile.value = ''; toneFile.click(); });
+      toneFile.addEventListener('change', async () => {
+        if (!toneFile.files?.[0]) return;
+        try { await tones.importFile(lane, toneFile.files[0]); }
+        catch (error) { status.textContent = `Could not import tone: ${error.message || error}`; }
+      });
+      actions.append(toneFile);
+      controls.append(actions);
       for (const [key, name, min, max, step] of [
         ['level', 'Level', 0, 100, 1], ['tuning', 'Tune', -24, 24, 1],
         ['decay', 'Decay', 0.02, 2, 0.005], ['tone', 'Tone', 0, 100, 1],
@@ -365,6 +532,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
         input.addEventListener('input', () => {
           lane[key] = Number(input.value);
           update();
+          saveTone.hidden = !tones.changed(lane);
           edited();
         });
         update();
@@ -401,6 +569,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       const name = await patternName(duplicate ? `${pattern().name} copy` : `Pattern ${store.patterns.length + 1}`);
       if (!name) return;
       const next = { id: crypto.randomUUID(), name,
+        bars: duplicate ? (pattern().bars ?? 1) : 1,
         lanes: duplicate ? copy(pattern().lanes) : initialLanes() };
       store.patterns.push(next);
       store.selected = next.id;
@@ -438,7 +607,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       if (!result) return;
       const blob = result.format === 'midi'
         ? new Blob([writeGrooveMidi(selected, clock.tempo, clock.meter, DRUM_VOICES)], { type: 'audio/midi' })
-        : new Blob([JSON.stringify({ format: 'refaceCS-groove-pattern', version: 1, pattern: selected })],
+        : new Blob([JSON.stringify({ format: 'refaceCS-groove-pattern', version: 2, pattern: selected })],
           { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -461,7 +630,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     try {
       if (file.size > 1024 * 1024) throw new Error('Pattern file exceeds 1 MB');
       const data = JSON.parse(await file.text());
-      if (data?.format !== 'refaceCS-groove-pattern' || data.version !== 1) {
+      if (data?.format !== 'refaceCS-groove-pattern' || ![1, 2].includes(data.version)) {
         throw new Error('Unsupported pattern format or version');
       }
       const imported = data.pattern;
@@ -476,18 +645,23 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   element('add').addEventListener('click', () => {
     const voice = DRUM_VOICES.find((item) => item.id === instrumentSelect.value);
     if (!voice) return;
-    pattern().lanes.push(defaultDrumLane(voice));
+    const lane = defaultDrumLane(voice);
+    lane.steps = Array((pattern().bars ?? 1) * 16).fill(0);
+    pattern().lanes.push(lane);
     render();
     edited();
   });
-  element('enable').addEventListener('click', async () => {
+  async function enableAudio() {
     try {
       await enable();
       status.textContent = 'Drum audio ready. Channel-10 MIDI and instrument previews are available.';
     } catch (error) {
-      fail(`Could not enable drum audio: ${error.message || error}`);
+      const message = `Could not enable drum audio: ${error.message || error}`;
+      fail(message);
+      onAudioStatus(message);
     }
-  });
+  }
+  element('enable').addEventListener('click', () => { void enableAudio(); });
   playButton.addEventListener('click', () => { void start(); });
   element('stop').addEventListener('click', stopTogether);
   element('linked').addEventListener('change', () => { store.linked = element('linked').checked; persist(); });
@@ -526,11 +700,19 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     }
     clock.setMeter(meter);
   });
-  element('tone-toggle').addEventListener('click', () => {
-    showToneControls = !showToneControls;
-    element('tone-toggle').setAttribute('aria-pressed', String(showToneControls));
-    element('tone-toggle').textContent = showToneControls ? 'Hide tone controls' : 'Show tone controls';
-    for (const controls of lanesElement.querySelectorAll('.drum-voice-controls')) controls.hidden = !showToneControls;
+  element('bars').addEventListener('change', () => {
+    const bars = Number(element('bars').value);
+    if (!Number.isInteger(bars) || bars < 1 || bars > 16) {
+      element('bars').value = String(pattern().bars ?? 1);
+      status.textContent = 'Pattern length must be a whole number from 1 to 16 bars.';
+      return;
+    }
+    pattern().bars = bars;
+    for (const lane of pattern().lanes) {
+      while (lane.steps.length < bars * 16) lane.steps.push(0);
+    }
+    render();
+    edited();
   });
   document.addEventListener('keydown', (event) => {
     if ((event.code !== 'Space' && event.key !== ' ') || event.defaultPrevented
@@ -708,7 +890,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     }
   }
   outputSelect.disabled = true;
-  outputChoose.disabled = !navigator.mediaDevices?.selectAudioOutput;
+  outputChoose.hidden = !navigator.mediaDevices?.selectAudioOutput;
   outputRefresh.disabled = !navigator.mediaDevices?.enumerateDevices;
   outputSelect.addEventListener('change', () => { void selectOutput(outputSelect.value); });
   outputRefresh.addEventListener('click', () => { void refreshOutputs(); });
@@ -770,6 +952,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   }
 
   return {
+    enableAudio,
+    listTones: tones.list,
+    importTones: tones.importTones,
+    replaceTones: tones.replace,
     listPatterns() {
       return copy(store.patterns);
     },
