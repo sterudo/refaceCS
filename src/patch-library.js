@@ -1118,5 +1118,16 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     },
     importPatches,
     controlsChanged: updateDisplay,
+    async captureWithProtection(capture) {
+      if (loadingPatch) return false;
+      loadingPatch = true;
+      try {
+        if (!await preserveUnsavedControls('capture')) return false;
+        await capture();
+        return true;
+      } finally {
+        loadingPatch = false;
+      }
+    },
   };
 }

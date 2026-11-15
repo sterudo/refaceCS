@@ -9,29 +9,32 @@
     <main>
       <header class="toolbar" style="align-items: flex-start;">
         <div>
-          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.4</span>
+          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.5</span>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
           </h1>        
         </div>                          
          <div class="midi-ports" style="  max-width: calc(100vw - 298px);position: relative;">
+          <div class="midi-actions">
            <span id="midi-badge" class="badge" role="status">MIDI not connected</span> 
           <button id="midi-connect" type="button" class="notconnectedmidi">Connect MIDI</button>
-          <span id="audio-connect-status" role="status"></span>
+          <button id="device-settings-open" type="button">Device settings</button>
            <button id="midi-reset" type="button">MIDI Reset</button>
            <button id="backup-open" type="button">Import / Export</button>
            <button id="data-info-open" class="data-info-open" type="button" aria-label="Show information about saving and backups" aria-controls="data-info" title="Show information about saving and backups" hidden>?</button>
+          </div>
+          <span id="audio-connect-status" role="status"></span>
            <span id="backup-result" role="status"></span>
           <label>reface input <select id="midi-reface-input" disabled><option value="">Not selected</option></select></label>
           <label>reface output <select id="midi-reface-output" disabled><option value="">Not selected</option></select></label>
           <label>Controller input <select id="midi-controller-input" disabled><option value="">Not selected</option></select></label>
-          <button id="capture-synth" type="button" disabled="true" style="max-height: 38px;  padding: 5px;">Capture Synth</button>
-           <p id="capture-status" role="status" style="max-width: calc(100vw - 1400px)"></p>
-         <div style="width:100%; position: absolute;  top: 64px;" id="midisettingslog">           
+         <div id="midisettingslog">
           <section class="midi-settings" aria-label="MIDI devices">                             
         <p id="midi-status" role="status">Connect MIDI to discover devices and use notes.</p>
+        <p id="device-panel-status" role="status"></p>
         <p id="midi-mapping-status" role="status"></p>      
+        <p id="capture-status" role="status"></p>
       </section>
      
         </div>  
@@ -39,6 +42,44 @@
         
 
       </header>
+
+      <dialog id="device-settings" class="patch-editor device-settings" aria-labelledby="device-settings-title">
+        <h2 id="device-settings-title">Device settings</h2>
+        <p>Values are unknown until read. Changes are sent only when you apply them. SysEx permission and a connected reface input and output are required.</p>
+        <p>Master transpose and tempo are controlled on the main synth panel and read automatically when the synth connects.</p>
+        <p id="device-settings-status" role="status"></p>
+        <p>Changing MIDI channels, MIDI Control, Local Control or speaker output can interrupt communication or sound. A specific receive channel routes outgoing notes and controls to that channel; All preserves forwarded and loop channels.</p>
+        <div class="device-settings-table-wrap">
+          <table>
+            <thead><tr><th scope="col">Setting</th><th scope="col">Device</th><th scope="col">Change to</th><th scope="col">Status</th></tr></thead>
+            <tbody id="device-settings-fields"></tbody>
+          </table>
+        </div>
+        <details>
+          <summary>Hardware key combinations and factory reset</summary>
+          <p>With the synth off, hold the indicated physical key while powering on. Repeat a toggle procedure to change it back:</p>
+          <ul>
+            <li>C2: disable Auto Power-Off.</li>
+            <li>D2: toggle built-in speaker output.</li>
+            <li>E2: toggle MIDI Control.</li>
+            <li>F2: toggle Local Control.</li>
+            <li>A2: toggle MIDI transmit between channel 1 and Off.</li>
+            <li>B2: toggle pitch-bend inversion between +12 and −12 semitones.</li>
+            <li>C♯2: show the current keyboard settings on the synth's LEDs.</li>
+          </ul>
+          <p>Turn the instrument off, hold the appropriate physical key, then turn it on. The keyboard settings diagram in the <a href="https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=47" target="_blank" rel="noopener noreferrer">owner's manual, page 41</a> identifies the exact keys for speaker output, MIDI Control, Local Control, transmit channel, pitch-bend inversion, Auto Power-Off and setting confirmation. The synth's LEDs indicate the result; see <a href="https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=50" target="_blank" rel="noopener noreferrer">page 44</a> for the confirmation display.</p>
+          <p>Firmware 1.30 also provides advanced keyboard settings, including separate transmit and receive channel selection. Hold the A-major chord shown in Yamaha's <a href="https://yamahasynth.com/community/reface-1/change-midi-channel-cs-please-help-me/" target="_blank" rel="noopener noreferrer">advanced-settings guidance</a> while powering on, then follow the supplementary manual's key diagrams for the desired setting.</p>
+          <p>Disabling Auto Power-Off using the keyboard requires a factory reset to re-enable it using that method. SysEx behavior requires hardware verification.</p>
+          <p><strong>Factory reset erases the hardware loop phrase and restores settings.</strong> To reset, hold the rightmost physical key while powering on, and release it after the lights stop flashing. See <a href="https://www.manualslib.com/manual/959024/Yamaha-Reface-Cs.html?page=46" target="_blank" rel="noopener noreferrer">the factory reset instructions</a>. Reset in this dialog is not a factory reset.</p>
+        </details>
+        <div class="patch-editor-actions">
+          <button id="device-settings-read" type="button">Read settings</button>
+          <button id="device-settings-reset" type="button">Reset</button>
+          <button id="device-settings-discard" type="button">Discard changes</button>
+          <button id="device-settings-apply" type="button">Apply changes</button>
+          <button id="device-settings-close" type="button">Close</button>
+        </div>
+      </dialog>
 
       <section id="data-info" class="data-info" aria-labelledby="data-info-title">
         <div class="data-info-header">

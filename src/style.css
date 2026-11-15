@@ -138,6 +138,21 @@ top: 4px;
   text-overflow: ellipsis;
 }
 
+#midi-badge[data-access="granted"] {
+  position: static;
+  margin: 0;
+  align-self: center;
+}
+
+#midi-badge[data-state="connected"] {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #35c96f;
+  font-size: 0;
+}
+
 .midi-settings button {
   padding: 0.4rem 0.65rem;
   font-size: inherit;
@@ -146,10 +161,22 @@ top: 4px;
 .midi-ports {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: 8px;
   align-items: end;
   margin-left:16px;
 }
+
+.midi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.midi-actions > button, .midi-ports > button { padding: 5px; }
+.midi-ports > span:empty, .midi-ports > p:empty { display: none; }
+#midisettingslog { flex-basis: 100%; }
+#midisettingslog .midi-settings { margin: 0; }
 
 .midi-ports label {
   display: grid;
@@ -215,6 +242,7 @@ button {
   color: darkcyan;
   text-shadow: 0px 0px 1px black;
   padding-top: 3px;
+  padding-inline: 5px;
   border-top-left-radius: 0px;
   border-top-right-radius: 0px;
   padding-bottom: 4px;
@@ -251,12 +279,11 @@ button[aria-pressed="true"] {
 #visual-toggles {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 4px;
+  flex-wrap: nowrap;
   position: absolute;
-  margin-left: 40px;
-  margin-top: 3px;
+  left: 50px;
+  top: 5px;
 }
 
 button:focus-visible,
@@ -268,6 +295,7 @@ input[type="range"]:focus-visible,
 }
 
 .instrument-scroll {
+  position: relative;
   overflow-x: auto;
   padding-bottom: 0.75rem;
 }
@@ -381,6 +409,13 @@ input[type="range"]:focus-visible,
 .arp-menu-item:focus-visible rect { stroke: #21a8bc; stroke-width: 2; }
 .arp-segment { fill: #5c3025; opacity: 0.35; }
 .arp-segment.is-lit { fill: #ffc078; opacity: 1; filter: drop-shadow(0 0 2px #f47728); }
+.device-channel { cursor: pointer; }
+.device-label, .arp-button .device-label { fill: #41474a; font-size: 8px; font-weight: 700; text-anchor: start; }
+.device-assumption, .arp-button .device-assumption { fill: #a64b18; font-size: 11px; font-weight: 700; text-anchor: start; }
+.device-panel-confirmed .device-assumption { display: none; }
+.device-switch[aria-pressed="true"] .arp-lens { fill: url(#arp-button-red); stroke: #d66159; filter: drop-shadow(0 0 3px #f27b71); }
+.device-channel[aria-disabled="true"], .device-switch[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+.device-channel:focus-visible { outline: 2px solid #21a8bc; }
 .arp-readout-label { fill: #70766e; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; }
 .arp-readout-value { fill: #252a26; font-size: 12px; font-weight: 600; }
 .arp-readout-value.chord-major { fill: #24803b; }
@@ -944,6 +979,7 @@ input[type="range"]:focus-visible,
   opacity: 0.45;
 }
 
+dialog { box-sizing: border-box; max-height: 90vh; overflow-y: auto; }
 .patch-editor {
   width: min(32rem, calc(100vw - 2rem));
   padding: 1.25rem;
@@ -966,6 +1002,17 @@ input[type="range"]:focus-visible,
   margin: 0;
   font-size: 1.2rem;
 }
+
+.device-settings { width: min(60rem, calc(100vw - 2rem)); }
+.device-settings .patch-editor-actions { position: sticky; bottom: -1.25rem; background: #182229; padding: 0.75rem 0 1.25rem; flex-wrap: wrap; }
+.device-settings #device-settings-close { margin-left: auto; }
+.device-settings-table-wrap { overflow-x: auto; }
+.device-settings table { width: 100%; border-collapse: collapse; }
+.device-settings th, .device-settings td { padding: 0.4rem; text-align: left; vertical-align: middle; border-bottom: 1px solid #526873; }
+.device-settings input, .device-settings select { min-width: 7rem; }
+.device-settings details { margin: 1rem 0; }
+.device-settings summary { cursor: pointer; }
+.device-settings a { color: #8bdce8; }
 
 .cloud-setup {
   margin-bottom: 0.75rem;
@@ -1182,17 +1229,6 @@ footer {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-@media (max-width: 1600px) {
-  #capture-status {
-    display:none;
-  }
-}
-@media (max-width: 1300px) {
-  #midisettingslog {
-    display:none;
-  }
 }
 
 @media (max-width: 600px) {

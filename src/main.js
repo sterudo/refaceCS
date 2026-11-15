@@ -11,6 +11,8 @@ import { createDrumMachine } from './drum-machine.js';
 import { getPreference, setPreference } from './preferences.js';
 import { setupBackup } from './backup.js';
 import { setupCloudBackup } from './cloud-ui.js';
+import { setupDeviceSettings } from './device-settings.js';
+import { choose } from './dialogs.js';
 
 const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
@@ -66,9 +68,12 @@ const computerKeys = new Map();
 let travel = baseTravel;
 let volumeMuted = false;
 let pitchRange = defaultPitchRange;
-const savedPitchRange = getPreference('pitchRange',
-  (value) => Number.isInteger(value) && value >= 0 && value <= 24, null);
-let restorePitchRange = savedPitchRange !== null;
+let pitchDirection = null;
+let deviceRevision = 0;
+let processedDeviceRevision = 0;
+let syncingDevice = false;
+let pitchRangeChanging = false;
+let deviceSettings;
 
 const selections = {
   octave: ['-2', '-1', '0', '+1', '+2'],
@@ -110,7 +115,8 @@ const midi = setupMidiDiscovery(() => {
   updateHeldDisplay();
 }, (id, value) => {
   if (id === 'pitch-range') {
-    updatePitchRange(value, false);
+    observePitchRange(value);
+    deviceSettings?.observePitch(value);
   } else {
     const fader = panel.querySelector(`#${id}`);
     if (fader) updateFader(fader, value, false);
@@ -130,8 +136,12 @@ const midi = setupMidiDiscovery(() => {
   onLooperStartCancelled: () => drums.cancelPendingStart(),
   onLooperStopped: () => drums.stopFromLooper(),
   clearLocalNotes: releaseNotes,
-  onOutputAvailable: () => {
-    if (restorePitchRange) midi.setControl('pitch-range', pitchRange);
+  onDeviceConnectionChanged: () => {
+    deviceRevision++;
+    pitchDirection = null;
+    deviceSettings?.connectionChanged();
+    midi.setCaptureStatus(midi.hasDeviceConnection() ? 'Waiting to capture synth settings.' : '');
+    queueMicrotask(() => { void syncDeviceConnection(); });
   },
 });
 const drums = createDrumMachine(grooveClock, {
@@ -151,6 +161,42 @@ const drums = createDrumMachine(grooveClock, {
   },
   getRefaceInput: () => midi.getRefaceInput(),
 });
+deviceSettings = setupDeviceSettings(midi, {
+  onPitchRead: observePitchRange,
+  onPitchUnconfirmed: () => { pitchDirection = null; },
+});
+
+async function syncDeviceConnection() {
+  if (syncingDevice) return;
+  syncingDevice = true;
+  try {
+    while (processedDeviceRevision !== deviceRevision) {
+      const revision = deviceRevision;
+      processedDeviceRevision = revision;
+      if (!midi.hasDeviceConnection()) continue;
+      await deviceSettings.whenIdle();
+      await midi.whenSettingsIdle();
+      if (revision !== deviceRevision) continue;
+      const read = await deviceSettings.read();
+      if (revision !== deviceRevision) continue;
+      if (!read) {
+        midi.setCaptureStatus('Automatic capture skipped: device settings could not be read.', 'warning');
+        continue;
+      }
+      await midi.whenSettingsIdle();
+      if (revision !== deviceRevision) continue;
+      const captured = await patchLibrary.captureWithProtection(() => {
+        if (revision === deviceRevision && midi.hasDeviceConnection()) return midi.captureSynth();
+      });
+      if (revision === deviceRevision && !captured) midi.setCaptureStatus('Automatic capture skipped; the current sound was kept.');
+    }
+  } catch (error) {
+    midi.setCaptureStatus(`Automatic capture failed: ${error.message || error}.`, 'error');
+  } finally {
+    syncingDevice = false;
+    if (processedDeviceRevision !== deviceRevision) queueMicrotask(() => { void syncDeviceConnection(); });
+  }
+}
 const computerKeyBindings = new Map([
   ['KeyA', 'c-2'], ['KeyW', 'cs-2'], ['KeyS', 'd-2'], ['KeyE', 'ds-2'],
   ['KeyD', 'e-2'], ['KeyF', 'f-2'], ['KeyT', 'fs-2'], ['KeyG', 'g-2'],
@@ -178,7 +224,7 @@ function updateFaderTooltip(fader) {
   fader.querySelector('title').textContent = `${fader.dataset.label}: ${valueText(fader)}${suffix}`;
 }
 
-function updatePitchRange(value, announce = true) {
+function updatePitchRange(value) {
   pitchRange = Math.max(0, Math.min(24, Math.round(value)));
   pitchRangeValue.textContent = String(pitchRange);
   const description = `Pitch bend range: ${pitchRange} semitones`;
@@ -187,11 +233,60 @@ function updatePitchRange(value, announce = true) {
     const next = pitchRange + Number(button.dataset.step);
     button.setAttribute('aria-disabled', String(next < 0 || next > 24));
   }
-  if (announce) {
-    restorePitchRange = true;
-    setPreference('pitchRange', pitchRange);
-    midi.setControl('pitch-range', pitchRange);
-    status.textContent = description;
+}
+
+function observePitchRange(value) {
+  pitchDirection = value === 0 ? null : Math.sign(value);
+  updatePitchRange(Math.abs(value));
+}
+
+async function changePitchRange(value, force = false, prefix = '') {
+  if (pitchRangeChanging) return;
+  const step = value - pitchRange;
+  let magnitude = Math.max(0, Math.min(24, Math.round(value)));
+  if (!force && magnitude === pitchRange) return;
+  const revision = deviceRevision;
+  pitchRangeChanging = true;
+  try {
+    if (!midi.hasDeviceConnection()) {
+      updatePitchRange(magnitude);
+      status.textContent = `${prefix}Pitch bend range: ${magnitude} semitones shown locally; no device setting was sent.`;
+      return;
+    }
+    if (pitchDirection === null) {
+      const read = await choose('Pitch-bend direction unknown',
+        'Read the synth before changing the range so its direction is not accidentally reset.',
+        [['Cancel', false], ['Read direction', true]]);
+      if (!read) return;
+      if (revision !== deviceRevision) return;
+      try {
+        await midi.readDeviceSettings(['pitch-range'], (id, result) => {
+          if (revision === deviceRevision && result !== null) {
+            observePitchRange(result);
+            if (!force) magnitude = Math.max(0, Math.min(24, pitchRange + step));
+            deviceSettings?.observePitch(result);
+          }
+        });
+      } catch (error) {
+        status.textContent = `Could not read pitch-bend direction: ${error.message || error}`;
+      }
+      if (revision !== deviceRevision) return;
+      if (pitchDirection === null) {
+        const direction = await choose('Choose pitch-bend direction',
+          'The direction could not be determined. Choose the direction to send, or cancel.',
+          [['Cancel', null], ['Normal', 1], ['Inverted', -1]]);
+        if (direction === null) return;
+        if (revision !== deviceRevision) return;
+        pitchDirection = direction;
+      }
+    }
+    updatePitchRange(magnitude);
+    midi.setControl('pitch-range', pitchDirection * magnitude);
+    deviceSettings?.pitchSent();
+    if (magnitude === 0) pitchDirection = null;
+    status.textContent = `${prefix}Pitch bend range: ${magnitude} semitones; MIDI send is not confirmed.`;
+  } finally {
+    pitchRangeChanging = false;
   }
 }
 
@@ -609,7 +704,7 @@ function bindButton(button, activate) {
 for (const button of pitchRangeButtons) {
   bindButton(button, () => {
     button.focus({ preventScroll: true });
-    updatePitchRange(pitchRange + Number(button.dataset.step));
+    void changePitchRange(pitchRange + Number(button.dataset.step));
   });
 }
 
@@ -651,11 +746,8 @@ document.querySelector('#reset-faders').addEventListener('click', () => {
   for (const [fader, value] of startingValues) {
     updateFaderFromInput(fader, value, false);
   }
-  updatePitchRange(defaultPitchRange, false);
-  restorePitchRange = true;
-  setPreference('pitchRange', defaultPitchRange);
-  midi.setControl('pitch-range', defaultPitchRange);
   status.textContent = 'Faders reset to starting positions.';
+  void changePitchRange(defaultPitchRange, true, 'Faders reset to starting positions. ');
 });
 
 function toggleMute() {
@@ -709,7 +801,7 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   status.textContent = `${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`;
 });
 
-updatePitchRange(savedPitchRange ?? defaultPitchRange, false);
+updatePitchRange(defaultPitchRange);
 updateKeyNotes();
 layoutPanel();
 for (const [name, id] of [

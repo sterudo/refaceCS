@@ -22,6 +22,20 @@ const controls = [
 
 export const tempoRange = { min: 40, max: 240, default: 120 };
 
+export const deviceParameters = [
+  { id: 'midi-transmit', address: [0, 0, 0x00], size: 1 },
+  { id: 'midi-receive', address: [0, 0, 0x01], size: 1 },
+  { id: 'master-tune', address: [0, 0, 0x02], size: 4 },
+  { id: 'local-control', address: [0, 0, 0x06], size: 1 },
+  { id: 'sustain-pedal', address: [0, 0, 0x0b], size: 1 },
+  { id: 'auto-power', address: [0, 0, 0x0c], size: 1 },
+  { id: 'speaker-output', address: [0, 0, 0x0d], size: 1 },
+  { id: 'midi-control', address: [0, 0, 0x0e], size: 1 },
+  { id: 'pitch-range', address: [0, 0, 0x0f], size: 1 },
+  { id: 'foot-mode', address: [0, 0, 0x14], size: 1 },
+  { id: 'tone-volume', address: [0x30, 0, 0x00], size: 1 },
+];
+
 export const captureParameters = [
   { id: 'midi-control', address: [0, 0, 0x0e], size: 1 },
   { id: 'transpose', address: [0, 0, 0x07], size: 1 },
@@ -66,11 +80,23 @@ export function decodeControl(data) {
 
 export function encodeParameter(id, value) {
   if (id === 'transpose') return { address: [0, 0, 7], data: [64 + value] };
-  if (id === 'pitch-range') return { address: [0, 0, 15], data: [64 + value] };
+  if (id === 'pitch-range') return Number.isInteger(value) && value >= -24 && value <= 24
+    ? { address: [0, 0, 15], data: [64 + value] } : null;
   if (id === 'tempo') {
     return { address: [0, 0, 8], data: [value >> 7, value & 0x7f] };
   }
-  return null;
+  const parameter = deviceParameters.find((item) => item.id === id);
+  if (!parameter || !Number.isFinite(value)) return null;
+  if (id === 'master-tune') {
+    const raw = Math.round(value * 10) + 1024;
+    if (raw < 0 || raw > 2047 || Math.abs(value * 10 - Math.round(value * 10)) > 1e-8) return null;
+    return { address: parameter.address, data: [(raw >> 12) & 15, (raw >> 8) & 15, (raw >> 4) & 15, raw & 15] };
+  }
+  if (!Number.isInteger(value)) return null;
+  const valid = id === 'midi-transmit' ? (value >= 0 && value <= 15) || value === 127
+    : id === 'midi-receive' ? value >= 0 && value <= 16
+      : id === 'tone-volume' ? value >= 0 && value <= 127 : value === 0 || value === 1;
+  return valid ? { address: parameter.address, data: [value] } : null;
 }
 
 export function parameterMessage(address, data) {
@@ -82,22 +108,28 @@ export function requestMessage(address) {
 }
 
 export function decodeParameter(address, data) {
-  const parameter = captureParameters.find((item) =>
+  const parameter = [...deviceParameters, ...captureParameters].find((item) =>
     item.address.every((part, index) => part === address[index]) && item.size === data.length);
   if (!parameter || data.some((byte) => byte > 127)) return null;
   let value = data[0];
+  if (parameter.id === 'master-tune') {
+    if (data[0] !== 0 || data[1] > 7 || data[2] > 15 || data[3] > 15) return null;
+    return { id: parameter.id, value: (((data[1] << 8) | (data[2] << 4) | data[3]) - 1024) / 10 };
+  }
   if (parameter.id === 'transpose') value -= 64;
   else if (parameter.id === 'pitch-range') value -= 64;
   else if (parameter.id === 'tempo') {
     const bpm = (data[0] << 7) + data[1];
     if (bpm < 30 || bpm > 300) return null;
     value = bpm;
-  } else if (parameter.id === 'midi-control' && value > 1) return null;
+  } else if (['midi-control', 'local-control', 'sustain-pedal', 'auto-power', 'speaker-output', 'foot-mode'].includes(parameter.id) && value > 1) return null;
+  else if (parameter.id === 'midi-transmit' && value > 15 && value !== 127) return null;
+  else if (parameter.id === 'midi-receive' && value > 16) return null;
   else if (parameter.id === 'effect-type') {
     if (value > 4) return null;
     value = 4 - value;
   } else if ((parameter.id === 'osc-type' || parameter.id === 'lfo-assign') && value > 4) return null;
   if (parameter.id === 'transpose' && (value < -12 || value > 12)) return null;
-  if (parameter.id === 'pitch-range' && (value < 0 || value > 24)) return null;
+  if (parameter.id === 'pitch-range' && (value < -24 || value > 24)) return null;
   return { id: parameter.id, value };
 }

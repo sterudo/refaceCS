@@ -7,10 +7,13 @@ test.beforeEach(async ({ page }) => {
     const sent = [];
     const requests = [];
     const values = {
-      '0,0,14': [1], '0,0,7': [66], '0,0,8': [1, 0], '0,0,15': [76],
+      '0,0,0': [0], '0,0,1': [16], '0,0,2': [0, 4, 0, 0], '0,0,6': [1],
+      '0,0,11': [0], '0,0,12': [1], '0,0,13': [1], '0,0,14': [1],
+      '0,0,20': [1], '48,0,0': [100], '0,0,7': [64], '0,0,8': [0, 120], '0,0,15': [76],
     };
-    for (let address = 2; address <= 18; address++) values[`48,0,${address}`] = [address === 16 ? 2 : 0];
-    delete values['48,0,18'];
+    for (let address = 2; address <= 18; address++) {
+      values[`48,0,${address}`] = [[9, 13, 14].includes(address) ? 127 : address === 16 ? 4 : 0];
+    }
     const emit = (port, data) => {
       const event = new Event('midimessage');
       event.data = new Uint8Array(data);
@@ -40,10 +43,94 @@ test.beforeEach(async ({ page }) => {
         return options?.sysex ? sysex : plain;
       },
     });
-    window.testSynth = { sent, requests, values, emit: (id, data) => emit(id === 'ri' ? input : controller, data) };
+    window.testSynth = { sent, requests, values, input, plain, denySysex: sessionStorage.getItem('test-deny-sysex') === 'true',
+      emit: (id, data) => emit(id === 'ri' ? input : controller, data) };
   });
   await page.goto('/static/reface/');
   await page.locator('#midi-connect').click();
+  await expect(page.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await page.evaluate(() => { window.testSynth.sent.length = 0; });
+});
+
+async function reconnectSynth(page) {
+  await page.evaluate(() => {
+    window.testSynth.input.state = 'disconnected';
+    window.testSynth.plain.dispatchEvent(new Event('statechange'));
+    window.testSynth.input.state = 'connected';
+    window.testSynth.plain.dispatchEvent(new Event('statechange'));
+  });
+}
+
+test('automatically captures the connected synth without a capture button or writes', async ({ page }) => {
+  await page.reload();
+  await page.evaluate(() => { window.testSynth.values['48,0,9'] = [37]; });
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '37');
+  await expect(page.locator('#capture-synth')).toHaveCount(0);
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x10))).toBe(false);
+  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /Captured/);
+});
+
+test('asks before capture replaces unsaved edits and respects cancellation', async ({ page }) => {
+  await page.reload();
+  await page.locator('#filter-cutoff').press('End');
+  await page.locator('#midi-connect').click();
+  const prompt = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await expect(prompt).toBeVisible();
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x30 && message[6] === 48 && message[8] === 9))).toBe(false);
+  await prompt.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#capture-status')).toContainText('current sound was kept');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
+
+  await reconnectSynth(page);
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole('button', { name: 'Discard and capture' }).click();
+  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('automatically captures after manually selecting the reface ports', async ({ page }) => {
+  await page.reload();
+  await page.evaluate(() => {
+    window.testSynth.input.name = 'MIDI input';
+    window.testSynth.plain.outputs.get('ro').name = 'MIDI output';
+    window.testSynth.values['48,0,9'] = [41];
+  });
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports unavailable');
+  await page.locator('#midi-reface-input').selectOption('ri');
+  await page.locator('#midi-reface-output').selectOption('ro');
+  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '41');
+});
+
+test('a connection change while confirmation is open requires a fresh confirmation', async ({ page }) => {
+  await page.reload();
+  await page.locator('#filter-cutoff').press('End');
+  await page.locator('#midi-connect').click();
+  const prompt = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await expect(prompt).toBeVisible();
+  await reconnectSynth(page);
+  await prompt.getByRole('button', { name: 'Discard and capture' }).click();
+  await expect(prompt).toBeVisible();
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x30 && message[6] === 48 && message[8] === 9))).toBe(false);
+  await prompt.getByRole('button', { name: 'Discard and capture' }).click();
+  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('a device settings action interrupts an in-progress automatic capture', async ({ page }) => {
+  await page.evaluate(() => { delete window.testSynth.values['48,0,2']; });
+  await reconnectSynth(page);
+  await expect(page.locator('#capture-status')).toContainText('requesting lfo-assign');
+  await page.locator('#device-speaker-output').click();
+  await expect(page.locator('#device-speaker-output')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#capture-status')).toContainText('stopped for another device settings operation');
 });
 
 test('CC and pitch bend send and receive without echo or connect synchronization', async ({ page }) => {
@@ -65,7 +152,7 @@ test('CC and pitch bend send and receive without echo or connect synchronization
   await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', '1');
   await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '64');
   expect(await page.evaluate(() => window.testSynth.sent.length)).toBe(3);
-  expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary']);
+  expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary', 'sysex']);
 });
 
 test('patch change indicator follows received sound controls but not performance controls', async ({ page }) => {
@@ -122,10 +209,12 @@ test('MIDI changes received while saving are not discarded by a pending patch lo
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'MIDI changes (unsaved changes)');
 });
 
-test('SysEx settings use explicit permission and app-routed notes are transposed', async ({ page }) => {
+test('SysEx settings use permission and app-routed notes are transposed', async ({ page }) => {
   await page.locator('#transpose').press('ArrowUp');
   await expect.poll(() => page.evaluate(() => window.testSynth.sent.length)).toBe(1);
   await page.locator('#pitch-range-up').click();
+  await expect.poll(() => page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x10 && message[8] === 15))).toBe(true);
   await page.locator('#tempo').press('Home');
   await page.keyboard.press('a');
   await expect(page.locator('#key-c-2 .key-note')).toHaveText('C#4');
@@ -137,21 +226,32 @@ test('SysEx settings use explicit permission and app-routed notes are transposed
   expect(sent).toContainEqual([0x90, 61, 100]);
 });
 
-test('restores a saved pitch range to the synth after MIDI connects', async ({ page }) => {
+test('capture replaces a locally changed range with the synth readout without writing', async ({ page }) => {
   await page.locator('#pitch-range-up').click();
-  await expect.poll(() => page.evaluate(() => window.testSynth.sent.length)).toBe(1);
-  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x10 && message[8] === 15))).toBe(true);
   await expect(page.locator('#pitch-range-value')).toHaveText('13');
-  expect(await page.evaluate(() => window.testSynth.sent)).toEqual([]);
-  await page.locator('#midi-connect').click();
-  await expect.poll(() => page.evaluate(() => window.testSynth.sent)).toContainEqual(
-    [0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 15, 77, 0xf7],
-  );
-  expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary', 'sysex']);
+  await page.evaluate(() => {
+    window.testSynth.sent.length = 0;
+    window.testSynth.values['0,0,15'] = [70];
+  });
+  await reconnectSynth(page);
+  await expect(page.locator('#capture-status')).toContainText('Not captured', { timeout: 5000 });
+  await expect(page.locator('#pitch-range-value')).toHaveText('6');
+  expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
+    message[0] === 0xf0 && message[2] === 0x10 && message[8] === 15))).toBe(false);
+  await expect(page.getByRole('dialog', { name: 'Restore pitch-bend range' })).toHaveCount(0);
 });
 
 test('capture applies valid replies, reports missing values, and preserves newer edits', async ({ page }) => {
-  await page.locator('#capture-synth').click();
+  await page.evaluate(() => {
+    window.testSynth.values['0,0,7'] = [66];
+    window.testSynth.values['0,0,8'] = [1, 0];
+    window.testSynth.values['48,0,9'] = [42];
+    window.testSynth.values['48,0,16'] = [2];
+    delete window.testSynth.values['48,0,18'];
+  });
+  await reconnectSynth(page);
   await expect(page.locator('#capture-status')).toContainText('requesting filter-cutoff');
   await page.locator('#filter-cutoff').press('End');
   await expect(page.locator('#capture-status')).toContainText('Not captured', { timeout: 5000 });
@@ -167,7 +267,7 @@ test('capture applies valid replies, reports missing values, and preserves newer
 
 test('capture synchronizes the modulation slider for the selected CC without sending it', async ({ page }) => {
   await page.evaluate(() => { window.testSynth.values['48,0,9'] = [9]; });
-  await page.locator('#capture-synth').click();
+  await reconnectSynth(page);
   await expect(page.locator('#midi-modwheel-value')).toHaveValue('9', { timeout: 5000 });
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xb0 && message[1] === 74))).toBe(false);
@@ -211,8 +311,10 @@ test('shared tempo sends exact BPM from both controls and on activation', async 
 
 test('capture reports synth tempo outside the shared range without changing it', async ({ page }) => {
   await page.evaluate(() => { window.testSynth.values['0,0,8'] = [1, 127]; });
-  await page.locator('#capture-synth').click();
+  await page.setViewportSize({ width: 800, height: 900 });
+  await reconnectSynth(page);
   await expect(page.locator('#capture-status')).toContainText('tempo (255 BPM outside 40–240 BPM)', { timeout: 5000 });
+  await expect(page.locator('#capture-status')).toBeVisible();
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '120');
   await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '120');
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
@@ -220,7 +322,9 @@ test('capture reports synth tempo outside the shared range without changing it',
 });
 
 test('denied tempo SysEx reports failure while linked controls still update', async ({ page }) => {
-  await page.evaluate(() => { window.testSynth.denySysex = true; });
+  await page.evaluate(() => sessionStorage.setItem('test-deny-sysex', 'true'));
+  await page.reload();
+  await page.locator('#midi-connect').click();
   await page.locator('#arp-tempo-up').click();
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '121');
   await expect(page.locator('#midi-status')).toContainText('permission denied');
@@ -296,9 +400,10 @@ test('expression mirrors synth and controller CC feedback without echoing synth 
 });
 
 test('denied SysEx leaves ordinary MIDI working and reports capture failure', async ({ page }) => {
-  await page.evaluate(() => { window.testSynth.denySysex = true; });
-  await page.locator('#capture-synth').click();
-  await expect(page.locator('#capture-status')).toContainText('Capture failed');
+  await page.evaluate(() => sessionStorage.setItem('test-deny-sysex', 'true'));
+  await page.reload();
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#capture-status')).toContainText('Automatic capture skipped');
   await expect(page.locator('#midi-status')).toContainText('permission denied');
   await page.keyboard.press('a');
   expect(await page.evaluate(() => window.testSynth.sent)).toEqual([[0x90, 60, 100], [0x80, 60, 0]]);

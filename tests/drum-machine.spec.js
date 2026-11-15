@@ -328,7 +328,7 @@ test('audio failure does not block MIDI connection and is reported outside Groov
   await page.reload();
   await page.evaluate(() => { AudioContext.prototype.resume = async () => { throw new Error('audio denied'); }; });
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#midi-connect')).toHaveText('MIDI connected');
+  await expect(page.locator('#midi-connect')).toBeHidden();
   await expect(page.locator('#audio-connect-status')).toContainText('Could not enable drum audio: audio denied');
   await expect(page.locator('#groove-panel')).not.toHaveAttribute('open');
   await page.evaluate(() => { AudioContext.prototype.resume = async function () { this.state = 'running'; }; });

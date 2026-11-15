@@ -27,10 +27,18 @@ test('discovers reface ports, supports a separate controller and follows hot-plu
   await expect(page.locator('#midi-badge')).toHaveText('MIDI not connected');
   await page.getByRole('button', { name: 'Connect MIDI' }).click();
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports available');
+  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /^midi connected\n/);
+  await expect(page.locator('#midi-badge')).toHaveAttribute('aria-label', /^MIDI connected\./);
+  await expect(page.locator('#midi-badge')).toHaveCSS('border-radius', '50%');
+  await expect(page.locator('#midi-connect')).toBeHidden();
+  const padding = await page.locator('#midi-reset').evaluate((element) => getComputedStyle(element).padding);
+  for (const id of ['device-settings-open', 'backup-open']) {
+    await expect(page.locator(`#${id}`)).toHaveCSS('padding', padding);
+  }
   await expect(page.locator('#midi-reface-input')).toHaveValue('ri');
   await expect(page.locator('#midi-reface-output')).toHaveValue('ro');
   await expect(page.locator('#midi-controller-input')).toHaveValue('ri');
-  expect(await page.evaluate(() => window.midiRequests)).toEqual([[]]);
+  expect(await page.evaluate(() => window.midiRequests)).toEqual([[], [{ sysex: true }]]);
 
   await page.locator('#midi-controller-input').selectOption('keyboard');
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports available');
@@ -39,6 +47,7 @@ test('discovers reface ports, supports a separate controller and follows hot-plu
     window.testMidi.dispatchEvent(new Event('statechange'));
   });
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports unavailable');
+  await expect(page.locator('#midi-badge')).not.toHaveAttribute('title', /midi connected/);
   await expect(page.locator('#midi-controller-input')).toHaveValue('keyboard');
   await page.evaluate(() => {
     window.testMidi.inputs.get('ri').state = 'connected';

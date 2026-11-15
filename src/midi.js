@@ -1,7 +1,7 @@
 import { createArpeggiator } from './arpeggiator.js';
 import { createLooper } from './looper.js';
 import { getPreference, setPreference } from './preferences.js';
-import { captureParameters, controlNumber, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
+import { captureParameters, deviceParameters, controlNumber, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
   parameterMessage, requestMessage } from './synth-midi.js';
 
 export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}) {
@@ -15,6 +15,15 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   const modwheelValue = document.querySelector('#midi-modwheel-value');
   const modwheelReadout = document.querySelector('#midi-modwheel-readout');
   const mappingStatus = document.querySelector('#midi-mapping-status');
+  const deviceStatus = document.querySelector('#device-panel-status');
+  const statusLog = document.querySelector('#midisettingslog');
+  const captureStatus = document.querySelector('#capture-status');
+  const statusMessages = [status, deviceStatus, mappingStatus, captureStatus];
+  const statusObserver = new MutationObserver(updateStatusPresentation);
+  statusObserver.observe(badge, { attributes: true, attributeFilter: ['data-state'] });
+  statusObserver.observe(statusLog, { subtree: true, childList: true, characterData: true,
+    attributes: true, attributeFilter: ['data-severity'] });
+  updateStatusPresentation();
   const selected = { input: '', output: '', controller: '' };
   const manuallySelected = { input: false, output: false, controller: false };
   const names = new Map();
@@ -28,13 +37,20 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   const activeSustain = new Map();
   const ccValues = new Map();
   const revisions = new Map();
-  const captureStatus = document.querySelector('#capture-status');
   let midiAccess;
   let sysexAccess;
   let sysexInput;
   let sysexPromise;
   let pendingParameter;
   let capturing = false;
+  let capturingSynth = false;
+  let cancelCapture = false;
+  const settingsIdleWaiters = [];
+  let connectionKey = '';
+  let connectionInput;
+  let connectionOutput;
+  let connectionVersion = 0;
+  let receiveChannel = 16;
   let midiControlStatus = 'unknown';
   let muted = false;
   let transpose = 0;
@@ -77,14 +93,55 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   const arpeggiator = createArpeggiator((message) => sendLive(output, message, 'arpeggiator'), changeRouting,
     () => muted, () => transpose, onArpeggiatorTempo);
 
+  function updateStatusPresentation() {
+    const connected = badge.dataset.state === 'connected';
+    const messages = statusMessages.map((element) => element.textContent.trim()).filter(Boolean);
+    if (connected) {
+      badge.title = ['midi connected', ...messages].join('\n');
+      badge.setAttribute('aria-label', ['MIDI connected', ...messages].join('. '));
+      badge.tabIndex = 0;
+    } else {
+      badge.removeAttribute('title');
+      badge.removeAttribute('aria-label');
+      badge.removeAttribute('tabindex');
+    }
+    for (const element of statusMessages) {
+      element.hidden = connected && !['error', 'warning'].includes(element.dataset.severity);
+    }
+    statusLog.hidden = !statusMessages.some((element) => !element.hidden && element.textContent.trim());
+  }
+
+  function setStatus(message, severity = 'normal') {
+    status.dataset.severity = severity;
+    status.textContent = message;
+  }
+
+  function setCaptureStatus(message, severity = 'normal') {
+    captureStatus.dataset.severity = severity;
+    captureStatus.textContent = message;
+  }
+
+  function finishSettingsOperation() {
+    capturing = false;
+    settingsIdleWaiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  function whenSettingsIdle() {
+    return capturing ? new Promise((resolve) => settingsIdleWaiters.push(resolve)) : Promise.resolve();
+  }
+
   function reportError(message) {
     lastError = message;
-    status.textContent = message;
+    setStatus(message, 'error');
   }
 
   function setSharedTempo(bpm) {
     onSynthValue('tempo', bpm);
     if (output) setControl('tempo', bpm);
+  }
+
+  function routed(message) {
+    return receiveChannel === 16 ? message : [message[0] & 0xf0 | receiveChannel, ...message.slice(1)];
   }
 
   function setControl(id, value) {
@@ -93,7 +150,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     const message = encodeControl(id, value);
     if (message) {
       if ((message[0] & 0xf0) === 0xb0) rememberCC(message[1], message[2]);
-      send(output, message);
+      send(output, routed(message));
     }
     else if (encodeParameter(id, value)) void sendParameter(id, value, revision);
   }
@@ -114,7 +171,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
         continue;
       }
       rememberCC(message[1], message[2]);
-      if (send(output, message)) sent++;
+      if (send(output, routed(message))) sent++;
       else failed++;
     }
     return { sent, failed, total: values.length, unavailable: false };
@@ -149,11 +206,13 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   function updateMappingStatus() {
     const held = modwheelCC !== 64 && [...activeSustain.values()]
       .some((source) => source === 'modwheel' || source === 'slider');
+    mappingStatus.dataset.severity = mappingError ? 'error' : held ? 'warning' : 'normal';
     mappingStatus.textContent = [mappingError,
       held ? 'Sustain remains active; send CC 64 off or use MIDI Reset.' : ''].filter(Boolean).join(' ');
   }
 
   function sendControllerCC(message, source) {
+    message = routed(message);
     const channel = message[0] & 0x0f;
     if (message[1] >= 120 && queuedNotes.length) looper.invalidateSchedule();
     if (!send(output, message)) return;
@@ -214,6 +273,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   }
 
   function queueOwned(message, owner, at) {
+    message = routed(message);
     const now = performance.now();
     while (queuedNotes.length && queuedNotes[0].at <= now) {
       const event = queuedNotes.shift();
@@ -227,7 +287,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
 
   function sendOwned(port, message, owner) {
     if (queuedNotes.length) looper.invalidateSchedule();
-    return applyOwned(message, owner, outputNotes, (data) => send(port, data));
+    return applyOwned(routed(message), owner, outputNotes, (data) => send(port, data));
   }
 
   function applyOwned(message, owner, state, emit) {
@@ -367,7 +427,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
         rememberCC(message[1], message[2]);
         sendControllerCC(message, fromModwheel ? 'modwheel' : 'controller');
       } else {
-        send(output, message);
+        send(output, routed(message));
       }
       mirrorControl(message);
       return;
@@ -494,9 +554,20 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     const outputAvailable = outputs.some((port) => port.id === selected.output);
     const controllerAvailable = inputs.some((port) => port.id === selected.controller);
     const connected = inputAvailable && outputAvailable;
+    const nextConnectionKey = `${selected.input}:${inputAvailable}:${selected.output}:${outputAvailable}`;
+    const nextInput = inputs.find((port) => port.id === selected.input);
+    if (connectionKey !== nextConnectionKey || connectionInput !== nextInput || connectionOutput !== output) {
+      if (receiveChannel !== 16 && output && !outputChanged) releaseOutput(output);
+      receiveChannel = 16;
+      connectionKey = nextConnectionKey;
+      connectionInput = nextInput;
+      connectionOutput = output;
+      connectionVersion++;
+      groove.onDeviceConnectionChanged?.();
+    }
     badge.dataset.state = connected ? 'connected' : 'disconnected';
     badge.textContent = connected ? 'reface MIDI ports available' : 'reface MIDI ports unavailable';
-    status.textContent = `reface input ${inputAvailable ? 'available' : 'unavailable'}; output ${outputAvailable ? 'available' : 'unavailable'}; controller input ${controllerAvailable ? 'available' : 'unavailable'}. MIDI Control: ${midiControlStatus}; it must be enabled on the synth for panel CCs. Port names do not verify hardware identity.${lastError ? ` ${lastError}` : ''}`;
+    setStatus(`reface input ${inputAvailable ? 'available' : 'unavailable'}; output ${outputAvailable ? 'available' : 'unavailable'}; controller input ${controllerAvailable ? 'available' : 'unavailable'}. MIDI Control: ${midiControlStatus}; it must be enabled on the synth for panel CCs. Port names do not verify hardware identity.${lastError ? ` ${lastError}` : ''}`, lastError || !connected ? 'error' : 'normal');
   }
 
   function bindSysexInput() {
@@ -533,6 +604,10 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
         sysexAccess = access;
         access.addEventListener('statechange', bindSysexInput);
         bindSysexInput();
+        if (lastError.startsWith('SysEx access failed:')) {
+          lastError = '';
+          refresh();
+        }
         return true;
       }).catch((error) => {
         reportError(`SysEx access failed: ${error.message || error}. Ordinary MIDI remains available.`);
@@ -545,8 +620,13 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   async function sendParameter(id, value, revision) {
     const inputId = selected.input;
     const outputId = selected.output;
+    const version = connectionVersion;
     if (!await ensureSysex()) return;
-    if (selected.input !== inputId || selected.output !== outputId || revisions.get(id) !== revision) return;
+    if (connectionVersion !== version || selected.input !== inputId || selected.output !== outputId) {
+      reportError('MIDI connection changed; setting was not sent.');
+      return;
+    }
+    if (revisions.get(id) !== revision) return;
     const target = sysexAccess.outputs.get(outputId);
     const parameter = encodeParameter(id, value);
     send(target, parameterMessage(parameter.address, parameter.data));
@@ -568,38 +648,50 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   }
 
   async function captureSynth() {
-    if (capturing) return;
+    if (capturing) {
+      setCaptureStatus('Capture skipped: another synth settings operation is in progress.', 'warning');
+      return;
+    }
     capturing = true;
-    const button = document.querySelector('#capture-synth');
-    button.disabled = true;
+    capturingSynth = true;
+    cancelCapture = false;
     const inputId = selected.input;
     const outputId = selected.output;
+    const version = connectionVersion;
     const initialRevisions = new Map(revisions);
     try {
-      captureStatus.textContent = 'Requesting synth settings...';
+      setCaptureStatus('Requesting synth settings...');
       midiControlStatus = 'unknown';
       if (midiAccess) refresh();
       if (!await ensureSysex()) {
-        captureStatus.textContent = 'Capture failed: SysEx access or MIDI connection unavailable.';
+        setCaptureStatus('Capture failed: SysEx access or MIDI connection unavailable.', 'error');
         return;
       }
       const target = sysexAccess.outputs.get(outputId);
       if (!sysexInput || !target || target.state !== 'connected') {
-        captureStatus.textContent = 'Capture failed: selected SysEx input or output is unavailable.';
+        setCaptureStatus('Capture failed: selected SysEx input or output is unavailable.', 'error');
         return;
       }
       const missing = [];
       let captured = 0;
       for (const parameter of captureParameters) {
-        if (selected.input !== inputId || selected.output !== outputId || target.state !== 'connected') {
-          captureStatus.textContent = 'Capture stopped because the MIDI connection changed.';
+        if (cancelCapture) {
+          setCaptureStatus('Automatic capture stopped for another device settings operation.', 'warning');
           return;
         }
-        captureStatus.textContent = `Capturing synth: ${captured} received; requesting ${parameter.id}.`;
+        if (connectionVersion !== version || selected.input !== inputId || selected.output !== outputId || target.state !== 'connected') {
+          setCaptureStatus('Capture stopped because the MIDI connection changed.', 'warning');
+          return;
+        }
+        setCaptureStatus(`Capturing synth: ${captured} received; requesting ${parameter.id}.`);
         const revision = initialRevisions.get(parameter.id) || 0;
         const result = await requestParameter(parameter, target);
-        if (selected.input !== inputId || selected.output !== outputId || !sysexInput || target.state !== 'connected') {
-          captureStatus.textContent = 'Capture stopped because the MIDI connection changed.';
+        if (cancelCapture) {
+          setCaptureStatus('Automatic capture stopped for another device settings operation.', 'warning');
+          return;
+        }
+        if (connectionVersion !== version || selected.input !== inputId || selected.output !== outputId || !sysexInput || target.state !== 'connected') {
+          setCaptureStatus('Capture stopped because the MIDI connection changed.', 'warning');
           return;
         }
         if (!result || (revisions.get(parameter.id) || 0) !== revision) {
@@ -616,15 +708,82 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
           captured++;
         }
       }
-      captureStatus.textContent = `Captured ${captured} settings. Not captured: expression, octave, looper, pitch bend${missing.length ? `, ${missing.join(', ')}` : ''}.`;
+      setCaptureStatus(`Captured ${captured} settings. Not captured: expression, octave, looper, pitch bend${missing.length ? `, ${missing.join(', ')}` : ''}.`,
+        missing.length ? 'warning' : 'normal');
     } finally {
-      capturing = false;
-      button.disabled = false;
+      capturingSynth = false;
+      finishSettingsOperation();
     }
   }
 
-  document.querySelector('#capture-synth').addEventListener('click', captureSynth);
-  document.getElementById("capture-synth").setAttribute("disabled", true);
+  async function deviceSettingsOperation(ids, changes, onResult) {
+    const inputId = selected.input;
+    const outputId = selected.output;
+    const version = connectionVersion;
+    if (capturingSynth) {
+      cancelCapture = true;
+      pendingParameter?.finish(null);
+      await whenSettingsIdle();
+    }
+    if (capturing) throw new Error('Another synth settings operation is in progress.');
+    if (connectionVersion !== version) throw new Error('MIDI connection changed during the operation.');
+    capturing = true;
+    try {
+      if (!await ensureSysex()) throw new Error('SysEx access or MIDI connection unavailable.');
+      const target = sysexAccess.outputs.get(outputId);
+      if ((!changes && !sysexInput) || !target || target.state !== 'connected') {
+        throw new Error('Selected MIDI input or output is unavailable.');
+      }
+      const checkConnection = () => {
+        if (connectionVersion !== version || selected.input !== inputId || selected.output !== outputId
+          || (!changes && (!sysexInput || sysexInput.id !== inputId)) || target.state !== 'connected') {
+          throw new Error('MIDI connection changed during the operation.');
+        }
+      };
+      for (const id of ids) {
+        checkConnection();
+        const parameter = deviceParameters.find((item) => item.id === id);
+        if (!parameter) throw new Error(`Unknown device setting: ${id}`);
+        if (changes) {
+          const encoded = encodeParameter(id, changes[id]);
+          if (!encoded) throw new Error(`Invalid value for ${id}.`);
+          if (id === 'midi-receive' && changes[id] !== receiveChannel) {
+            groove.onDrumStop?.();
+            releaseOutput(output);
+            groove.clearLocalNotes?.();
+            received.clear();
+            onNotesChanged();
+          }
+          if (!send(target, parameterMessage(encoded.address, encoded.data))) {
+            onResult(id, null, 'failed');
+            continue;
+          }
+          if (id === 'midi-receive') receiveChannel = changes[id];
+          onResult(id, changes[id], 'sent');
+        }
+        const result = sysexInput?.id === inputId ? await requestParameter(parameter, target) : null;
+        checkConnection();
+        if (id === 'midi-receive' && result && result.value !== receiveChannel) {
+          groove.onDrumStop?.();
+          releaseOutput(output);
+          groove.clearLocalNotes?.();
+          received.clear();
+          onNotesChanged();
+          receiveChannel = result.value;
+        }
+        if (id === 'midi-control' && result) {
+          midiControlStatus = result.value ? 'on' : 'off';
+          refresh();
+        }
+        onResult(id, result?.value ?? null, changes
+          ? result?.value === changes[id] ? 'confirmed' : 'unconfirmed'
+          : result ? 'read' : 'unknown');
+      }
+    } finally {
+      finishSettingsOperation();
+    }
+  }
+
   modwheelTarget.addEventListener('change', () => {
     const next = Number(modwheelTarget.value);
     modwheelCC = next;
@@ -673,25 +832,28 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     if (!navigator.requestMIDIAccess) {
       badge.dataset.state = 'error';
       badge.textContent = 'MIDI unavailable';
-      status.textContent = 'Web MIDI is unavailable. Use Chrome or Edge in a secure context.';
+      setStatus('Web MIDI is unavailable. Use Chrome or Edge in a secure context.', 'error');
       return;
     }
     connect.disabled = true;
     badge.textContent = 'Requesting MIDI access';
-    status.textContent = 'Waiting for browser MIDI permission.';
+    setStatus('Waiting for browser MIDI permission.');
     try {
       midiAccess = await navigator.requestMIDIAccess();
       midiAccess.addEventListener('statechange', refresh);
       refresh();
       connect.textContent = 'MIDI connected';
-      connect.classList.remove('notconnectedmidi');
-      connect.classList.add('connectedmidi');
-      document.getElementById('capture-synth').removeAttribute('disabled'); 
-      document.getElementById('capture-synth').classList.add('notconnectedmidi');
+      badge.dataset.access = 'granted';
+      connect.hidden = true;
     } catch (error) {
       badge.dataset.state = 'error';
       badge.textContent = 'MIDI access failed';
-      status.textContent = `Could not access MIDI: ${error.message || error}. Check browser permissions and try again.`;
+      badge.removeAttribute('title');
+      badge.removeAttribute('aria-label');
+      delete badge.dataset.access;
+      setStatus(`Could not access MIDI: ${error.message || error}. Check browser permissions and try again.`, 'error');
+      connect.textContent = 'Connect MIDI';
+      connect.hidden = false;
       connect.disabled = false;
     }
   });
@@ -764,7 +926,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       reportError(`MIDI reset failed${failed ? ` (${failed} of ${messages.length} messages)` : ''}: ${firstError}. Held-note state cleared.`);
     } else {
       lastError = '';
-      status.textContent = 'MIDI reset messages sent. Release and play held keys again.';
+      setStatus('MIDI reset messages sent. Release and play held keys again.');
     }
   }
 
@@ -800,6 +962,22 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     },
     sendPatchControls,
     setControl,
+    captureSynth,
+    setCaptureStatus,
+    whenSettingsIdle,
+    readDeviceSettings(ids, onResult) {
+      return deviceSettingsOperation(ids, null, onResult);
+    },
+    applyDeviceSettings(changes, onResult) {
+      const ids = Object.keys(changes).sort((a, b) => (a === 'midi-transmit') - (b === 'midi-transmit'));
+      return deviceSettingsOperation(ids, changes, onResult);
+    },
+    hasDeviceConnection() {
+      return midiAccess?.inputs.get(selected.input)?.state === 'connected' && output?.state === 'connected';
+    },
+    hasDeviceOutput() {
+      return output?.state === 'connected';
+    },
     listSavedLoops: looper.listSavedLoops,
     replaceSavedLoops: looper.replaceSavedLoops,
     importSavedLoops: looper.importSavedLoops,

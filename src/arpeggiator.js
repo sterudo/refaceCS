@@ -1,4 +1,5 @@
 import { tempoRange } from './synth-midi.js';
+import { createSevenSegment } from './seven-segment.js';
 
 const triads = {
   0: [0, 4, 7], 2: [0, 3, 7], 4: [0, 3, 7], 5: [0, 4, 7],
@@ -52,35 +53,10 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     });
   }
 
-  const segmentShapes = {
-    a: '2,0 9,0 8,1.5 3,1.5', b: '9,1 10.5,2 10.5,8 9,9 8,8 8,2',
-    c: '9,10 10.5,11 10.5,17 9,18 8,17 8,11', d: '2,18 9,18 8,19.5 3,19.5',
-    e: '1,10 2.5,11 2.5,17 1,18 0,17 0,11', f: '1,1 2.5,2 2.5,8 1,9 0,8 0,2',
-    g: '2,9 3,8.2 8,8.2 9,9 8,9.8 3,9.8',
-  };
-  const digitSegments = ['abcdef', 'bc', 'abdeg', 'abcdg', 'bcfg',
-    'acdfg', 'acdefg', 'abc', 'abcdefg', 'abcdfg'];
-  const digits = Array.from({ length: 3 }, (_, index) => {
-    const digit = document.createElementNS(svgNS, 'g');
-    digit.setAttribute('transform', `translate(${index * 13} 0)`);
-    const segments = new Map();
-    for (const [name, points] of Object.entries(segmentShapes)) {
-      const segment = document.createElementNS(svgNS, 'polygon');
-      segment.setAttribute('points', points);
-      segment.setAttribute('class', 'arp-segment');
-      digit.append(segment);
-      segments.set(name, segment);
-    }
-    tempoDigits.append(digit);
-    return segments;
-  });
+  const renderTempo = createSevenSegment(tempoDigits);
 
   function updateTempoDisplay() {
-    const text = String(tempo).padStart(3, ' ');
-    digits.forEach((segments, index) => {
-      const lit = text[index] === ' ' ? '' : digitSegments[Number(text[index])];
-      for (const [name, element] of segments) element.classList.toggle('is-lit', lit.includes(name));
-    });
+    renderTempo(tempo);
     tempoControl.dataset.value = String(tempo);
     tempoControl.setAttribute('aria-label', `Arpeggiator tempo: ${tempo} BPM`);
     document.querySelector('#arp-tempo-down').setAttribute('aria-disabled', String(tempo === tempoRange.min));
