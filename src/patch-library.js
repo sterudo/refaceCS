@@ -5,7 +5,7 @@ import {
   validatePatch,
 } from './patches.js';
 import { createAudioRecorder } from './audio-recording.js';
-import { confirmAction, exportDialog } from './dialogs.js';
+import { choose, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
 
 const CONTROL_GROUPS = [
@@ -80,7 +80,7 @@ function makeTag(text) {
   return tag;
 }
 
-export function createPatchLibrary({ root, getControls, applyControls }) {
+export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls }) {
   const store = new PatchStore();
   const status = document.querySelector('#patch-status');
   const cards = root.querySelector('#patch-cards');
@@ -103,6 +103,14 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   const categoryOptions = document.querySelector('#patch-category-options');
   const tagsInput = document.querySelector('#patch-tags');
   const cancelEditor = document.querySelector('#patch-editor-cancel');
+  const editorStatus = document.querySelector('#patch-editor-status');
+  const display = panel.querySelector('#patch-display-screen');
+  const displayName = panel.querySelector('#patch-display-name');
+  const changedIndicator = panel.querySelector('#patch-changed-indicator');
+  const previous = panel.querySelector('#patch-previous');
+  const next = panel.querySelector('#patch-next');
+  const newButton = panel.querySelector('#patch-new');
+  const displaySaveButton = panel.querySelector('#patch-save-display');
   const preview = new Audio();
   const previewButton = iconButton('Play preview', 'play', 'patch-inline-play', () => {
     if (preview.src) {
@@ -118,6 +126,10 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   const selectedCategories = new Set();
   const selectedTags = new Set();
   let editingPatch = null;
+  let editorCompletion = null;
+  let editorSaved = false;
+  let editorAllowsReplacement = false;
+  let savingEditor = false;
   let audioTargetPatchId = null;
   let selectedPatchId = null;
   let activePreviewUrl = null;
@@ -125,6 +137,11 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   let draggingAudio = null;
   let savedControls = getControls();
   let activePatchId = null;
+  let detachedPatch = null;
+  let initialized = false;
+  let loadingPatch = false;
+  let displayedName = '';
+  let nameAnimation;
   const recording = createAudioRecorder({
     onSave: async (patchId, data) => {
       const patch = patches.find((item) => item.id === patchId);
@@ -507,6 +524,42 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  function controlsDiffer(a, b) {
+    return PATCH_CONTROL_IDS.some((id) => a[id] !== b[id]);
+  }
+
+  function hasUnsavedControls() {
+    return Boolean(detachedPatch) || controlsDiffer(getControls(), savedControls);
+  }
+
+  function updateDisplay() {
+    const active = patches.find((patch) => patch.id === activePatchId) ?? detachedPatch;
+    const name = active?.name ?? (initialized ? 'INIT' : 'No patch loaded');
+    const changed = hasUnsavedControls();
+    const description = `${name}${changed ? ' (unsaved changes)' : ''}`;
+    display.setAttribute('aria-label', description);
+    display.querySelector('title').textContent = description;
+    changedIndicator.setAttribute('visibility', changed ? 'visible' : 'hidden');
+    if (displayedName !== name) {
+      displayedName = name;
+      nameAnimation?.cancel();
+      displayName.textContent = name;
+      const overflow = Math.max(0, displayName.getComputedTextLength() - 132);
+      if (overflow && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const duration = 5 + overflow / 20;
+        nameAnimation = displayName.animate([
+          { transform: 'translateX(0px)', offset: 0 },
+          { transform: 'translateX(0px)', offset: 5 / duration },
+          { transform: `translateX(-${overflow}px)`, offset: 1 },
+        ], { duration: duration * 1000, iterations: Infinity });
+      }
+    }
+    const visible = visiblePatches();
+    const index = visible.findIndex((patch) => patch.id === activePatchId);
+    previous.setAttribute('aria-disabled', String(!visible.length || index === 0));
+    next.setAttribute('aria-disabled', String(!visible.length || index === visible.length - 1));
+  }
+
   function render() {
     const restoreCardFocus = cards.contains(document.activeElement);
     updateFilters();
@@ -527,11 +580,21 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     if (selectedPatchId && restoreCardFocus) {
       [...cards.children].find((card) => card.dataset.patchId === selectedPatchId)?.focus({ preventScroll: true });
     }
+    updateDisplay();
   }
 
   async function reload() {
+    const previousActive = patches.find((patch) => patch.id === activePatchId);
     patches = await store.list();
     categories = await store.listCategories();
+    if (activePatchId) {
+      const active = patches.find((patch) => patch.id === activePatchId);
+      if (active) savedControls = { ...active.controls };
+      else if (previousActive) {
+        activePatchId = null;
+        detachedPatch = previousActive;
+      }
+    }
     render();
   }
 
@@ -550,19 +613,57 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     }
   }
 
-  function openEditor(patch = null) {
+  function openEditor(patch = null, copy = null) {
     editingPatch = patch;
     editorForm.reset();
-    nameInput.value = patch?.name ?? '';
-    descriptionInput.value = patch?.description ?? '';
-    categoryInput.value = patch?.category ?? 'synth';
-    tagsInput.value = patch?.tags.join(', ') ?? '';
+    editorStatus.textContent = '';
+    let copyName = copy ? `${copy.name} (copy)` : '';
+    if (copy) {
+      let suffix = 2;
+      while (patches.some((item) => item.name.toLocaleLowerCase() === copyName.toLocaleLowerCase())) {
+        copyName = `${copy.name} (copy ${suffix++})`;
+      }
+    }
+    nameInput.value = patch?.name ?? copyName;
+    descriptionInput.value = patch?.description ?? copy?.description ?? '';
+    categoryInput.value = patch?.category ?? copy?.category ?? 'synth';
+    tagsInput.value = (patch?.tags ?? copy?.tags ?? []).join(', ');
     editor.showModal();
     nameInput.focus();
   }
 
+  function saveAsCopy({ allowReplacement = false } = {}) {
+    return new Promise((resolve) => {
+      editorCompletion = resolve;
+      editorSaved = false;
+      editorAllowsReplacement = allowReplacement;
+      openEditor(null, patches.find((patch) => patch.id === activePatchId) ?? detachedPatch);
+    });
+  }
+
+  async function audioForOverwrite(patch, controls) {
+    if (!patch.audio.length || !controlsDiffer(controls, patch.controls)) return patch.audio;
+    const action = await choose('Patch audio',
+      `The sound controls have changed. Keep or delete the audio attached to "${patch.name}"?`,
+      [['Cancel', 'cancel'], ['Keep audio', 'keep'], ['Delete audio', 'delete']]);
+    if (action === null || action === 'cancel') return null;
+    return action === 'delete' ? [] : patch.audio;
+  }
+
   async function saveEditor(event) {
     event.preventDefault();
+    if (savingEditor) return;
+    savingEditor = true;
+    cancelEditor.disabled = true;
+    try {
+      await saveEditorForm();
+    } finally {
+      savingEditor = false;
+      cancelEditor.disabled = false;
+    }
+  }
+
+  async function saveEditorForm() {
     const now = new Date().toISOString();
     const tags = tagsInput.value.split(',').map((tag) => tag.trim()).filter(Boolean);
     let candidate;
@@ -582,7 +683,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
         updatedAt: now,
       });
     } catch (error) {
-      setStatus(`Patch details are invalid: ${error.message || error}`);
+      editorStatus.textContent = `Patch details are invalid: ${error.message || error}`;
       return;
     }
     candidate.favorite = Boolean(editingPatch?.favorite);
@@ -590,25 +691,40 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     const conflict = patches.find((patch) => patch.id !== candidate.id
       && patch.name.toLocaleLowerCase() === candidate.name.toLocaleLowerCase());
     if (conflict) {
+      if (editorCompletion && !editorAllowsReplacement) {
+        editorStatus.textContent = 'A patch with that name already exists. Choose a different name.';
+        return;
+      }
       if (!await confirmAction('Replace patch', `Replace the existing "${conflict.name}" patch?`, 'Replace')) return;
       if (editingPatch) {
         try {
           await store.replace(editingPatch.id, { ...candidate, id: conflict.id });
+          if (activePatchId === editingPatch.id) activePatchId = conflict.id;
         } catch (error) {
-          setStatus(`Could not replace patch: ${error.message || error}`);
+          editorStatus.textContent = `Could not replace patch: ${error.message || error}`;
           return;
         }
       } else {
+        const audio = await audioForOverwrite(conflict, candidate.controls);
+        if (!audio) return;
         candidate = {
           ...conflict,
           controls: candidate.controls,
+          audio,
           updatedAt: now,
         };
-        if (!(await persist(candidate, `${conflict.name} updated.`))) return;
+        if (!(await persist(candidate, `${conflict.name} updated.`))) {
+          editorStatus.textContent = status.textContent;
+          return;
+        }
+        if (!audio.length && activePreviewAttachment?.patchId === conflict.id) stopPreview();
         savedControls = { ...candidate.controls };
         activePatchId = candidate.id;
+        detachedPatch = null;
+        initialized = false;
       }
       editingPatch = null;
+      editorSaved = true;
       editor.close();
       await reload();
       setStatus(`${conflict.name} replaced.`);
@@ -619,9 +735,15 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       if (!editingPatch) {
         savedControls = { ...candidate.controls };
         activePatchId = candidate.id;
+        detachedPatch = null;
+        initialized = false;
       }
       editingPatch = null;
+      editorSaved = true;
       editor.close();
+      updateDisplay();
+    } else {
+      editorStatus.textContent = status.textContent;
     }
   }
 
@@ -639,6 +761,10 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
         selectedPatchId = null;
         stopPreview();
       }
+      if (activePatchId === patch.id) {
+        activePatchId = null;
+        detachedPatch = patch;
+      }
       render();
       setStatus(`${patch.name} deleted.`);
     } catch (error) {
@@ -646,11 +772,94 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     }
   }
 
-  async function loadPatch(patch) {
+  async function overwriteActivePatch() {
+    const active = patches.find((item) => item.id === activePatchId);
+    if (!active) return false;
+    const controls = getControls();
+    const audio = await audioForOverwrite(active, controls);
+    if (!audio) return false;
+    const candidate = { ...active, controls, audio, updatedAt: new Date().toISOString() };
+    if (!await persist(candidate, `${active.name} updated.`)) return false;
+    if (!audio.length && activePreviewAttachment?.patchId === active.id) stopPreview();
+    savedControls = { ...controls };
+    updateDisplay();
+    return true;
+  }
+
+  async function preserveUnsavedControls(nextAction) {
+    while (hasUnsavedControls()) {
+      const active = patches.find((item) => item.id === activePatchId);
+      const choices = [
+        ['Cancel', 'cancel'], [`Discard and ${nextAction}`, 'discard'],
+        ...(active ? [[`Overwrite and ${nextAction}`, 'overwrite']] : []),
+        [`Save as and ${nextAction}`, 'save-as'],
+      ];
+      const action = await choose('Unsaved sound', 'The current sound has unsaved changes.', choices);
+      if (!action || action === 'cancel') return false;
+      if (action === 'discard') return true;
+      if (action === 'overwrite' && !await overwriteActivePatch()) return false;
+      if (action === 'save-as' && !await saveAsCopy()) return false;
+    }
+    return true;
+  }
+
+  async function saveCurrentPatch() {
+    if (loadingPatch) return;
+    loadingPatch = true;
     try {
+      const active = patches.find((item) => item.id === activePatchId);
+      if (!active) {
+        await saveAsCopy({ allowReplacement: true });
+        return;
+      }
+      const action = await choose('Save patch', `Save the current sound over "${active.name}" or as a new patch?`,
+        [['Cancel', 'cancel'], ['Overwrite', 'overwrite'], ['Save as', 'save-as']]);
+      if (action === 'overwrite') await overwriteActivePatch();
+      if (action === 'save-as') await saveAsCopy();
+    } catch (error) {
+      setStatus(`Could not save patch: ${error.message || error}`);
+    } finally {
+      loadingPatch = false;
+    }
+  }
+
+  async function initializePatch() {
+    if (loadingPatch) return;
+    loadingPatch = true;
+    try {
+      if (!await preserveUnsavedControls('initialize')) return;
+      const result = await applyControls(initialControls);
+      savedControls = { ...initialControls };
+      activePatchId = null;
+      detachedPatch = null;
+      initialized = true;
+      updateDisplay();
+      if (result.unavailable) {
+        setStatus('INIT loaded in the app; MIDI output unavailable, so no values were sent to the synth.');
+      } else if (result.failed || result.sent !== result.total) {
+        setStatus(`INIT loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`);
+      } else {
+        setStatus(`INIT loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
+      }
+    } catch (error) {
+      setStatus(`Could not initialize patch: ${error.message || error}`);
+    } finally {
+      loadingPatch = false;
+    }
+  }
+
+  async function loadPatch(patch) {
+    if (loadingPatch) return false;
+    loadingPatch = true;
+    try {
+      if (!await preserveUnsavedControls('load')) return false;
+      patch = patches.find((item) => item.id === patch.id) ?? patch;
       const result = await applyControls(patch.controls);
       savedControls = { ...patch.controls };
       activePatchId = patch.id;
+      detachedPatch = null;
+      initialized = false;
+      updateDisplay();
       if (!result.unavailable && result.failed === 0
         && result.sent === result.total && result.sent === PATCH_CONTROL_IDS.length) {
         setStatus(`${patch.name} loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
@@ -661,7 +870,9 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
         setStatus(`${patch.name} loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`);
       }
     } catch (error) {
-      setStatus(`Patch loaded in the app, but MIDI recall failed: ${error.message || error}`);
+      setStatus(`Could not complete patch load: ${error.message || error}`);
+    } finally {
+      loadingPatch = false;
     }
     return false;
   }
@@ -810,12 +1021,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       await reload();
       setStatus(`Imported ${saved} patch(es); skipped ${skipped}.`);
       if (activateSingle && imported.length === 1 && importedPatch) {
-        const current = getControls();
-        const changed = PATCH_CONTROL_IDS.some((id) => current[id] !== savedControls[id]);
-        if (!changed || await confirmAction('Unsaved sound',
-          'The current sound has unsaved changes. Replace it with the imported patch?', 'Replace')) {
-          await loadPatch(importedPatch);
-        }
+        await loadPatch(importedPatch);
       }
       return saved;
     } catch (error) {
@@ -825,7 +1031,7 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
     }
   }
 
-  saveButton.addEventListener('click', () => openEditor());
+  saveButton.addEventListener('click', () => { void saveCurrentPatch(); });
   audioFile.addEventListener('change', () => {
     void addAudio([...(audioFile.files ?? [])]);
   });
@@ -862,6 +1068,37 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
   });
   editorForm.addEventListener('submit', saveEditor);
   cancelEditor.addEventListener('click', () => editor.close());
+  editor.addEventListener('cancel', (event) => {
+    if (savingEditor) event.preventDefault();
+  });
+  editor.addEventListener('close', () => {
+    if (editorCompletion) {
+      const complete = editorCompletion;
+      editorCompletion = null;
+      complete(editorSaved);
+    }
+  });
+  function bindPanelButton(control, action) {
+    control.addEventListener('click', action);
+    control.addEventListener('keydown', (event) => {
+      if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+        event.preventDefault();
+        action();
+      }
+    });
+  }
+  bindPanelButton(newButton, () => { void initializePatch(); });
+  bindPanelButton(displaySaveButton, () => { void saveCurrentPatch(); });
+  for (const [control, direction] of [[previous, -1], [next, 1]]) {
+    const navigate = () => {
+      if (control.getAttribute('aria-disabled') === 'true') return;
+      const visible = visiblePatches();
+      const index = visible.findIndex((patch) => patch.id === activePatchId);
+      const target = index < 0 ? visible[direction < 0 ? visible.length - 1 : 0] : visible[index + direction];
+      if (target) void loadPatch(target);
+    };
+    bindPanelButton(control, navigate);
+  }
   window.addEventListener('pagehide', stopPreview);
 
   reload().then(() => setStatus('Patch library ready.'))
@@ -873,7 +1110,6 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       await store.replaceAll(records, values);
       stopPreview();
       selectedPatchId = null;
-      activePatchId = null;
       await reload();
     },
     async importCategories(categories) {
@@ -881,5 +1117,6 @@ export function createPatchLibrary({ root, getControls, applyControls }) {
       await reload();
     },
     importPatches,
+    controlsChanged: updateDisplay,
   };
 }

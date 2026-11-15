@@ -15,6 +15,7 @@ import { setupCloudBackup } from './cloud-ui.js';
 const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
 const dataInfoClose = document.querySelector('#data-info-close');
+let patchLibrary;
 function setDataInfoVisible(visible, save = true) {
   dataInfo.hidden = !visible;
   dataInfoOpen.hidden = visible;
@@ -244,6 +245,7 @@ function updateFader(fader, value, announce = true) {
   }
 
   updateVisualizations(fader.id);
+  if (changed && PATCH_CONTROL_IDS.includes(fader.id)) patchLibrary?.controlsChanged();
   if (announce) {
     status.textContent = `${fader.dataset.label}: ${valueText(fader)}`;
   }
@@ -446,7 +448,7 @@ function updateHeldDisplay() {
   const values = [
     ['#arp-held-notes', notes.length
       ? notes.map((note) => `${noteNames[note % 12]}${Math.floor(note / 12) - 1}`).join(' ') : 'None', 135],
-    ['#arp-detected-chord', chord?.name || 'None', 285],
+    ['#arp-detected-chord', chord?.name || 'None', 72],
   ];
   for (const [selector, value, width] of values) {
     const readout = document.querySelector(selector);
@@ -715,8 +717,13 @@ for (const [name, id] of [
 const positionExpression = document.querySelector('#position-expression');
 positionExpression.checked = getPreference('positionExpression', (value) => typeof value === 'boolean', false);
 positionExpression.addEventListener('change', () => setPreference('positionExpression', positionExpression.checked));
-const patchLibrary = createPatchLibrary({
+patchLibrary = createPatchLibrary({
   root: document.querySelector('#patch-library'),
+  panel,
+  initialControls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => {
+    const fader = panel.querySelector(`#${id}`);
+    return [id, startingValues.get(fader)];
+  })),
   getControls: () => Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [
     id,
     readValue(panel.querySelector(`#${id}`)),

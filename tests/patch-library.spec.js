@@ -10,6 +10,8 @@ test.beforeEach(async ({ page }) => {
 
 async function savePatch(page, { name, description = '', category = 'synth', tags = '' }) {
   await page.locator('#patch-save').click();
+  const choice = page.getByRole('dialog', { name: 'Save patch' });
+  if (await choice.isVisible()) await choice.getByRole('button', { name: 'Save as' }).click();
   await page.locator('#patch-name').fill(name);
   await page.locator('#patch-description').fill(description);
   await page.locator('#patch-category').fill(category);
@@ -17,6 +19,241 @@ async function savePatch(page, { name, description = '', category = 'synth', tag
   await page.locator('#patch-editor-form button[type="submit"]').click();
   return page.locator('.patch-card').filter({ has: page.getByRole('heading', { name }) });
 }
+
+test('new patch protects changes and resets only patch controls to INIT', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await savePatch(page, { name: 'Saved' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#tempo').press('Home');
+  await page.locator('#octave').press('Home');
+  await page.locator('#patch-new').press('Enter');
+  const prompt = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await prompt.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Saved (unsaved changes)');
+  await page.locator('#patch-new').click();
+  await prompt.getByRole('button', { name: 'Discard and initialize' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'INIT');
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '240');
+  await expect(page.locator('#octave')).toHaveAttribute('aria-valuenow', '4');
+  await page.locator('#patch-save-display').click();
+  await expect(page.locator('#patch-editor')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Save patch' })).toHaveCount(0);
+  await page.locator('#patch-name').fill('From INIT');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'From INIT');
+});
+
+test('both save buttons offer overwrite or save as for a loaded patch', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const card = await savePatch(page, { name: 'Original', description: 'Warm', category: 'pads', tags: 'soft' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await card.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await expect(card.locator('.patch-audio-item')).toHaveCount(1);
+  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#patch-save').click();
+  const choice = page.getByRole('dialog', { name: 'Save patch' });
+  await choice.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original (unsaved changes)');
+  await page.locator('#patch-save-display').press('Enter');
+  await choice.getByRole('button', { name: 'Overwrite' }).click();
+  await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Keep audio' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original');
+  await expect(card.locator('.patch-audio-item')).toHaveCount(1);
+  await page.locator('#lfo-depth').press('End');
+  await page.locator('#patch-save').click();
+  await choice.getByRole('button', { name: 'Save as' }).click();
+  await expect(page.locator('#patch-name')).toHaveValue('Original (copy)');
+  await expect(page.locator('#patch-description')).toHaveValue('Warm');
+  await expect(page.locator('#patch-category')).toHaveValue('pads');
+  await expect(page.locator('#patch-tags')).toHaveValue('soft');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original (copy)');
+  await expect(page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Original (copy)', exact: true }) }).locator('.patch-audio-item')).toHaveCount(0);
+});
+
+test('initializing can save changed controls as a separate patch', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await savePatch(page, { name: 'Original' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#patch-new').click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Save as and initialize' }).click();
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'INIT');
+  const copy = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Original (copy)', exact: true }) });
+  await copy.getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('saving without an active patch can explicitly replace an existing patch', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const card = await savePatch(page, { name: 'Existing' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await card.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await expect(card.locator('.patch-audio-item')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'No patch loaded');
+  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#patch-save-display').click();
+  await page.locator('#patch-name').fill('Existing');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await page.getByRole('dialog', { name: 'Replace patch' }).getByRole('button', { name: 'Replace' }).click();
+  await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Delete audio' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Existing');
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await expect(card.locator('.patch-audio-item')).toHaveCount(0);
+  await page.reload();
+  await page.locator('#patch-next').click();
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('patch display tracks known changes and navigates the filtered list', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await savePatch(page, { name: 'Alpha' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await savePatch(page, { name: 'Beta' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Beta');
+  await expect(page.locator('#patch-next')).toHaveAttribute('aria-disabled', 'true');
+  await page.locator('#lfo-depth').press('Home');
+  await expect(page.locator('#patch-changed-indicator')).toHaveAttribute('visibility', 'visible');
+  await page.locator('#lfo-depth').press('End');
+  await expect(page.locator('#patch-changed-indicator')).toHaveAttribute('visibility', 'hidden');
+  await page.locator('#patch-previous').press('Enter');
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Alpha');
+  await expect(page.locator('#patch-previous')).toHaveAttribute('aria-disabled', 'true');
+  await page.locator('#patch-name-filter').fill('Beta');
+  await expect(page.locator('#patch-next')).toHaveAttribute('aria-disabled', 'false');
+  await page.locator('#patch-next').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Beta');
+  await page.reload();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'No patch loaded');
+  await page.locator('#patch-next').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Alpha');
+});
+
+test('unsaved changes can be saved as a new patch without copying audio', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const source = await savePatch(page, { name: 'Original', description: 'Warm', category: 'pads', tags: 'soft' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await source.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await expect(source.locator('.patch-audio-item')).toHaveCount(1);
+  await savePatch(page, { name: 'Target' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.locator('#lfo-depth').press('Home');
+  await page.locator('#patch-next').click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Save as and load' }).click();
+  await expect(page.locator('#patch-name')).toHaveValue('Original (copy)');
+  await expect(page.locator('#patch-description')).toHaveValue('Warm');
+  await expect(page.locator('#patch-category')).toHaveValue('pads');
+  await expect(page.locator('#patch-tags')).toHaveValue('soft');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Target');
+  const copy = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Original (copy)', exact: true }) });
+  await expect(copy.locator('.patch-audio-item')).toHaveCount(0);
+  await expect(source.locator('.patch-audio-item')).toHaveCount(1);
+  await copy.getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
+});
+
+test('overwriting changed controls asks whether to keep attached audio', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const source = await savePatch(page, { name: 'Original' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await source.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await expect(source.locator('.patch-audio-item')).toHaveCount(1);
+  await page.locator('#lfo-depth').press('Home');
+  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
+  await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original (unsaved changes)');
+  await expect(source.locator('.patch-audio-item')).toHaveCount(1);
+  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
+  await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Keep audio' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original');
+  await expect(source.locator('.patch-audio-item')).toHaveCount(1);
+  await page.locator('#lfo-depth').press('End');
+  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
+  await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Delete audio' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original');
+  await expect(source.locator('.patch-audio-item')).toHaveCount(0);
+  await page.reload();
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+});
+
+test('deleting the active patch retains its name as an unsaved sound', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  const card = await savePatch(page, { name: 'Delete me' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await card.getByRole('button', { name: 'Delete Delete me' }).click();
+  await page.getByRole('dialog', { name: 'Delete patch' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Delete me (unsaved changes)');
+});
+
+test('changed controls without a loaded patch are protected from replacement', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await savePatch(page, { name: 'Target' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await page.reload();
+  await page.locator('#lfo-depth').press('Home');
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'No patch loaded (unsaved changes)');
+  await page.locator('#patch-next').click();
+  const prompt = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await expect(prompt.getByRole('button', { name: 'Overwrite and load' })).toHaveCount(0);
+  await prompt.getByRole('button', { name: 'Save as and load' }).click();
+  await page.locator('#patch-editor-cancel').click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'No patch loaded (unsaved changes)');
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
+  await page.locator('#patch-next').click();
+  await prompt.getByRole('button', { name: 'Discard and load' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Target');
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+});
+
+test('long patch names scroll after five seconds and retain the full tooltip', async ({ page }) => {
+  const name = 'A very long patch name that does not fit in the compact display';
+  await savePatch(page, { name });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  const screen = page.locator('#patch-display-screen');
+  await expect(screen.locator('title')).toHaveText(name);
+  const animation = await page.locator('#patch-display-name').evaluate((element) => {
+    const active = element.getAnimations()[0];
+    return {
+      duration: active.effect.getTiming().duration,
+      holdEnd: active.effect.getKeyframes()[1].offset,
+    };
+  });
+  expect(animation.duration * animation.holdEnd).toBeCloseTo(5000, 3);
+  const displayBounds = await page.locator('#patch-save-display .arp-bezel').boundingBox();
+  const logoBounds = await page.locator('#cs-logo').boundingBox();
+  expect(displayBounds.x + displayBounds.width).toBeLessThan(logoBounds.x);
+});
+
+test('long patch names do not scroll with reduced motion enabled', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await savePatch(page, { name: 'A very long patch name that does not fit in the compact display' });
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  expect(await page.locator('#patch-display-name').evaluate((element) => element.getAnimations().length)).toBe(0);
+});
 
 test('exports a single patch and its audio separately', async ({ page }) => {
   await page.locator('#footer-panel').first().locator('summary').click();

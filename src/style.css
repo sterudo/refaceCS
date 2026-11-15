@@ -346,6 +346,8 @@ input[type="range"]:focus-visible,
   text-anchor: middle;
 }
 .arp-button:hover .arp-lens { filter: brightness(1.12); }
+.patch-navigation[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.patch-navigation[aria-disabled="true"]:hover .arp-lens { filter: none; }
 .arp-toggle[aria-pressed="true"]:hover .arp-lens {
   filter: brightness(1.1) drop-shadow(0 0 3px #f4a42c);
 }

@@ -68,6 +68,60 @@ test('CC and pitch bend send and receive without echo or connect synchronization
   expect(await page.evaluate(() => window.testSynth.requests)).toEqual(['ordinary']);
 });
 
+test('patch change indicator follows received sound controls but not performance controls', async ({ page }) => {
+  await page.locator('#patch-save').click();
+  await page.locator('#patch-name').fill('Hardware feedback');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 11, 37]));
+  await expect(page.locator('#patch-changed-indicator')).toHaveAttribute('visibility', 'hidden');
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 74, 42]));
+  await expect(page.locator('#patch-changed-indicator')).toHaveAttribute('visibility', 'visible');
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 74, 127]));
+  await expect(page.locator('#patch-changed-indicator')).toHaveAttribute('visibility', 'hidden');
+});
+
+test('INIT sends sound defaults without resetting performance or tempo', async ({ page }) => {
+  await page.locator('#filter-cutoff').press('End');
+  await page.locator('#tempo').press('Home');
+  await page.evaluate(() => { window.testSynth.sent.length = 0; });
+  await page.locator('#patch-new').click();
+  await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Discard and initialize' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'INIT');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+  await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '240');
+  const messages = await page.evaluate(() => window.testSynth.sent);
+  expect(messages).toHaveLength(17);
+  expect(messages).toContainEqual([0xb0, 74, 127]);
+  expect(messages.every((message) => message[0] === 0xb0)).toBe(true);
+});
+
+test('MIDI changes received while saving are not discarded by a pending patch load', async ({ page }) => {
+  await page.locator('#footer-panel').first().locator('summary').click();
+  await page.locator('#patch-save').click();
+  await page.locator('#patch-name').fill('MIDI changes');
+  await page.locator('#patch-editor-form button[type="submit"]').click();
+  await expect(page.locator('#patch-editor')).not.toBeVisible();
+  const card = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'MIDI changes' }) });
+  await card.getByRole('button', { name: 'Add MP3' }).click();
+  await page.locator('#patch-audio-file').setInputFiles({
+    name: 'take.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('audio bytes'),
+  });
+  await expect(card.locator('.patch-audio-item')).toHaveCount(1);
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 74, 42]));
+  await card.getByRole('button', { name: 'Load', exact: true }).click();
+  const unsaved = page.getByRole('dialog', { name: 'Unsaved sound' });
+  await unsaved.getByRole('button', { name: 'Overwrite and load' }).click();
+  const audio = page.getByRole('dialog', { name: 'Patch audio' });
+  await expect(audio).toBeVisible();
+  await page.evaluate(() => window.testSynth.emit('ri', [0xb0, 74, 64]));
+  await audio.getByRole('button', { name: 'Keep audio' }).click();
+  await expect(unsaved).toBeVisible();
+  await unsaved.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '64');
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'MIDI changes (unsaved changes)');
+});
+
 test('SysEx settings use explicit permission and app-routed notes are transposed', async ({ page }) => {
   await page.locator('#transpose').press('ArrowUp');
   await expect.poll(() => page.evaluate(() => window.testSynth.sent.length)).toBe(1);
