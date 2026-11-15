@@ -3,6 +3,8 @@ import { askName, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
 import { writeGrooveMidi } from './midi-file.js';
 import { createDrumTones, validToneValues } from './drum-tones.js';
+import { createDrumMidi } from './drum-midi.js';
+import { getPreference, setPreference } from './preferences.js';
 
 const storageKey = 'refaceCS.drumPatterns.v1';
 const maxOffset = 600;
@@ -60,6 +62,18 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   const calibrationDelay = element('calibration-delay');
   const calibrationDone = element('calibration-done');
   const audio = createDrumAudio(clock, fail);
+  const drumMidi = createDrumMidi({
+    onRouteChange: (message) => {
+      if (playing || starting) {
+        stop();
+        status.textContent = message || 'Drums stopped after MIDI settings changed.';
+      }
+    },
+    onMappingChange: () => {
+      if (playing) { resetMidiCursor(); tick(); }
+    },
+    onError: (message) => fail(message),
+  });
   const directions = new Map();
   let playing = false;
   let starting = false;
@@ -67,6 +81,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   let copiedBar = null;
   let timer;
   let nextBeat = 0;
+  let nextMidiBeat = 0;
   let firstBeat = 0;
   let startRevision = 0;
   let enabling;
@@ -74,6 +89,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   let calibration;
   let calibrationTimer;
   let calibrationRevision = 0;
+  let startOnKeypress = getPreference('grooveStartOnKeypress', (value) => typeof value === 'boolean', false);
+  element('start-on-keypress').checked = startOnKeypress;
+  element('start-on-keypress').addEventListener('change', () => {
+    startOnKeypress = element('start-on-keypress').checked;
+    setPreference('grooveStartOnKeypress', startOnKeypress);
+  });
   let store = {
     version: 1,
     patterns: [{ id: crypto.randomUUID(), name: 'Pattern 1', lanes: initialLanes() }],
@@ -157,6 +178,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     clearTimeout(timer);
     clock.stop('drums');
     audio.stop();
+    drumMidi.stop();
     playButton.setAttribute('aria-pressed', 'false');
     for (const step of lanesElement.querySelectorAll('.is-current')) step.classList.remove('is-current');
   }
@@ -210,7 +232,23 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       for (; nextBeat <= horizon + 1e-8; nextBeat += 0.25) {
         const step = stepAt(nextBeat);
         for (const lane of pattern().lanes) {
-          if (audible(lane) && lane.steps[step]) audio.trigger(lane, velocityFor(lane.steps[step]), clock.timeAt(nextBeat), true);
+          if (audible(lane) && lane.steps[step]) {
+            const velocity = velocityFor(lane.steps[step]);
+            const at = clock.timeAt(nextBeat);
+            if (drumMidi.internal()) audio.trigger(lane, velocity, at, true);
+          }
+        }
+      }
+      const offset = drumMidi.internal() ? clock.offset : 0;
+      const midiBeat = clock.beatAt(now - offset);
+      if (nextMidiBeat < midiBeat - 0.25) nextMidiBeat = Math.ceil(midiBeat * 4) / 4;
+      const midiHorizon = clock.beatAt(now + clock.lead - offset);
+      for (; nextMidiBeat <= midiHorizon + 1e-8; nextMidiBeat += 0.25) {
+        const step = stepAt(nextMidiBeat);
+        for (const lane of pattern().lanes) {
+          if (audible(lane) && lane.steps[step]) {
+            triggerExternal(lane, velocityFor(lane.steps[step]), clock.timeAt(nextMidiBeat) + offset);
+          }
         }
       }
       renderPlayhead();
@@ -227,20 +265,36 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     const committed = clock.beatAt(performance.now() + Math.max(0,
       (audio.context.baseLatency || 0) + (audio.context.outputLatency || 0)) * 1000 + 5);
     nextBeat = Math.max(firstBeat, Math.ceil((committed + 1e-8) * 4) / 4);
+    resetMidiCursor();
     tick();
   }
 
-  async function start(looperMode = 2) {
+  function resetMidiCursor() {
+    drumMidi.cancelFuture();
+    const offset = drumMidi.internal() ? clock.offset : 0;
+    nextMidiBeat = Math.max(firstBeat, Math.ceil((clock.beatAt(performance.now() - offset) + 1e-8) * 4) / 4);
+  }
+
+  function triggerExternal(lane, velocity, at) {
+    const scaled = Math.round(velocity * lane.level / 100);
+    if (scaled > 0) drumMidi.trigger(lane.voice, scaled, at);
+  }
+
+  async function start(looperMode = 2, fromKeypress = false) {
     if (playing || starting) return;
     if (calibration) closeCalibration('MIDI offset test cancelled; the offset is unchanged.');
     starting = true;
     const revision = ++startRevision;
+    const reservedAt = fromKeypress ? clock.start('drums') : undefined;
     try {
       await enable();
       if (revision !== startRevision) return;
-      const at = clock.start('drums');
+      await drumMidi.ensureReady();
+      if (revision !== startRevision) return;
+      const at = clock.start('drums', reservedAt >= performance.now() ? reservedAt : undefined);
       firstBeat = clock.beatAt(at);
       nextBeat = firstBeat;
+      nextMidiBeat = firstBeat;
       playing = true;
       playButton.setAttribute('aria-pressed', 'true');
       status.textContent = 'Drums playing. Looper playback follows the shared tempo and bar grid.';
@@ -269,7 +323,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     persist();
     for (const voice of DRUM_VOICES) {
       const lane = pattern().lanes.find((item) => item.voice === voice.id) || defaultDrumLane(voice);
-      if (!audible(lane)) audio.silenceVoice(voice.id);
+      if (!audible(lane) || lane.level === 0) {
+        audio.silenceVoice(voice.id);
+        drumMidi.silenceVoice(voice.id);
+      }
     }
     invalidate();
   }
@@ -328,7 +385,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     status.textContent = `Cleared bar ${bar + 1} in ${selected.length} lane(s).`;
   }
 
+  function updateToneVisibility() {
+    lanesElement.classList.toggle('is-midi-only', !drumMidi.internal());
+  }
+
   function render() {
+    updateToneVisibility();
     patternSelect.replaceChildren(...store.patterns.map((item) => new Option(item.name, item.id)));
     patternSelect.value = store.selected;
     element('bars').value = String(pattern().bars ?? 1);
@@ -379,7 +441,11 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       preview.addEventListener('click', async () => {
         try {
           await enable();
-          if (audible(lane)) audio.trigger(lane, 127);
+          await drumMidi.ensureReady();
+          if (audible(lane)) {
+            if (drumMidi.internal()) audio.trigger(lane, 127);
+            triggerExternal(lane, 127);
+          }
         } catch (error) {
           fail(`Drum preview failed: ${error.message || error}`);
         }
@@ -468,6 +534,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       const action = (label, text, handler) => {
         const button = document.createElement('button');
         button.type = 'button';
+        button.className = 'drum-internal-tone';
         button.textContent = text;
         button.title = `${label} ${voice.name}`;
         button.setAttribute('aria-label', `${label} ${voice.name}`);
@@ -482,7 +549,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       if (toneName) {
         const selectedTone = document.createElement('button');
         selectedTone.type = 'button';
-        selectedTone.className = 'drum-selected-tone';
+        selectedTone.className = 'drum-selected-tone drum-internal-tone';
         selectedTone.textContent = toneName;
         selectedTone.title = `Choose ${voice.name} tone (current: ${toneName})`;
         selectedTone.setAttribute('aria-label', `Choose ${voice.name} tone, current: ${toneName}`);
@@ -491,11 +558,11 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
       actions.append(remove);
       const saveTone = action('Save tone for', '', () => tones.save(lane));
-      saveTone.className = 'drum-lane-icon';
+      saveTone.classList.add('drum-lane-icon');
       saveTone.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3H18L21 6V21H3V3H4ZM7 3V9H17V3M7 21V13H17V21"/></svg>';
       saveTone.hidden = !tones.changed(lane);
       const loadTone = action('Load tone for', '', () => tones.open(lane));
-      loadTone.className = 'drum-lane-icon';
+      loadTone.classList.add('drum-lane-icon');
       loadTone.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6H9L11 8H21V20H3V6ZM12 10V17M9 14L12 17L15 14"/></svg>';
       action('Export tone for', 'Export tone', () => tones.exportLane(lane));
       const toneFile = document.createElement('input');
@@ -515,6 +582,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
         ['decay', 'Decay', 0.02, 2, 0.005], ['tone', 'Tone', 0, 100, 1],
       ]) {
         const label = document.createElement('label');
+        if (key !== 'level') label.className = 'drum-internal-tone';
         label.append(`${name} `);
         const input = document.createElement('input');
         input.type = 'range';
@@ -662,6 +730,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     }
   }
   element('enable').addEventListener('click', () => { void enableAudio(); });
+  element('routing').addEventListener('change', updateToneVisibility);
   playButton.addEventListener('click', () => { void start(); });
   element('stop').addEventListener('click', stopTogether);
   element('linked').addEventListener('change', () => { store.linked = element('linked').checked; persist(); });
@@ -912,9 +981,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     if (reason === 'meter') render();
     if (reason === 'tempo') element('tempo').value = String(clock.tempo);
     if (reason === 'tempo' || reason === 'meter' || reason === 'output') invalidate();
+    if (reason === 'offset' && playing) { resetMidiCursor(); tick(); }
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && (playing || starting || calibration)) { stop(); status.textContent = 'Drums stopped because the page was hidden.'; }
+    if (!document.hidden) return;
+    if (playing || starting || calibration) { stop(); status.textContent = 'Drums stopped because the page was hidden.'; }
+    else drumMidi.stop();
   });
   window.addEventListener('pagehide', stop);
   render();
@@ -992,6 +1064,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
     },
     captureCalibrationNote,
+    setMidiAccess: drumMidi.setAccess,
+    startOnKeypress() {
+      if (startOnKeypress && !calibration && !document.hidden && !playing && !starting) void start(2, true);
+    },
     stopFromLooper() {
       if (store.linked) {
         stop();
@@ -1007,7 +1083,8 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       const lane = pattern().lanes.find((item) => item.voice === voice.id) || defaultDrumLane(voice);
       if (!audible(lane)) return;
       try {
-        audio.trigger(lane, velocity);
+        if (drumMidi.internal()) audio.trigger(lane, velocity);
+        triggerExternal(lane, velocity);
       } catch (error) {
         status.textContent = `MIDI drum could not play: ${error.message || error}`;
       }

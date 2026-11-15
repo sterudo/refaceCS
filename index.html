@@ -9,7 +9,7 @@
     <main>
       <header class="toolbar" style="align-items: flex-start;">
         <div>
-          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.5</span>
+          <h1>reface<span>CS</span> <span style="font-size: 14px;font-weight: normal;color: #ffaa3d;">v0.6</span>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
@@ -233,6 +233,7 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5H19V19H5Z"/></svg>
             </button>
             <label><input id="drum-linked" type="checkbox"> Start and Stop together with looper</label>
+            <label><input id="drum-start-on-keypress" type="checkbox"> Start on keypress</label>
             <label>Tempo <input id="drum-tempo" type="number" min="40" max="240" step="1" value="120"> BPM</label>
             <label>Time signature <select id="drum-meter"><option value="4">4/4</option><option value="3">3/4</option></select></label>
             <label>Master <input id="drum-volume" type="range" min="0" max="100" value="80" aria-label="Drum master volume"></label>
@@ -251,7 +252,7 @@
             <button id="drum-add" type="button">Add lane</button>
           </div>
           <p class="groove-help">Patterns have 1–16 bars. Click: 5, 4, 3, 2, 1, 2, 3, 4, 5... Right-click or Delete clears a step.
-            Patterns and sound settings save automatically in this browser. MIDI channel 10 triggers the internal drums.</p>
+            Patterns and sound settings save automatically in this browser. Controller MIDI channel 10 triggers drums using the selected output.</p>
           <div class="drum-grid-scroll" role="region" aria-label="Drum sequencer; scroll horizontally on smaller screens" tabindex="0">
             <div id="drum-lanes"></div>
           </div>
@@ -260,14 +261,20 @@
             <label>Audio output <select id="drum-output"><option value="">System default</option></select></label>
             <button id="drum-output-choose" type="button" hidden>Choose audio output</button>
             <button id="drum-output-refresh" type="button">Refresh outputs</button>
-            <label title="Negative values send looper MIDI earlier; positive values send it later. Live playing is not delayed.">
+            <label>Drum output <select id="drum-routing"><option value="internal">Internal</option><option value="midi">External MIDI</option><option value="both">Internal + MIDI</option></select></label>
+            <button id="drum-midi-settings-open" type="button">MIDI settings</button>
+            <output id="drum-midi-sound" aria-label="Selected external sound"></output>
+            <label title="Shift external drum notes by octaves without changing base lane notes or internal audio.">Octave <select id="drum-midi-octave" aria-label="External MIDI octave"><option value="-3">-3</option><option value="-2">-2</option><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option><option value="2">+2</option><option value="3">+3</option></select></label>
+            <label>Reverb <input id="drum-midi-reverb" type="range" min="0" max="127" step="1" value="0" aria-label="External MIDI reverb"><output id="drum-midi-reverb-value">0</output></label>
+            <label title="Negative values send looper MIDI earlier; positive values send it later. Also applies to sequenced external drums in Internal + MIDI mode. Live playing is not delayed.">
               Looper MIDI offset <input id="drum-offset" type="number" min="-600" max="600" step="1" value="0"> ms
             </label>
             <button id="drum-calibrate" type="button">Calibrate MIDI offset</button>
           </div>
           <p class="groove-help">Align a short reface sound against the drums by ear. Negative offset sends looper MIDI earlier;
-            positive sends it later. Use headphones or wired audio for tighter timing. Web Audio does not provide direct ASIO access.</p>
+            positive sends it later. Internal + MIDI also applies this offset to external drums. Use headphones or wired audio for tighter timing. Web Audio does not provide direct ASIO access.</p>
           <p id="drum-output-status" role="status">Audio uses the system default until another output is selected.</p>
+          <p id="drum-midi-output-status" role="status"></p>
           <p id="drum-storage-status" role="status"></p>
           <p id="drum-status" role="status">Drums stopped. Enable audio to hear the internal engine.</p>
         </div>
@@ -294,6 +301,31 @@
       </details>
       <input id="looper-file" type="file" accept=".mid,.midi,.json,audio/midi,audio/x-midi,application/json" hidden>
       <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
+      <dialog id="drum-midi-settings" class="patch-editor drum-midi-dialog" aria-labelledby="drum-midi-title">
+        <h2 id="drum-midi-title">Groove MIDI settings</h2>
+        <p>External MIDI uses its own output and channel. Internal Tune, Decay and Tone controls do not change the external sound.</p>
+        <p>CS2x kit selection sets channel 10; Performance selection sets channel 1. Lane Level scales external velocity. Reverb sends CC91 to the selected external channel.</p>
+        <p>Standalone software: create a virtual MIDI port (for example loopMIDI on Windows), select it here and as the software synth's MIDI input, then match channels and choose a drum sound in that synth.</p>
+        <div class="drum-midi-output">
+          <label>MIDI output <select id="drum-midi-port"><option value="">Not selected</option></select></label>
+          <label class="drum-midi-channel">MIDI channel <input id="drum-midi-channel" type="number" min="1" max="16" step="1"></label>
+          <button id="drum-midi-connect" type="button">Connect / refresh MIDI outputs</button>
+        </div>
+        <label>Kit or Performance <select id="drum-midi-kit"></select></label>
+        <label id="drum-midi-performance-label" hidden>Performance number (1–128) <input id="drum-midi-performance" type="number" min="1" max="128" step="1"></label>
+        <div id="drum-midi-bank-controls" hidden>
+          <label>Bank MSB (0–127) <input id="drum-midi-msb" type="number" min="0" max="127" step="1"></label>
+          <label>Bank LSB (0–127) <input id="drum-midi-lsb" type="number" min="0" max="127" step="1"></label>
+          <label>Program (1–128) <input id="drum-midi-program" type="number" min="1" max="128" step="1"></label>
+        </div>
+        <p>Selecting a preset or choosing Apply sends bank and program changes; custom values are sent only with Apply. The CS2x must already be in the appropriate mode; changing a Performance replaces its current sound. No sound is reapplied on reconnect.</p>
+        <button id="drum-midi-apply" type="button">Apply kit / Performance</button>
+        <h3>Lane MIDI notes</h3>
+        <p>Mappings are global; CS2x Performances remember their own mappings. Notes range from 0 to 127.</p>
+        <div id="drum-midi-mappings" class="drum-midi-mappings"></div>
+        <p id="drum-midi-status" role="status"></p>
+        <div class="patch-editor-actions"><button id="drum-midi-close" type="button">Close</button></div>
+      </dialog>
       <dialog id="drum-calibration" class="patch-editor" aria-labelledby="drum-calibration-title">
         <h2 id="drum-calibration-title">Calibrate MIDI offset</h2>
         <p>Listen to the steady 100 BPM kick and play notes on the selected reface MIDI input.

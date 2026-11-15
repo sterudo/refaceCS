@@ -10,7 +10,7 @@ const sevenths = {
   8: [0, 4, 7, 10], 10: [0, 3, 7, 10],
 };
 
-export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0, onTempoChange = () => {}) {
+export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0, onTempoChange = () => {}, clock) {
   const enabledButton = document.querySelector('#arp-enabled');
   const latchButton = document.querySelector('#arp-latch');
   const chordButton = document.querySelector('#arp-chord');
@@ -43,6 +43,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
   let lastRandom;
   let randomCount = 0;
   let openButton;
+  let nextBeat;
 
   function bindActivate(element, activate) {
     element.addEventListener('click', activate);
@@ -68,6 +69,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     const changed = next !== tempo;
     if (changed) {
       tempo = next;
+      clock?.setTempo(next);
       updateTempoDisplay();
       status.textContent = `Tempo: ${tempo} BPM.`;
       restart();
@@ -194,6 +196,8 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     step = 0;
     lastRandom = undefined;
     randomCount = 0;
+    clock?.stop('arpeggiator');
+    nextBeat = undefined;
   }
 
   function notes() {
@@ -252,20 +256,42 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
   function tick() {
     timer = undefined;
     const values = notes();
-    if (!enabled || values.length === 0) return;
+    if (!enabled || values.length === 0) { stop(); return; }
     const interval = 60000 / tempo * 4 / rate;
+    let at = performance.now();
+    if (clock) {
+      if (nextBeat === undefined) {
+        const start = clock.running ? clock.nextTime(4 / rate) : at;
+        clock.start('arpeggiator', start);
+        nextBeat = clock.beatAt(start);
+      }
+      if (clock.timeAt(nextBeat) < at - interval) {
+        nextBeat = clock.beatAt(clock.nextTime(4 / rate, at));
+      }
+      const target = clock.timeAt(nextBeat);
+      if (target > at + 0.1) {
+        timer = setTimeout(tick, Math.max(1, Math.ceil(target - at)));
+        return;
+      }
+      at = target;
+      nextBeat += 4 / rate;
+    }
+    const scheduleNext = () => {
+      timer = setTimeout(tick, Math.max(1, Math.ceil(clock ? clock.timeAt(nextBeat) - performance.now() : interval)));
+    };
     const next = nextNote(values);
     if (!next) {
-      timer = setTimeout(tick, interval);
+      scheduleNext();
       return;
     }
     const [note, velocity] = next;
     if (isMuted()) {
-      timer = setTimeout(tick, interval);
+      scheduleNext();
       return;
     }
     if (!send([0x90, note, velocity])) {
       status.textContent = 'Arpeggiator stopped: MIDI output is unavailable or sending failed.';
+      stop();
       return;
     }
     sounding = note;
@@ -273,18 +299,25 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       if (sounding !== undefined && !send([0x80, sounding, 0])) {
         clearTimeout(timer);
         timer = undefined;
+        clock?.stop('arpeggiator');
+        nextBeat = undefined;
         status.textContent = 'Arpeggiator stopped: MIDI note-off failed. Use MIDI Reset.';
       }
       sounding = undefined;
       gateTimer = undefined;
-    }, interval / 2);
-    timer = setTimeout(tick, interval);
+    }, Math.max(0, at + interval / 2 - performance.now()));
+    scheduleNext();
   }
 
   function restart() {
     stop();
     if (enabled && notes().length) tick();
   }
+
+  clock?.subscribe((reason) => {
+    if (reason === 'tempo') setTempo(clock.tempo);
+    if (reason === 'suspended') stop();
+  });
 
   bindActivate(enabledButton, () => {
     if (enabled) {

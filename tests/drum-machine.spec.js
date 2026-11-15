@@ -109,6 +109,620 @@ const lane = (page, voice) => page.locator(`.drum-lane[data-voice="${voice}"]`);
 const step = (page, voice, index) => lane(page, voice).locator('.drum-step').nth(index);
 const stored = (page) => page.evaluate((key) => JSON.parse(localStorage.getItem(key)), storageKey);
 
+async function addExternalDrumOutput(page) {
+  await page.evaluate(() => {
+    window.externalDrumEvents = [];
+    window.drumTest.access.outputs.set('external-drums', {
+      id: 'external-drums', name: 'External drums', state: 'connected',
+      send(data) { window.externalDrumEvents.push({ data: [...data], at: performance.now() }); },
+    });
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`MIDI settings aligns its connection controls and mapping columns at viewport ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.locator('#groove-panel > summary').click();
+    await page.locator('#drum-midi-settings-open').click();
+    const select = page.locator('#drum-midi-port');
+    const button = page.locator('#drum-midi-connect');
+    await expect(select).toBeVisible();
+    await expect(button).toBeVisible();
+    await select.focus();
+    const output = await select.boundingBox();
+    const refresh = await button.boundingBox();
+    const channel = await page.locator('#drum-midi-channel').boundingBox();
+    const dialog = await page.locator('#drum-midi-settings').boundingBox();
+    expect(channel.x - (output.x + output.width)).toBeGreaterThanOrEqual(7.5);
+    expect(Math.abs(channel.y + channel.height - output.y - output.height)).toBeLessThan(1);
+    if (width === 1440) {
+      expect(dialog.width).toBeCloseTo(1024, 0);
+      expect(refresh.x - (channel.x + channel.width)).toBeGreaterThanOrEqual(7.5);
+      expect(Math.abs(refresh.y + refresh.height - output.y - output.height)).toBeLessThan(1);
+    } else {
+      expect(refresh.y - (output.y + output.height)).toBeGreaterThanOrEqual(7.5);
+    }
+    expect(refresh.x + refresh.width).toBeLessThanOrEqual(width);
+    const mappings = await page.locator('#drum-midi-mappings > label').evaluateAll((labels) => labels.map((label) => {
+      const { x, y } = label.getBoundingClientRect();
+      return { x, y };
+    }));
+    const columns = width === 1440 ? 4 : 2;
+    for (let index = 1; index < columns; index++) {
+      expect(mappings[index].x).toBeGreaterThan(mappings[index - 1].x);
+      expect(mappings[index].y).toBeCloseTo(mappings[0].y, 0);
+    }
+    expect(mappings[columns].x).toBeCloseTo(mappings[0].x, 0);
+    expect(mappings[columns].y).toBeGreaterThan(mappings[0].y);
+    await button.click();
+    await expect(page.locator('#drum-midi-status')).toContainText('MIDI outputs refreshed');
+  });
+}
+
+test('external drum MIDI follows the shared beat and releases notes on stop', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-channel').fill('3');
+  await page.locator('#drum-midi-channel').dispatchEvent('change');
+  await page.getByLabel('Kick MIDI note').fill('60');
+  await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('both');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 1).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(160);
+  const first = await page.evaluate(() => ({
+    midi: window.externalDrumEvents,
+    audio: window.drumTest.audio.sources.find((source) => source.kind === 'oscillator').audibleAt,
+  }));
+  expect(first.midi.map((event) => event.data)).toEqual([[0x92, 60, 95]]);
+  expect(Math.abs(first.midi[0].at - first.audio)).toBeLessThan(3);
+  await page.locator('#drum-stop').click();
+  await page.clock.runFor(400);
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x92, 60, 95], [0x82, 60, 0]]);
+});
+
+test('CS2x performance mappings persist separately and are not resent on reconnect', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-kit').selectOption('preset2-123');
+  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0xb0, 0, 63], [0xb0, 32, 66], [0xc0, 122]]);
+  await page.getByLabel('Kick MIDI note').fill('48');
+  await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-midi-octave').selectOption('-1');
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-kit').selectOption('preset2-124');
+  await expect(page.getByLabel('Kick MIDI note')).toHaveValue('36');
+  await page.getByLabel('Kick MIDI note').fill('55');
+  await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+  await page.locator('#drum-midi-close').click();
+  await expect(page.locator('#drum-midi-octave')).toHaveValue('0');
+  await page.locator('#drum-midi-octave').selectOption('2');
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-kit').selectOption('preset2-123');
+  await expect(page.getByLabel('Kick MIDI note')).toHaveValue('48');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).grooveMidi.kit)).toBe('preset2-123');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).grooveMidi.mappings))
+    .toEqual({ 'performance:66:123': { kick: 48 }, 'performance:66:124': { kick: 55 } });
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).grooveMidi.octaves))
+    .toEqual({ 'performance:66:123': -1, 'performance:66:124': 2 });
+  await page.reload();
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await expect(page.locator('#drum-midi-octave')).toHaveValue('-1');
+  await page.locator('#drum-midi-settings-open').click();
+  await expect(page.locator('#drum-midi-port')).toHaveValue('external-drums');
+  await expect(page.locator('#drum-midi-kit')).toHaveValue('preset2-123');
+  await expect(page.getByLabel('Kick MIDI note')).toHaveValue('48');
+  expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
+});
+
+test('external-only playback reports a missing output and emits no internal drums', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-play').click();
+  await expect(page.locator('#drum-status')).toContainText('Select an available drum MIDI output');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBe(0);
+});
+
+test('external-only previews and controller notes use mapped MIDI, and disconnect stops playback', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-kit').selectOption('xg-26');
+  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0xb9, 0, 127], [0xb9, 32, 0], [0xc9, 25]]);
+  await page.getByLabel('Kick MIDI note').fill('37');
+  await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+  await page.clock.runFor(60);
+  await page.evaluate(() => window.drumTest.emit([0x99, 36, 90]));
+  await page.clock.runFor(60);
+  expect(await page.evaluate(() => window.externalDrumEvents.slice(3).map((event) => event.data)))
+    .toEqual([[0x99, 37, 95], [0x89, 37, 0], [0x99, 37, 68], [0x89, 37, 0]]);
+  expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBe(0);
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-play').click();
+  await page.evaluate(() => {
+    window.drumTest.access.outputs.get('external-drums').state = 'disconnected';
+    window.drumTest.access.dispatchEvent(new Event('statechange'));
+  });
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#drum-status')).toContainText('disconnected');
+  await page.clock.runFor(500);
+  expect(await page.evaluate(() => window.externalDrumEvents.length)).toBe(7);
+});
+
+test('custom bank and program changes are applied explicitly', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-kit').selectOption('custom');
+  await expect(page.locator('#drum-midi-status')).toContainText('choose Apply');
+  expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
+  for (const [field, value] of [['msb', '42'], ['lsb', '13'], ['program', '128']]) {
+    await page.locator(`#drum-midi-${field}`).fill(value);
+    await page.locator(`#drum-midi-${field}`).dispatchEvent('change');
+  }
+  await page.evaluate(() => { window.externalDrumEvents.length = 0; });
+  await page.locator('#drum-midi-apply').click();
+  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0xb9, 0, 42], [0xb9, 32, 13], [0xc9, 127]]);
+});
+
+test('hiding the page releases an external preview and ignores hidden controller notes', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+  await page.clock.runFor(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.drumTest.emit([0x99, 36, 90]);
+  });
+  await page.clock.runFor(100);
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 95], [0x89, 36, 0]]);
+});
+
+test('a failed MIDI note-off stops playback and retries the tracked release', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.evaluate(() => {
+    const output = window.drumTest.access.outputs.get('external-drums');
+    const send = output.send;
+    let failed = false;
+    output.send = (data) => {
+      if ((data[0] & 0xf0) === 0x80 && !failed) {
+        failed = true;
+        throw new Error('device busy');
+      }
+      send(data);
+    };
+  });
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(250);
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#drum-status')).toContainText('note-off failed: device busy');
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 95], [0x89, 36, 0]]);
+});
+
+test('restored external routing handles controller notes after MIDI connection without reopening settings', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await page.reload();
+  await addExternalDrumOutput(page);
+  await page.locator('#midi-connect').click();
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.evaluate(() => window.drumTest.emit([0x99, 36, 90]));
+  await page.clock.runFor(60);
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 68], [0x89, 36, 0]]);
+});
+
+test('muting a lane releases its active external note immediately', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+  await page.clock.runFor(1);
+  await lane(page, 'kick').getByRole('button', { name: 'Mute Kick' }).click();
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 95], [0x89, 36, 0]]);
+  await page.clock.runFor(100);
+  expect(await page.evaluate(() => window.externalDrumEvents.length)).toBe(2);
+});
+
+for (const octave of [-1, 1]) {
+  test(`external drum octave ${octave} shifts sequence previews and live hits without changing internal audio`, async ({ page }) => {
+    await addExternalDrumOutput(page);
+    await page.locator('#groove-panel > summary').click();
+    await page.locator('#drum-midi-settings-open').click();
+    await page.locator('#drum-midi-port').selectOption('external-drums');
+    await page.getByLabel('Kick MIDI note').fill('48');
+    await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+    await page.locator('#drum-midi-close').click();
+    await page.locator('#drum-routing').selectOption('both');
+    await page.locator('#drum-midi-octave').selectOption(String(octave));
+    await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+    await page.clock.runFor(60);
+    await page.evaluate(() => window.drumTest.emit([0x99, 36, 90]));
+    await page.clock.runFor(60);
+    await step(page, 'kick', 0).click();
+    await page.locator('#drum-play').click();
+    await page.clock.runFor(220);
+    const note = 48 + octave * 12;
+    expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+      .toEqual([[0x99, note, 95], [0x89, note, 0], [0x99, note, 68], [0x89, note, 0], [0x99, note, 95], [0x89, note, 0]]);
+    expect(await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.kind)))
+      .toEqual(['oscillator', 'noise', 'oscillator', 'noise', 'oscillator', 'noise']);
+    await page.locator('#drum-midi-settings-open').click();
+    await expect(page.getByLabel('Kick MIDI note')).toHaveValue('48');
+  });
+}
+
+test('external octave changes release old notes and replace queued notes while playback continues', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('both');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 1).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(160);
+  const internal = await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.stopAt));
+  await page.locator('#drum-midi-octave').selectOption('1');
+  expect(await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.stopAt))).toEqual(internal);
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.runFor(200);
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 95], [0x89, 36, 0], [0x99, 48, 95], [0x89, 48, 0]]);
+});
+
+for (const [octave, note] of [[-1, 0], [1, 127]]) {
+  test(`external octave ${octave} skips out-of-range mapping ${note} without clamping or wrapping`, async ({ page }) => {
+    await addExternalDrumOutput(page);
+    await page.locator('#groove-panel > summary').click();
+    await page.locator('#drum-midi-settings-open').click();
+    await page.locator('#drum-midi-port').selectOption('external-drums');
+    await page.getByLabel('Kick MIDI note').fill(String(note));
+    await page.getByLabel('Kick MIDI note').dispatchEvent('change');
+    await page.locator('#drum-midi-close').click();
+    await page.locator('#drum-routing').selectOption('midi');
+    await page.locator('#drum-midi-octave').selectOption(String(octave));
+    await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+    await page.clock.runFor(60);
+    await expect(page.locator('#drum-midi-output-status')).toContainText(`shifted MIDI note ${note + octave * 12} is outside 0-127`);
+    expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
+  });
+}
+
+test('standard and XG kits share a browser-persisted octave shift', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-octave').selectOption('-3');
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-kit').selectOption('xg-26');
+  await page.locator('#drum-midi-close').click();
+  await expect(page.locator('#drum-midi-octave')).toHaveValue('-3');
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(page.locator('#drum-midi-octave')).toHaveValue('-3');
+});
+
+for (const routing of ['both', 'midi']) for (const offset of [-600, 300]) {
+  test(`${routing} external drum offset ${offset} ms follows the requested routing`, async ({ page }) => {
+    await addExternalDrumOutput(page);
+    await loadLoop(page);
+    await page.locator('#groove-panel > summary').click();
+    await page.locator('#drum-midi-settings-open').click();
+    await page.locator('#drum-midi-port').selectOption('external-drums');
+    await page.locator('#drum-midi-close').click();
+    await page.locator('#drum-routing').selectOption(routing);
+    await page.locator('#drum-offset').fill(String(offset));
+    await page.locator('#drum-offset').dispatchEvent('change');
+    await page.locator('#drum-linked').check();
+    await step(page, 'kick', 0).click();
+    await step(page, 'kick', 1).click();
+    const now = await page.evaluate(() => performance.now());
+    await page.locator('#drum-play').click();
+    await page.clock.runFor(1100);
+    const result = await page.evaluate(() => ({
+      notes: window.externalDrumEvents.filter((event) => event.data[0] === 0x99),
+      looper: window.drumTest.sent.find((event) => event.data[0] === 0x90),
+      audio: window.drumTest.audio.sources.map((source) => source.audibleAt),
+    }));
+    const firstBeat = now + Math.max(150, -offset + 60);
+    expect(result.notes).toHaveLength(2);
+    expect(result.notes[0].at).toBeCloseTo(firstBeat + (routing === 'both' ? offset : 0), 0);
+    expect(result.notes[1].at - result.notes[0].at).toBeCloseTo(125, 0);
+    expect(result.looper.at).toBeCloseTo(firstBeat + offset, 0);
+    if (routing === 'both') expect(result.audio[0]).toBeCloseTo(firstBeat, 0);
+    else expect(result.audio).toEqual([]);
+    await page.locator('#drum-stop').click();
+    await page.clock.runFor(2200);
+    expect(await page.evaluate(() => window.externalDrumEvents.filter((event) => event.data[0] === 0x99).length)).toBe(2);
+  });
+}
+
+test('negative external offset survives edits without replaying an already sent step', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('both');
+  await page.locator('#drum-offset').fill('-600');
+  await page.locator('#drum-offset').dispatchEvent('change');
+  await step(page, 'kick', 0).click();
+  await step(page, 'kick', 1).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(100);
+  await step(page, 'snare', 8).click();
+  await page.clock.runFor(200);
+  const notes = await page.evaluate(() => window.externalDrumEvents.filter((event) => event.data[0] === 0x99));
+  expect(notes.map((event) => event.data)).toEqual([[0x99, 36, 95], [0x99, 36, 95]]);
+  expect(notes[1].at - notes[0].at).toBeCloseTo(125, 0);
+});
+
+test('CS2x selection shows its sound and automatically addresses the right channel including reverb', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-kit').selectOption('preset2');
+  await page.locator('#drum-midi-performance').fill('128');
+  await page.locator('#drum-midi-performance').dispatchEvent('change');
+  await expect(page.locator('#drum-midi-channel')).toHaveValue('1');
+  await page.locator('#drum-midi-close').click();
+  await expect(page.locator('#drum-midi-sound')).toContainText('Performance bank 2: 128');
+  await page.locator('#drum-midi-reverb').evaluate((input) => {
+    input.value = '93'; input.dispatchEvent(new Event('input'));
+  });
+  expect(await page.evaluate(() => window.externalDrumEvents.at(-1).data)).toEqual([0xb0, 91, 93]);
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-kit').selectOption('xg-26');
+  await expect(page.locator('#drum-midi-channel')).toHaveValue('10');
+  await page.locator('#drum-midi-close').click();
+  await expect(page.locator('#drum-midi-sound')).toHaveText('CS2x XG: Analog');
+  await page.locator('#drum-midi-reverb').evaluate((input) => {
+    input.value = '50'; input.dispatchEvent(new Event('input'));
+  });
+  expect(await page.evaluate(() => window.externalDrumEvents.at(-1).data)).toEqual([0xb9, 91, 50]);
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await expect(page.locator('#drum-midi-reverb')).toHaveValue('50');
+  await expect(page.locator('#drum-midi-sound')).toHaveText('CS2x XG: Analog');
+});
+
+test('old MIDI preferences restore without reverb and retain a manual channel override', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-kit').selectOption('preset2-123');
+  await page.locator('#drum-midi-channel').fill('4');
+  await page.locator('#drum-midi-channel').dispatchEvent('change');
+  await page.evaluate(() => {
+    const preferences = JSON.parse(localStorage.getItem('refaceCS.preferences.v1'));
+    delete preferences.grooveMidi.reverb;
+    delete preferences.grooveMidi.octaves;
+    localStorage.setItem('refaceCS.preferences.v1', JSON.stringify(preferences));
+  });
+  await page.reload();
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await expect(page.locator('#drum-midi-reverb')).toHaveValue('0');
+  await expect(page.locator('#drum-midi-octave')).toHaveValue('0');
+  await expect(page.locator('#drum-midi-sound')).toContainText('9o9 Kit');
+  await page.locator('#drum-midi-settings-open').click();
+  await expect(page.locator('#drum-midi-channel')).toHaveValue('4');
+  expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
+  await page.locator('#drum-midi-apply').click();
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0xb3, 0, 63], [0xb3, 32, 66], [0xc3, 122]]);
+});
+
+test('lane Level scales external previews controller hits and sequence velocity, and zero silences them', async ({ page }) => {
+  await addExternalDrumOutput(page);
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-midi-settings-open').click();
+  await page.locator('#drum-midi-port').selectOption('external-drums');
+  await page.locator('#drum-midi-close').click();
+  await page.locator('#drum-routing').selectOption('midi');
+  await lane(page, 'kick').getByRole('button', { name: 'Kick lane options' }).click();
+  const level = lane(page, 'kick').getByRole('slider', { name: 'Kick level', exact: true });
+  await level.evaluate((input) => { input.value = '40'; input.dispatchEvent(new Event('input')); });
+  await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+  await page.clock.runFor(60);
+  await page.evaluate(() => window.drumTest.emit([0x99, 36, 100]));
+  await page.clock.runFor(60);
+  await step(page, 'kick', 0).click();
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(160);
+  await level.evaluate((input) => { input.value = '0'; input.dispatchEvent(new Event('input')); });
+  await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
+  await page.evaluate(() => window.drumTest.emit([0x99, 36, 100]));
+  await page.clock.runFor(2200);
+  expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
+    .toEqual([[0x99, 36, 51], [0x89, 36, 0], [0x99, 36, 40], [0x89, 36, 0], [0x99, 36, 51], [0x89, 36, 0]]);
+  expect(await page.evaluate(() => window.drumTest.audio.sources)).toEqual([]);
+});
+
+for (const source of ['local', 'ci', 'ri']) {
+  test(`start on keypress uses ${source} melodic notes once and keeps running after release`, async ({ page }) => {
+    await loadLoop(page);
+    await page.locator('#groove-panel > summary').click();
+    await page.locator('#drum-start-on-keypress').check();
+    await page.locator('#drum-linked').setChecked(source === 'local');
+    await step(page, 'kick', 0).click();
+    await page.evaluate(() => {
+      window.drumTest.emit([0x99, 36, 90]);
+      window.drumTest.emit([0x80, 60, 0]);
+      window.drumTest.emit([0x90, 60, 0]);
+      window.drumTest.audio.sources.length = 0;
+    });
+    await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+    if (source === 'local') {
+      await page.locator('#drum-start-on-keypress').blur();
+      await page.keyboard.down('a');
+      await page.keyboard.up('a');
+    } else {
+      await page.evaluate((id) => {
+        window.drumTest.emit([0x90, 60, 90], id);
+        window.drumTest.emit([0x80, 60, 0], id);
+      }, source);
+    }
+    await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
+    await page.clock.runFor(300);
+    expect(await page.evaluate(() => window.drumTest.audio.sources.filter((node) => node.kind === 'oscillator').length)).toBe(1);
+    const loopPlaying = await page.locator('#looper').getAttribute('data-value');
+    expect(loopPlaying).toBe(source === 'local' ? '2' : '0');
+    await page.evaluate((id) => window.drumTest.emit([0x90, 64, 90], id === 'local' ? 'ci' : id), source);
+    await page.clock.runFor(300);
+    expect(await page.evaluate(() => window.drumTest.audio.sources.filter((node) => node.kind === 'oscillator').length)).toBe(1);
+    await page.locator('#drum-stop').click();
+    await page.reload();
+    await page.locator('#groove-panel > summary').click();
+    await expect(page.locator('#drum-start-on-keypress')).toBeChecked();
+  });
+}
+
+for (const rate of [8, 32]) {
+  test(`arpeggiator rate 1/${rate} joins the Groove beat grid and stays aligned through tempo changes`, async ({ page }) => {
+    await page.locator('#groove-panel > summary').click();
+    await step(page, 'kick', 0).click();
+    await step(page, 'kick', 4).click();
+    await step(page, 'kick', 8).click();
+    await step(page, 'kick', 12).click();
+    await page.locator('#arp-enabled').click();
+    await page.locator('#arp-rate').click({ button: 'right' });
+    await page.getByRole('menuitemradio', { name: `1/${rate}`, exact: true }).click();
+    await page.locator('#drum-play').click();
+    const started = await page.evaluate(() => performance.now());
+    await page.clock.runFor(183);
+    await page.evaluate(() => {
+      window.drumTest.sent.length = 0;
+      window.drumTest.emit([0x90, 60, 90]);
+    });
+    await page.clock.runFor(1000);
+    let notes = await page.evaluate(() => window.drumTest.sent.filter((event) => event.data[0] === 0x90));
+    expect(notes.length).toBeGreaterThan(2);
+    const interval = 500 * 4 / rate;
+    for (const note of notes) {
+      const position = (note.at - started - 150) / interval;
+      expect(Math.abs(position - Math.round(position)) * interval).toBeLessThan(2);
+    }
+    await page.locator('#drum-tempo').fill('150');
+    await page.locator('#drum-tempo').dispatchEvent('change');
+    const changed = await page.evaluate(() => { window.drumTest.sent.length = 0; return performance.now(); });
+    await page.clock.runFor(1400);
+    const result = await page.evaluate(() => ({
+      notes: window.drumTest.sent.filter((event) => event.data[0] === 0x90),
+      audio: window.drumTest.audio.sources.filter((node) => node.kind === 'oscillator').map((node) => node.audibleAt),
+    }));
+    notes = result.notes;
+    expect(notes.length).toBeGreaterThan(2);
+    expect(notes[1].at - notes[0].at).toBeCloseTo(400 * 4 / rate, 0);
+    for (const beat of result.audio.filter((at) => at > changed + 200 && at < changed + 1300)) {
+      expect(Math.min(...notes.map((note) => Math.abs(note.at - beat)))).toBeLessThan(2);
+    }
+    await page.locator('#midi-reset').click();
+    const count = await page.evaluate(() => window.drumTest.sent.filter((event) => event.data[0] === 0x90).length);
+    await page.clock.runFor(1000);
+    expect(await page.evaluate(() => window.drumTest.sent.filter((event) => event.data[0] === 0x90).length)).toBe(count);
+  });
+}
+
+test('start on keypress starts arpeggiator and drums on their first shared beat', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-start-on-keypress').check();
+  await step(page, 'kick', 0).click();
+  await page.locator('#arp-enabled').click();
+  await page.evaluate(() => {
+    window.drumTest.sent.length = 0;
+    window.drumTest.emit([0x90, 60, 90]);
+  });
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
+  await page.clock.runFor(160);
+  const result = await page.evaluate(() => ({
+    note: window.drumTest.sent.find((event) => event.data[0] === 0x90),
+    beat: window.drumTest.audio.sources.find((node) => node.kind === 'oscillator').audibleAt,
+  }));
+  expect(Math.abs(result.note.at - result.beat)).toBeLessThan(2);
+});
+
+test('a stopped pending keypress start cannot resume after audio becomes ready', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await page.locator('#drum-start-on-keypress').check();
+  await step(page, 'kick', 0).click();
+  await delayAudioEnable(page);
+  await page.evaluate(() => {
+    window.drumTest.emit([0x90, 60, 90]);
+    window.drumTest.emit([0x90, 64, 90]);
+  });
+  await page.locator('#drum-stop').click();
+  await page.evaluate(() => window.drumTest.resumeAudio());
+  await page.clock.runFor(2500);
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => window.drumTest.audio.sources)).toEqual([]);
+});
+
+test('Groove joins the beat grid of an already running arpeggiator', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  await step(page, 'kick', 0).click();
+  await page.locator('#arp-enabled').click();
+  const started = await page.evaluate(() => {
+    window.drumTest.sent.length = 0;
+    window.drumTest.emit([0x90, 60, 90]);
+    return performance.now();
+  });
+  await page.clock.runFor(183);
+  await page.locator('#drum-play').click();
+  await page.clock.runFor(1900);
+  const result = await page.evaluate(() => ({
+    notes: window.drumTest.sent.filter((event) => event.data[0] === 0x90),
+    beat: window.drumTest.audio.sources.find((node) => node.kind === 'oscillator').audibleAt,
+  }));
+  expect(result.beat - started).toBeCloseTo(2000, 0);
+  expect(Math.min(...result.notes.map((note) => Math.abs(note.at - result.beat)))).toBeLessThan(2);
+});
+
 test('multi-bar patterns preserve shortened and hidden steps and export active bars to MIDI', async ({ page }) => {
   await page.locator('#groove-panel > summary').click();
   await page.locator('#drum-bars').fill('2');
@@ -366,6 +980,50 @@ test('crash and ride lanes can be added, previewed, and triggered by MIDI', asyn
   await page.evaluate(() => { window.drumTest.emit([0x99, 49, 100]); window.drumTest.emit([0x99, 51, 100]); });
   expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBeGreaterThan(before);
   await expect(lane(page, 'crash')).not.toHaveCSS('background-color', await lane(page, 'ride').evaluate((node) => getComputedStyle(node).backgroundColor));
+});
+
+test('external-only lane options hide internal tones but retain Level and restore tone settings in other modes', async ({ page }) => {
+  await page.locator('#groove-panel > summary').click();
+  const kick = lane(page, 'kick');
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await kick.getByRole('slider', { name: 'Kick tune', exact: true }).fill('4');
+  await kick.getByRole('button', { name: 'Save tone for Kick' }).click();
+  const naming = page.getByRole('dialog', { name: 'Save drum tone' });
+  await naming.getByLabel('Name').fill('Deep kick');
+  await naming.getByRole('button', { name: 'Save' }).click();
+  await kick.getByRole('slider', { name: 'Kick tune', exact: true }).fill('5');
+  const toneControls = [
+    kick.getByRole('slider', { name: 'Kick tune', exact: true, includeHidden: true }),
+    kick.getByRole('slider', { name: 'Kick decay', exact: true, includeHidden: true }),
+    kick.getByRole('slider', { name: 'Kick tone', exact: true, includeHidden: true }),
+    ...['Save tone for Kick', 'Load tone for Kick', 'Import tone for Kick', 'Export tone for Kick',
+      'Choose Kick tone, current: Deep kick'].map((name) => kick.getByRole('button', { name, exact: true, includeHidden: true })),
+  ];
+  await page.locator('#drum-routing').selectOption('midi');
+  for (const control of toneControls) await expect(control).toBeHidden();
+  for (const name of ['Kick', 'Solo Kick', 'Mute Kick', 'Remove Kick lane']) {
+    await expect(kick.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  const level = kick.getByRole('slider', { name: 'Kick level', exact: true });
+  await expect(level).toBeVisible();
+  await level.evaluate((input) => { input.value = '40'; input.dispatchEvent(new Event('input')); });
+  for (const control of toneControls) await expect(control).toBeHidden();
+  for (const routing of ['both', 'internal']) {
+    await page.locator('#drum-routing').selectOption(routing);
+    for (const control of toneControls) await expect(control).toBeVisible();
+    await expect(level).toHaveValue('40');
+    await expect(toneControls[0]).toHaveValue('5');
+  }
+  await page.locator('#drum-routing').selectOption('midi');
+  await page.reload();
+  await page.locator('#groove-panel > summary').click();
+  await kick.getByRole('button', { name: 'Kick lane options' }).click();
+  await expect(level).toBeVisible();
+  await expect(level).toHaveValue('40');
+  for (const control of toneControls) await expect(control).toBeHidden();
+  await page.locator('#drum-routing').selectOption('both');
+  for (const control of toneControls) await expect(control).toBeVisible();
+  await expect(toneControls[0]).toHaveValue('5');
 });
 
 test('tone variations are instrument-specific, protect edits and preview while muted', async ({ page }) => {

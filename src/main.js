@@ -129,8 +129,10 @@ const midi = setupMidiDiscovery(() => {
 }, {
   clock: grooveClock,
   onConnect: () => { void drums.enableAudio(); },
+  onMidiAccess: (access) => drums.setMidiAccess(access),
   onDrumNote: (note, velocity) => drums.triggerMidi(note, velocity),
   onDrumStop: () => drums.stop(),
+  onMelodicNote: () => drums.startOnKeypress(),
   onRefaceNote: (at, portId) => drums.captureCalibrationNote(at, portId),
   onLooperStartRequest: (mode) => drums.startFromLooper(mode),
   onLooperStartCancelled: () => drums.cancelPendingStart(),

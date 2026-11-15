@@ -91,7 +91,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     onStop: () => groove.onLooperStopped?.(),
   });
   const arpeggiator = createArpeggiator((message) => sendLive(output, message, 'arpeggiator'), changeRouting,
-    () => muted, () => transpose, onArpeggiatorTempo);
+    () => muted, () => transpose, onArpeggiatorTempo, groove.clock);
 
   function updateStatusPresentation() {
     const connected = badge.dataset.state === 'connected';
@@ -436,6 +436,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     const channel = data[0] & 0x0f;
     const note = data[1];
     const on = type === 0x90 && data[2] !== 0;
+    if (on) groove.onMelodicNote?.();
     const key = `${port.id}:${channel}:${note}`;
     const count = received.get(key)?.count || 0;
     if (on) received.set(key, { port, channel, note, count: count + 1 });
@@ -841,6 +842,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     try {
       midiAccess = await navigator.requestMIDIAccess();
       midiAccess.addEventListener('statechange', refresh);
+      groove.onMidiAccess?.(midiAccess);
       refresh();
       connect.textContent = 'MIDI connected';
       badge.dataset.access = 'granted';
@@ -947,8 +949,8 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       arpeggiator.transposeChanged();
     },
     setArpeggiatorTempo(value) {
-      arpeggiator.setTempo(value);
       groove.clock?.setTempo(value);
+      arpeggiator.setTempo(value);
       looper.setTempo(value);
     },
     setLooperMode(value, startAt) {
@@ -994,6 +996,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       return [...received.values()].map((value) => value.note);
     },
     startNote(owner, note, velocity) {
+      groove.onMelodicNote?.();
       arpeggiator.noteOn(owner, note, velocity, 0, 'local');
       if (arpeggiator.enabled) return;
       if (muted) return;

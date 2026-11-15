@@ -14,6 +14,7 @@ export function createGrooveClock() {
     get meter() { return meter; },
     get offset() { return offset; },
     get drumsPlaying() { return players.has('drums'); },
+    get running() { return players.size > 0; },
     get lead() {
       return Math.max(150, ((context?.baseLatency || 0) + (context?.outputLatency || 0)) * 1000 + 60,
         -offset + 60);
@@ -24,10 +25,13 @@ export function createGrooveClock() {
     timeAt(beat) {
       return origin + (beat - originBeat) * 60000 / tempo;
     },
+    nextTime(subdivision, earliest = performance.now()) {
+      return clock.timeAt(Math.ceil((clock.beatAt(Math.max(origin, earliest)) - 1e-8) / subdivision) * subdivision);
+    },
     start(player, requestedTime, beat = 0) {
       const earliest = performance.now() + clock.lead;
       if (!players.size) {
-        origin = earliest;
+        origin = requestedTime ?? earliest;
         originBeat = beat;
       }
       const time = requestedTime ?? (players.size
