@@ -49,7 +49,7 @@ function appendBlocks(container, blocks) {
   }
 }
 
-function clampPosition(dialog, left, top) {
+export function clampPosition(dialog, left, top) {
   const bounds = dialog.getBoundingClientRect();
   return {
     left: Math.max(8, Math.min(left, window.innerWidth - bounds.width - 8)),
@@ -57,7 +57,7 @@ function clampPosition(dialog, left, top) {
   };
 }
 
-function trackPointer(handle, event, move) {
+export function trackPointer(handle, event, move) {
   handle.setPointerCapture(event.pointerId);
   const stop = () => {
     handle.removeEventListener('pointermove', move);
@@ -122,7 +122,9 @@ function openHelp(key, trigger, event) {
       openHelpWindows.some((window) => window.trigger === trigger && window.hovered));
   };
   const bringToFront = () => {
-    dialog.style.zIndex = String(++nextZIndex);
+    const originZIndex = Number(getComputedStyle(trigger.closest('dialog') ?? trigger).zIndex) || 0;
+    nextZIndex = Math.max(nextZIndex, originZIndex) + 1;
+    dialog.style.zIndex = String(nextZIndex);
     const index = openHelpWindows.findIndex((window) => window.dialog === dialog);
     if (index !== -1) openHelpWindows.splice(index, 1);
     openHelpWindows.push(helpWindow);
@@ -237,21 +239,24 @@ export function setupHelp(panel) {
   ];
 
   for (const trigger of triggers) {
-    if (!trigger) continue;
-    const key = trigger.dataset.helpTarget;
-    const title = helpContent[key]?.title;
-    if (!title) throw new Error(`Missing help content for target: ${key}`);
-    trigger.classList.add('help-target');
-    trigger.setAttribute('role', 'button');
-    trigger.setAttribute('tabindex', '0');
-    trigger.setAttribute('aria-label', `Open ${title} help`);
-
-    trigger.addEventListener('click', (event) => openHelp(key, trigger, event));
-    trigger.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (!event.repeat) openHelp(key, trigger, event);
-    });
+    if (trigger) setupHelpTrigger(trigger);
   }
+}
+
+export function setupHelpTrigger(trigger) {
+  const key = trigger.dataset.helpTarget;
+  const title = helpContent[key]?.title;
+  if (!title) throw new Error(`Missing help content for target: ${key}`);
+  trigger.classList.add('help-target');
+  trigger.setAttribute('role', 'button');
+  trigger.setAttribute('tabindex', '0');
+  trigger.setAttribute('aria-label', `Open ${title} help`);
+
+  trigger.addEventListener('click', (event) => openHelp(key, trigger, event));
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) openHelp(key, trigger, event);
+  });
 }

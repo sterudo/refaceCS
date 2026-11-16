@@ -17,6 +17,7 @@ import { setupDeviceSettings } from './device-settings.js';
 import { choose } from './dialogs.js';
 import { setupHelp } from './help.js';
 import { getAppSetting, setupAppSettings } from './app-settings.js';
+import { setupSuperKnob } from './superknob-ui.js';
 
 const notifications = setupNotifications();
 const reportAudio = createReporter('groove', 'audio-connect-status');
@@ -24,6 +25,7 @@ const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
 const dataInfoClose = document.querySelector('#data-info-close');
 let patchLibrary;
+let superKnob;
 function setDataInfoVisible(visible, save = true) {
   dataInfo.hidden = !visible;
   dataInfoOpen.hidden = visible;
@@ -116,8 +118,9 @@ for (const octave of [0, 4]) {
 appendExtraKey('c', 5, 35 * 62);
 const keys = [...panel.querySelectorAll('.key')];
 const locallyHeldKeys = new Set();
-const midiLearn = createMidiLearn(faders, (id, value, channel) => {
-  updateFaderFromInput(panel.querySelector(`#${id}`), value, true, channel);
+const midiLearn = createMidiLearn([...faders, panel.querySelector('#super-knob')], (id, value, channel) => {
+  if (id === 'super-knob') superKnob.setPosition(value, channel);
+  else updateFaderFromInput(panel.querySelector(`#${id}`), value, true, channel);
 });
 const grooveClock = createGrooveClock();
 const midi = setupMidiDiscovery(() => {
@@ -129,7 +132,11 @@ const midi = setupMidiDiscovery(() => {
     deviceSettings?.observePitch(value);
   } else {
     const fader = panel.querySelector(`#${id}`);
-    if (fader) updateFader(fader, value, false);
+    if (fader) {
+      const previous = readValue(fader);
+      updateFader(fader, value, false);
+      if (previous !== readValue(fader)) superKnob?.observeFader(id, readValue(fader));
+    }
   }
 }, (bpm) => {
   updateFader(tempoFader, bpm, false);
@@ -147,6 +154,7 @@ const midi = setupMidiDiscovery(() => {
   onOutputAvailable: () => midiLearn.resetPickup(),
   onDrumNote: (note, velocity) => drums.triggerMidi(note, velocity),
   onDrumStop: () => drums.stop(),
+  onPreviewStop: () => superKnob?.stopAudition(),
   onMelodicNote: () => drums.startOnKeypress(),
   onRefaceNote: (at, portId) => drums.captureCalibrationNote(at, portId),
   onLooperStartRequest: (mode) => drums.startFromLooper(mode),
@@ -154,6 +162,7 @@ const midi = setupMidiDiscovery(() => {
   onLooperStopped: () => drums.stopFromLooper(),
   clearLocalNotes: releaseNotes,
   onDeviceConnectionChanged: () => {
+    superKnob?.stop();
     deviceRevision++;
     pitchDirection = null;
     deviceSettings?.connectionChanged();
@@ -440,7 +449,9 @@ function updateFader(fader, value, announce = true) {
 }
 
 function updateFaderFromInput(fader, value, announce = true, channel = 0) {
+  const previous = readValue(fader);
   updateFader(fader, value, announce);
+  if (previous !== readValue(fader)) superKnob?.observeFader(fader.id, readValue(fader));
   if (fader === looperFader) midi.setLooperMode(readValue(fader));
   midi.setControl(fader.id, readValue(fader), channel);
 }
@@ -775,7 +786,10 @@ function releaseAll() {
   for (const pointerId of [...activePointers.keys()]) releasePointer({ pointerId });
 }
 
-document.querySelector('#midi-reset').addEventListener('click', () => midi.resetNotes(releaseNotes));
+document.querySelector('#midi-reset').addEventListener('click', () => {
+  superKnob?.stop();
+  midi.resetNotes(releaseNotes);
+});
 
 window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => {
@@ -857,6 +871,7 @@ function resetSection(section) {
 }
 
 document.querySelector('#reset-faders').addEventListener('click', () => {
+  superKnob?.stop();
   releaseAll();
   volumeMuted = false;
   midi.setMuted(false);
@@ -915,10 +930,25 @@ layoutPanel();
 const positionExpression = document.querySelector('#position-expression');
 positionExpression.checked = getPreference('positionExpression', (value) => typeof value === 'boolean', false);
 positionExpression.addEventListener('change', () => setPreference('positionExpression', positionExpression.checked));
+superKnob = setupSuperKnob({
+  panel,
+  clock: grooveClock,
+  midiLearn,
+  startPreviewNote: (note) => midi.startPreviewNote(note),
+  endPreviewNote: () => midi.endPreviewNote(),
+  getValue: (id) => readValue(panel.querySelector(`#${id}`)),
+  apply: (id, value, channel = 0) => {
+    const fader = panel.querySelector(`#${id}`);
+    updateFader(fader, value, false);
+    midi.setControl(id, value, channel);
+  },
+  onChange: () => patchLibrary?.controlsChanged(),
+});
 patchLibrary = createPatchLibrary({
   root: document.querySelector('#patch-library'),
   panel,
   getAppSetting,
+  superKnob,
   initialControls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => {
     const fader = panel.querySelector(`#${id}`);
     return [id, startingValues.get(fader)];
@@ -928,6 +958,7 @@ patchLibrary = createPatchLibrary({
     readValue(panel.querySelector(`#${id}`)),
   ])),
   applyControls: async (controls) => {
+    superKnob.suspendForPatch();
     for (const id of PATCH_CONTROL_IDS) {
       updateFader(panel.querySelector(`#${id}`), controls[id], false);
     }

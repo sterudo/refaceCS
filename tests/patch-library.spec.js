@@ -201,6 +201,145 @@ test('patch display tracks known changes and navigates the filtered list', async
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Alpha');
 });
 
+test('patch display menu reuses the current name-sorted favorites, category, tag, and name filters', async ({ page }) => {
+  await page.locator('#footer-panel > summary').click();
+  for (const [name, category, tags, favorite] of [
+    ['Zulu', 'pads', 'wide', true], ['Alpha', 'pads', 'wide', true],
+    ['Middle', 'bass', 'wide', true], ['Beta', 'pads', 'narrow', true],
+    ['Outside', 'pads', 'wide', false],
+  ]) {
+    const card = await savePatch(page, { name, category, tags });
+    await expect(page.locator('#patch-editor')).toBeHidden();
+    if (favorite) await card.getByRole('button', { name: `Add ${name} to favorites`, exact: true }).click();
+  }
+  const display = page.locator('#patch-display-screen');
+  const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
+  await display.click({ button: 'right' });
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Alpha', 'Beta', 'Middle', 'Outside', 'Zulu']);
+  await expect(menu.getByRole('menuitemradio', { name: 'Outside', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await expect(display).toBeFocused();
+  await page.locator('#patch-favorites-only').check();
+  await page.locator('#patch-category-filter').getByRole('button', { name: 'pads', exact: true }).click();
+  await page.locator('#patch-tag-filter').getByRole('button', { name: 'wide', exact: true }).click();
+  await display.click({ button: 'right' });
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Alpha', 'Zulu']);
+  await page.keyboard.press('Escape');
+  await page.locator('#patch-name-filter').fill('zUL');
+  await display.press('Shift+F10');
+  await expect(menu.getByRole('menuitemradio')).toHaveText(['Zulu']);
+  await menu.getByRole('menuitemradio', { name: 'Zulu', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect(display).toHaveAttribute('aria-label', 'Zulu');
+  await expect(display).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#patch-name-filter')).toHaveValue('zUL');
+});
+
+test('patch display menu loads protect unsaved changes and support keyboard navigation and cancellation', async ({ page }) => {
+  await page.locator('#footer-panel > summary').click();
+  await savePatch(page, { name: 'Alpha' });
+  await expect(page.locator('#patch-editor')).toBeHidden();
+  await page.locator('#lfo-depth').press('Home');
+  await savePatch(page, { name: 'Zulu' });
+  await expect(page.locator('#patch-editor')).toBeHidden();
+  await page.locator('#lfo-depth').press('End');
+  const display = page.locator('#patch-display-screen');
+  const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
+  const unsaved = page.getByRole('dialog', { name: 'Unsaved sound', exact: true });
+  await display.click({ button: 'right' });
+  await expect(menu.getByRole('menuitemradio', { name: 'Zulu', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitemradio', { name: 'Alpha', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await unsaved.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(display).toHaveAttribute('aria-label', 'Zulu (unsaved changes)');
+  await display.press('Shift+F10');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await unsaved.getByRole('button', { name: 'Discard and load', exact: true }).click();
+  await expect(display).toHaveAttribute('aria-label', 'Alpha');
+  await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+});
+
+test('empty patch display menus explain missing results, fit the viewport, and dismiss on outside click', async ({ page }) => {
+  const display = page.locator('#patch-display-screen');
+  const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
+  await display.click({ button: 'right' });
+  await expect(menu).toHaveText('No patches saved yet.');
+  await expect(menu.getByRole('menuitemradio')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await page.getByRole('button', { name: 'Configure SuperKnob', exact: true }).click();
+  await display.press('Shift+F10');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'SuperKnob configuration', exact: true })).toBeVisible();
+  await expect(menu).toBeHidden();
+  await page.keyboard.press('Escape');
+  await page.locator('#footer-panel > summary').click();
+  await savePatch(page, { name: 'A very long patch name '.repeat(15) });
+  await expect(page.locator('#patch-editor')).toBeHidden();
+  await page.locator('#patch-name-filter').fill('No match');
+  await display.locator(':scope > rect').click({ button: 'right' });
+  await expect(menu).toHaveText('No patches match these filters.');
+  await page.locator('#patch-name-filter').fill('');
+  await display.locator(':scope > rect').click({ button: 'right' });
+  const bounds = await menu.boundingBox();
+  const viewport = page.viewportSize();
+  expect(bounds.x).toBeGreaterThanOrEqual(8);
+  expect(bounds.y).toBeGreaterThanOrEqual(8);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 7);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height - 7);
+  await page.locator('#app-settings-open').click();
+  await expect(menu).toBeHidden();
+  await expect(display).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('patch display menu scrolls large libraries within a narrow viewport and loads the keyboard choice', async ({ page }) => {
+  await page.locator('#footer-panel > summary').click();
+  await savePatch(page, { name: 'Seed' });
+  await expect(page.locator('#patch-editor')).toBeHidden();
+  await page.evaluate(async () => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('refaceCS-library');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction('patches', 'readwrite');
+      const store = transaction.objectStore('patches');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const template = request.result[0];
+        for (let i = 0; i < 50; i++) store.put({
+          ...template, id: i ? `menu-${i}` : template.id, name: `Patch ${String(i).padStart(3, '0')}`,
+        });
+      };
+      transaction.oncomplete = resolve;
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  });
+  await page.reload();
+  await expect(page.locator('.patch-card')).toHaveCount(50);
+  await page.setViewportSize({ width: 390, height: 650 });
+  const display = page.locator('#patch-display-screen');
+  const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
+  await display.press('Shift+F10');
+  await expect(menu.getByRole('menuitemradio')).toHaveCount(50);
+  const bounds = await menu.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(8);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(383);
+  expect(bounds.y).toBeGreaterThanOrEqual(8);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(643);
+  expect(await menu.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await page.keyboard.press('End');
+  await expect(menu.getByRole('menuitemradio', { name: 'Patch 049', exact: true })).toBeFocused();
+  expect(await menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press('Enter');
+  await expect(display).toHaveAttribute('aria-label', 'Patch 049');
+  await expect(menu).toBeHidden();
+});
+
 test('unsaved changes can be saved as a new patch without copying audio', async ({ page }) => {
   await page.locator('#footer-panel').first().locator('summary').click();
   const source = await savePatch(page, { name: 'Original', description: 'Warm', category: 'pads', tags: 'soft' });

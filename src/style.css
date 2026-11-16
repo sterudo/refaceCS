@@ -62,6 +62,7 @@ main {
 }
 
 #message-center[hidden], #messages-open[hidden] { display: none; }
+#messages-open.has-unread-error { background: #a52a35; border-color: #ef6974; color: #fff; }
 
 .message-toolbar {
   display: flex;
@@ -335,6 +336,10 @@ top: 4px;
   gap: 8px;
 }
 
+@media (min-width: 601px) {
+  .midi-actions:has(#midi-badge:not([data-access="granted"])) { padding-top: 26px; }
+}
+
 .midi-actions > button, .midi-ports > button, .midi-learn-controls > button { padding: 5px; }
 .midi-ports > span:empty, .midi-ports > p:empty { display: none; }
 
@@ -366,6 +371,7 @@ top: 4px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   margin-bottom: 1rem;
   font-size: 0.8rem;
@@ -426,7 +432,7 @@ button {
 #visual-toggles > button {
   background: transparent;
   border: none;
-  color: darkcyan;
+  color: var(--instrument-accent, darkcyan);
   text-shadow: 0px 0px 1px black;
   padding-top: 3px;
   padding-inline: 5px;
@@ -599,6 +605,24 @@ input[type="range"]:focus-visible,
 .arp-button:hover .arp-lens { filter: brightness(1.12); }
 .patch-navigation[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 .patch-navigation[aria-disabled="true"]:hover .arp-lens { filter: none; }
+#patch-display-screen { outline: none; cursor: context-menu; }
+#patch-display-screen:focus-visible > rect { stroke: #21a8bc; stroke-width: 2; }
+.patch-display-menu {
+  position: fixed; inset: auto; margin: 0; box-sizing: border-box;
+  width: max-content; min-width: min(16rem, calc(100vw - 16px));
+  max-width: min(32rem, calc(100vw - 16px)); overscroll-behavior: contain;
+  max-height: min(24rem, calc(100dvh - 16px)); overflow: auto;
+  padding: .3rem; border: 1px solid #526873; border-radius: .4rem;
+  background: #182229; color: #dce4e8; box-shadow: 0 .5rem 1.5rem #0009;
+}
+.patch-display-menu-item {
+  display: block; width: 100%; padding: .45rem .7rem;
+  border: 0; border-radius: .2rem; background: transparent;
+  text-align: left; white-space: normal; overflow-wrap: anywhere;
+}
+.patch-display-menu-item[aria-checked="true"] { background: #795121; color: #fff0d4; }
+.patch-display-menu-item:hover, .patch-display-menu-item:focus-visible { background: #344b55; outline: 2px solid #65e4ed; outline-offset: -2px; }
+.patch-display-menu p { margin: .45rem .7rem; font-size: .8rem; }
 .arp-toggle[aria-pressed="true"]:hover .arp-lens {
   filter: brightness(1.1) drop-shadow(0 0 3px #f4a42c);
 }
@@ -1221,16 +1245,6 @@ dialog { box-sizing: border-box; max-height: 90vh; overflow-y: auto; }
   font-size: 1.2rem;
 }
 
-#help-open {
-  position: relative;
-  z-index: 2;
-  margin-left: 0.35rem;
-  padding: 0.2rem 0.45rem;
-  font-size: 0.75rem;
-  letter-spacing: normal;
-  vertical-align: middle;
-}
-
 .help-window {
   position: fixed;
   inset: auto;
@@ -1432,6 +1446,9 @@ footer {
   outline: none;
   transition: filter 180ms ease-in-out;
 }
+
+.instrument-scroll:has(.dark-synth-case) { --instrument-accent: #65e4ed; }
+.housing-step > text { font-size: 13.5px; }
 
 .clickable-label:hover,
 .clickable-label:focus-visible {

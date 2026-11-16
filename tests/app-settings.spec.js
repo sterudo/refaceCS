@@ -53,6 +53,50 @@ test('startup preferences persist and sections can be reordered', async ({ page 
   await expect(page.locator('#drum-tempo')).toHaveValue('137');
 });
 
+test('dark mode brightens every cyan housing action and restores the light-mode colors', async ({ page }) => {
+  const targets = [
+    ...['focus-mode', 'hide-speakers', 'hide-displays', 'five-octaves', 'reset-faders', 'fader-size']
+      .map((id) => [`#${id}`, 'color']),
+    ...['looper-transfer-open', 'looper-load', 'looper-save'].map((id) => [`#${id} path`, 'stroke']),
+    ...['volume-mute', 'looper-meter', 'looper-quantize', 'pitch-range-down', 'pitch-range-up',
+      'looper-bars-down', 'looper-bars-up'].map((id) => [`#${id} text`, 'fill']),
+  ];
+  const readColors = () => page.evaluate((targets) => targets.map(([selector, property]) =>
+    getComputedStyle(document.querySelector(selector)).getPropertyValue(property)), targets);
+  const light = await readColors();
+  for (const mode of ['case', 'keys']) {
+    await page.locator('#dark-synth-mode').click();
+    await expect(page.locator('#dark-synth-mode')).toHaveAttribute('data-mode', mode);
+    const dark = await readColors();
+    for (let i = 0; i < targets.length; i++) {
+      const before = light[i].match(/\d+/g).map(Number);
+      const after = dark[i].match(/\d+/g).map(Number);
+      for (let channel = 0; channel < 3; channel++) expect(after[channel], targets[i][0]).toBeGreaterThan(before[channel]);
+      expect(dark[i]).toBe(dark[0]);
+    }
+  }
+  await page.locator('#dark-synth-mode').click();
+  expect(await readColors()).toEqual(light);
+});
+
+test('housing step symbols are fifty percent larger and Dark Synth label gap is seventy percent smaller', async ({ page }) => {
+  const metrics = await page.evaluate(() => {
+    const group = document.querySelector('#dark-synth-mode');
+    const label = group.querySelector('text');
+    const buttonX = Number(group.querySelector('.arp-bezel').getAttribute('x'));
+    const width = label.getComputedTextLength();
+    const baseSize = parseFloat(getComputedStyle(document.querySelector('#pitch-range')).fontSize);
+    return {
+      gapRatio: (buttonX - Number(label.getAttribute('x')) - width) / (buttonX - width),
+      sizeRatios: [...document.querySelectorAll('.housing-step > text')]
+        .map((text) => parseFloat(getComputedStyle(text).fontSize) / baseSize),
+    };
+  });
+  expect(metrics.gapRatio).toBeCloseTo(0.3, 2);
+  expect(metrics.sizeRatios).toHaveLength(6);
+  for (const ratio of metrics.sizeRatios) expect(ratio).toBe(1.5);
+});
+
 test('settings apply dark mode immediately and keep dependent fields aligned and conditional', async ({ page }) => {
   await page.locator('#app-settings-open').click();
   const darkSelect = page.locator('#settings-dark-synth');

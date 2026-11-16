@@ -84,6 +84,7 @@ test('MIDI Learn pickup re-arms after other edits and detects crossing without r
     window.testNotes.sent.length = 0;
     window.testNotes.emit('ci', [0xb2, 21, 50]);
   });
+
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '70');
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
   await page.evaluate(() => {
@@ -104,6 +105,239 @@ test('MIDI Learn pickup re-arms after other edits and detects crossing without r
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
   await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 0]));
   expect(await page.evaluate(() => window.testNotes.sent.at(-1).data)).toEqual([0xb2, 74, 0]);
+});
+
+test('SuperKnob MIDI Learn routes parallel targets and manual MIDI takeover stops cycling', async ({ page }) => {
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-target').selectOption('pitch-bend');
+  await page.locator('#superknob-add').click();
+  await page.locator('#superknob-reset-curve').click();
+  await page.locator('#superknob-close').click();
+  await learnFader(page, 'super-knob', 21);
+  await page.locator('#midi-learn').click();
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 32]);
+  });
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '32');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '32');
+  await expect(page.locator('#pitch-bend')).toHaveAttribute('aria-valuenow', '32');
+  expect(await page.evaluate(() => window.testNotes.sent.map(({ data }) => data))).toEqual([
+    [0xb2, 74, 32], [0xe2, 0, 32],
+  ]);
+  await page.clock.install();
+  await page.locator('#superknob-cycle-toggle').click();
+  await page.clock.runFor(500);
+  await expect(page.locator('#superknob-cycle-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 0]);
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 70]);
+  });
+  await expect(page.locator('#superknob-cycle-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '70');
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '70');
+  await page.clock.runFor(1000);
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '70');
+});
+
+test('SuperKnob recording starts on the selected physical MIDI fader without echoing it', async ({ page }) => {
+  await page.clock.install();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-record').click();
+  await page.evaluate(() => {
+    window.testNotes.sent.length = 0;
+    window.testNotes.emit('ri', [0xb0, 71, 20]);
+  });
+  await expect(page.locator('#superknob-record-state')).toHaveText('ARMED');
+  await page.evaluate(() => window.testNotes.emit('ri', [0xb0, 74, 20]));
+  await expect(page.locator('#superknob-record-state')).toHaveText('RECORDING');
+  await page.clock.runFor(2500);
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '20');
+  await page.evaluate(() => window.testNotes.emit('ri', [0xb0, 74, 110]));
+  await page.clock.runFor(2600);
+  await expect(page.locator('#superknob-record-state')).toHaveText('READY');
+  expect(await page.evaluate(() => window.testNotes.sent.filter(({ data }) => data[0] === 0xb0 && data[1] === 74))).toEqual([]);
+});
+
+test('learned SuperKnob MIDI records the selected fader without interrupting the sweep and restores macro pickup on close', async ({ page }) => {
+  await learnFader(page, 'super-knob', 21);
+  await page.locator('#midi-learn').click();
+  await page.clock.install();
+  await page.locator('#super-knob-configure').click();
+  await expect(page.locator('#superknob-controller-hint')).toContainText('temporarily controls Cutoff');
+  await page.locator('#superknob-record-seconds').fill('2');
+  await page.locator('#superknob-record-seconds').press('Tab');
+  await page.locator('#superknob-record').click();
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 100]));
+  await expect(page.locator('#superknob-record-state')).toHaveText('ARMED');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 0]);
+  });
+  await expect(page.locator('#superknob-record-state')).toHaveText('RECORDING');
+  await page.clock.runFor(1000);
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 90]));
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '90');
+  await expect(page.locator('#superknob-record-state')).toHaveText('RECORDING');
+  const halfway = Number(await page.locator('#super-knob').getAttribute('aria-valuenow'));
+  expect(halfway).toBeGreaterThan(60);
+  expect(halfway).toBeLessThan(67);
+  await page.clock.runFor(1100);
+  await expect(page.locator('#superknob-record-state')).toHaveText('READY');
+  await page.locator('#superknob-close').click();
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 90]));
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '127');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 32]);
+  });
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '32');
+});
+
+test('temporary SuperKnob MIDI routing follows selection, scales selectors, and rearms pickup after a manual fader change', async ({ page }) => {
+  await learnFader(page, 'super-knob', 21);
+  await page.locator('#midi-learn').click();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-target').selectOption('effect-type');
+  await page.locator('#superknob-add').click();
+  await expect(page.locator('#superknob-controller-hint')).toContainText('temporarily controls Effect type');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 0]);
+    window.testNotes.emit('ci', [0xb2, 21, 64]);
+  });
+  await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.locator('#super-knob')).toHaveAttribute('aria-valuenow', '127');
+  await page.locator('#superknob-record-fader').evaluate((element) => {
+    element.value = '4';
+    element.dispatchEvent(new Event('input'));
+  });
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 30]));
+  await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', '4');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 32]);
+  });
+  await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', '1');
+  await page.locator('#superknob-mappings button').filter({ hasText: /^Cutoff$/ }).click();
+  await expect(page.locator('#superknob-controller-hint')).toContainText('temporarily controls Cutoff');
+  await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 64]));
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
+  await page.evaluate(() => {
+    window.testNotes.emit('ci', [0xb2, 21, 127]);
+    window.testNotes.emit('ci', [0xb2, 21, 35]);
+  });
+  await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '35');
+  await page.locator('#midi-learn-clear').press('Enter');
+  await expect(page.locator('#superknob-controller-hint')).not.toContainText('temporarily controls Cutoff');
+});
+
+test('C-major audition is an independent eighth-note preview that follows shared tempo without changing arp settings', async ({ page }) => {
+  await page.clock.install();
+  await page.locator('#arp-enabled').click();
+  await expect(page.locator('#arp-latch')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#super-knob-configure').click();
+  await page.evaluate(() => { window.testNotes.sent.length = 0; });
+  await page.locator('#superknob-audition').check();
+  await page.clock.runFor(510);
+  expect(await page.evaluate(() => window.testNotes.sent.filter(({ data }) => data[0] === 0x90).map(({ data }) => data))).toEqual([
+    [0x90, 60, 100], [0x90, 64, 100], [0x90, 67, 100],
+  ]);
+  await expect(page.locator('#arp-enabled')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#arp-latch')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#tempo').press('Home');
+  await page.evaluate(() => { window.testNotes.sent.length = 0; });
+  await page.clock.runFor(260);
+  expect(await page.evaluate(() => window.testNotes.sent.filter(({ data }) => data[0] === 0x90).map(({ data }) => data[1]))).toEqual([60, 64]);
+  await page.locator('#superknob-audition').uncheck();
+  const sent = await page.evaluate(() => window.testNotes.sent.length);
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => window.testNotes.sent.length)).toBe(sent);
+  await expect(page.locator('#arp-enabled')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#arp-latch')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('audition note ownership cannot release a controller note retriggered at the same pitch', async ({ page }) => {
+  await page.locator('#midi-controller-input').selectOption('ci');
+  await page.clock.install();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-audition').check();
+  await page.evaluate(() => window.testNotes.emit('ci', [0x90, 60, 80]));
+  await page.evaluate(() => { window.testNotes.sent.length = 0; });
+  await page.locator('#superknob-audition').uncheck();
+  expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
+  await page.evaluate(() => window.testNotes.emit('ci', [0x80, 60, 0]));
+  expect(await page.evaluate(() => window.testNotes.sent.map(({ data }) => data))).toEqual([[0x80, 60, 0]]);
+});
+
+for (const action of ['close', 'reset', 'mute', 'output change', 'disconnect', 'visibility']) {
+  test(`C-major audition releases notes and does not restart after ${action}`, async ({ page }) => {
+    await page.clock.install();
+    await page.locator('#super-knob-configure').click();
+    await page.locator('#superknob-audition').check();
+    if (action === 'close') await page.locator('#superknob-close').click();
+    if (action === 'reset') await page.locator('#midi-reset').press('Enter');
+    if (action === 'mute') await page.locator('#volume-mute').press('Enter');
+    if (action === 'output change') await page.locator('#midi-reface-output').selectOption('other');
+    if (action === 'disconnect') await page.evaluate(() => {
+      window.testNotes.access.outputs.get('ro').state = 'disconnected';
+      window.testNotes.access.dispatchEvent(new Event('statechange'));
+    });
+    if (action === 'visibility') await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect(page.locator('#superknob-audition')).not.toBeChecked();
+    if (action !== 'disconnect') {
+      expect(await page.evaluate(() => window.testNotes.sent.map(({ data }) => data))).toContainEqual([0x80, 60, 0]);
+    }
+    const sent = await page.evaluate(() => window.testNotes.sent.length);
+    await page.clock.runFor(1000);
+    expect(await page.evaluate(() => window.testNotes.sent.length)).toBe(sent);
+  });
+}
+
+test('audition reports missing output and send failures instead of leaving its checkbox on', async ({ page }) => {
+  await page.clock.install();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#midi-reface-output').selectOption('');
+  await page.locator('#superknob-audition').click();
+  await expect(page.locator('#superknob-audition')).not.toBeChecked();
+  await expect(page.locator('.message-entry[data-source="midi-status"][data-severity="error"]').last()).toContainText('MIDI output');
+  await page.locator('#midi-reface-output').selectOption('ro');
+  await page.locator('#superknob-audition').check();
+  await page.evaluate(() => {
+    const port = window.testNotes.access.outputs.get('ro');
+    window.testNotes.originalSend = port.send;
+    port.send = () => { throw new Error('device busy'); };
+  });
+  await page.clock.runFor(150);
+  await expect(page.locator('#superknob-audition')).not.toBeChecked();
+  await expect(page.locator('.message-entry[data-source="midi-status"][data-severity="error"]').last()).toContainText('device busy');
+  await page.evaluate(() => {
+    window.testNotes.access.outputs.get('ro').send = window.testNotes.originalSend;
+    window.testNotes.sent.length = 0;
+  });
+  await page.locator('#midi-reset').press('Enter');
+  expect(await page.evaluate(() => window.testNotes.sent.map(({ data }) => data))).toContainEqual([0x80, 60, 0]);
+  const sent = await page.evaluate(() => window.testNotes.sent.length);
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => window.testNotes.sent.length)).toBe(sent);
+});
+
+test('audition does not enter the looper recording or start Groove Studio', async ({ page }) => {
+  await page.clock.install();
+  for (const step of [4, 2, 3]) await page.locator(`#looper .position-label[data-step="${step}"]`).click();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-audition').check();
+  await page.clock.runFor(1000);
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('armed');
+  await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#superknob-audition').uncheck();
+  await page.locator('#superknob-close').click();
+  await page.locator('#looper .position-label[data-step="2"]').click();
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toHaveText('Looper is empty.');
 });
 
 test('MIDI Learn pickup re-arms on an actual patch recall', async ({ page }) => {
@@ -445,6 +679,8 @@ test('MIDI controls align in one compact row and reuse top toolbar button and se
       const box = element.getBoundingClientRect();
       return { x: box.x, right: box.right, center: box.y + box.height / 2 };
     }));
+  const rowBounds = await controls.boundingBox();
+  expect((boxes[0].x + boxes.at(-1).right) / 2).toBeCloseTo(rowBounds.x + rowBounds.width / 2, 1);
   for (let index = 1; index < boxes.length; index++) {
     expect(boxes[index].center).toBeCloseTo(boxes[0].center, 1);
     expect(boxes[index].x - boxes[index - 1].right).toBeCloseTo(8, 1);

@@ -9,8 +9,7 @@
     <main>
       <header class="toolbar">
         <div class="toolbar-brand">
-          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-16">v0.10</button>
-            <button id="help-open" type="button" data-help-target="about">Help</button>
+          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-16">v0.11</button>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
@@ -20,6 +19,7 @@
           <div class="midi-actions">
            <span id="midi-badge" class="badge" role="status">MIDI not connected</span> 
           <button id="midi-connect" type="button" class="notconnectedmidi">Connect MIDI</button>
+           <button id="help-open" type="button" data-help-target="about">About</button>
            <button id="app-settings-open" type="button">Settings</button>
           <button id="device-settings-open" type="button">Device settings</button>
            <button id="midi-reset" type="button">MIDI Reset</button>
@@ -471,6 +471,7 @@
           <label> Tags, separated by commas
             <input id="patch-tags" name="tags" autocomplete="off">
           </label>
+          <label class="patch-superknob-option"><input id="patch-include-superknob" type="checkbox"> Include an independent SuperKnob definition</label>
           <p id="patch-editor-status" role="status"></p>
           <div class="patch-editor-actions">
             <button id="patch-editor-cancel" type="button">Cancel</button>

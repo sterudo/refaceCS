@@ -69,6 +69,12 @@ export function setupNotifications() {
     if (save) setPreference('messagesVisible', visible);
     syncModalHost();
     if (visible) {
+      if (open.classList.contains('has-unread-error')) {
+        selected.clear();
+        applyFilters();
+      }
+      open.classList.remove('has-unread-error');
+      open.setAttribute('aria-label', 'Messages');
       measure();
       log.scrollTop = following ? log.scrollHeight : savedScrollTop;
       lastScrollTop = log.scrollTop;
@@ -128,9 +134,8 @@ export function setupNotifications() {
     log.append(row);
     empty.hidden = empty.hidden || !row.hidden;
     if (center.hidden && severity === 'error') {
-      selected.clear();
-      applyFilters();
-      setVisible(true);
+      open.classList.add('has-unread-error');
+      open.setAttribute('aria-label', 'Messages (new errors)');
     }
     if (following && !row.hidden) log.scrollTop = log.scrollHeight;
     center.classList.add('has-new-message');

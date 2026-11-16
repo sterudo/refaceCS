@@ -7,6 +7,8 @@ export function createMidiLearn(faders, onControl) {
   const assignments = document.querySelector('#midi-learn-assignments');
   const clear = document.querySelector('#midi-learn-clear');
   const targets = new Map(faders.map((fader) => [fader.id, fader]));
+  const overrides = new Map();
+  const listeners = new Set();
   const pickup = new Map();
   let controller;
   let enabled = false;
@@ -58,13 +60,14 @@ export function createMidiLearn(faders, onControl) {
     if (!assignments.options.length) assignments.add(new Option('No learned assignments', ''));
     assignments.disabled = !assignments.value;
     clear.disabled = !assignments.value;
+    for (const listener of listeners) listener();
   }
 
   function setEnabled(value) {
     enabled = value;
     toggle.setAttribute('aria-pressed', String(enabled));
     clearTarget();
-    show(enabled ? 'Move an on-screen synth fader, then a MIDI control.'
+    show(enabled ? 'Move an on-screen synth fader or SuperKnob, then a MIDI control.'
       : controller ? 'MIDI Learn off. Learned assignments remain active with pickup.'
         : 'Connect MIDI and select a separate Controller input to use MIDI Learn.');
   }
@@ -77,7 +80,7 @@ export function createMidiLearn(faders, onControl) {
     pickup.delete(keyOf(mapping));
     setPreference('midiLearn', mappings);
     renderAssignments();
-    show(`Cleared CC ${mapping.cc} on channel ${mapping.channel + 1}.${enabled ? ' Move an on-screen synth fader.' : ''}`);
+    show(`Cleared CC ${mapping.cc} on channel ${mapping.channel + 1}.${enabled ? ' Move an on-screen synth fader or SuperKnob.' : ''}`);
     clearTarget();
   });
 
@@ -87,6 +90,14 @@ export function createMidiLearn(faders, onControl) {
 
   return {
     selectTarget,
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    hasAssignment(id) { return mappings.some((mapping) => mapping.port === controller?.id && mapping.target === id); },
+    redirectTarget(id, fader) {
+      if (overrides.get(id) === (fader || undefined)) return;
+      if (fader) overrides.set(id, fader);
+      else overrides.delete(id);
+      for (const mapping of mappings) if (mapping.target === id) pickup.delete(keyOf(mapping));
+    },
     setController(port) {
       if (port === controller) return;
       controller = port;
@@ -100,7 +111,7 @@ export function createMidiLearn(faders, onControl) {
     },
     valueChanged(id) {
       for (const mapping of mappings) {
-        if (mapping.target === id) {
+        if (mapping.target === id || overrides.get(mapping.target)?.id === id) {
           const state = pickup.get(keyOf(mapping));
           if (state) state.active = false;
         }
@@ -125,13 +136,13 @@ export function createMidiLearn(faders, onControl) {
         assignments.value = key;
         const label = targets.get(target).dataset.label;
         clearTarget();
-        show(`CC ${source.cc}, channel ${source.channel + 1} assigned to ${label}. Move another on-screen synth fader, or turn MIDI Learn off.`);
-        const fader = targets.get(mapping.target);
+        show(`CC ${source.cc}, channel ${source.channel + 1} assigned to ${label}. Move another on-screen synth fader or SuperKnob, or turn MIDI Learn off.`);
+        const fader = overrides.get(mapping.target) ?? targets.get(mapping.target);
         pickup.set(key, { previous: mappedValue(fader, data[2]), active: false });
         return true;
       }
       if (!mapping) return false;
-      const fader = targets.get(mapping.target);
+      const fader = overrides.get(mapping.target) ?? targets.get(mapping.target);
       const value = mappedValue(fader, data[2]);
       const current = Number(fader.dataset.value);
       const state = pickup.get(key) || { active: false };

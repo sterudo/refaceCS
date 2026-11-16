@@ -142,9 +142,12 @@ test('keeps the single log usable in nested modals and retains inline field vali
     name: 'invalid.zip', mimeType: 'application/zip', buffer: Buffer.from('invalid'),
   });
   await expect(page.locator('.message-entry[data-source="backup-status"]').last()).toContainText('Could not import');
-  await expect(page.locator('#backup-dialog #message-center')).toBeVisible();
+  await expect(page.locator('#message-center')).toBeHidden();
+  await expect(page.locator('#messages-open')).toHaveClass(/has-unread-error/);
   await page.locator('#backup-close').click();
   await expect(page.locator('#message-slot #message-center')).toHaveCount(1);
+  await page.locator('#messages-open').click();
+  await expect(page.locator('#message-center')).toBeVisible();
   await page.locator('#groove-panel > summary').click();
   await page.locator('#drum-new').click();
   const dialog = page.getByRole('dialog', { name: 'Drum pattern name', exact: true });
@@ -158,7 +161,7 @@ test('keeps the single log usable in nested modals and retains inline field vali
   await expect(page.locator('#message-slot #message-center')).toHaveCount(1);
 });
 
-test('dismisses without losing history, reopens manually, and only errors reopen it automatically', async ({ page }) => {
+test('dismisses without losing history and marks hidden errors red until explicitly opened', async ({ page }) => {
   await open(page);
   const center = page.locator('#message-center');
   const show = page.locator('#messages-open');
@@ -173,11 +176,13 @@ test('dismisses without losing history, reopens manually, and only errors reopen
   await page.locator('#messages-close').click();
   await expect(center).toBeHidden();
   await expect(show).toBeVisible();
+  const normalBackground = await show.evaluate((button) => getComputedStyle(button).backgroundColor);
   await expect(show).toBeFocused();
   expect(await show.evaluate((button) => button.previousElementSibling.contains(document.querySelector('#midi-controller-input')))).toBe(true);
   await addMessages(page, 1);
   await expect(page.locator('.message-entry')).toHaveCount(count + 1);
   await expect(center).toBeHidden();
+  await expect(show).not.toHaveClass(/has-unread-error/);
   await page.evaluate(() => window.scrollTo(0, 400));
   await expect(show).toBeInViewport();
   await show.click();
@@ -187,10 +192,40 @@ test('dismisses without losing history, reopens manually, and only errors reopen
   expect(await page.locator('#message-log').evaluate((log) => log.scrollTop)).toBe(0);
   await page.locator('#messages-close').click();
   await page.locator('#midi-connect').click();
+  await expect(center).toBeHidden();
+  await expect(show).toHaveClass(/has-unread-error/);
+  await expect(show).toHaveAccessibleName('Messages (new errors)');
+  await expect(show).toHaveCSS('background-color', 'rgb(165, 42, 53)');
+  await expect(page.locator('#midi-connect')).toBeFocused();
+  await addMessages(page, 1);
+  await expect(show).toHaveClass(/has-unread-error/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).messagesVisible)).toBe(false);
+  await show.click();
   await expect(center).toBeVisible();
+  await expect(show).not.toHaveClass(/has-unread-error/);
+  await expect(show).toHaveCSS('background-color', normalBackground);
   await expect(filters.getByRole('button', { name: 'All', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.message-entry[data-source="midi-status"][data-severity="error"]').last()).toBeVisible();
-  await expect(page.locator('#midi-connect')).toBeFocused();
+  await page.locator('#messages-close').click();
+  await expect(show).toHaveCSS('background-color', normalBackground);
+  await page.reload();
+  await expect(center).toBeHidden();
+});
+
+test('Settings-hidden messages stay hidden on MIDI errors and retain the startup preference', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('refaceCS.preferences.v1', JSON.stringify({ startupMessages: 'hide' }));
+  });
+  await open(page);
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#message-center')).toBeHidden();
+  await expect(page.locator('#messages-open')).toHaveClass(/has-unread-error/);
+  await page.locator('#messages-open').click();
+  await expect(page.locator('#message-center')).toBeVisible();
+  await expect(page.locator('#messages-open')).not.toHaveClass(/has-unread-error/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).startupMessages)).toBe('hide');
+  await page.reload();
+  await expect(page.locator('#message-center')).toBeHidden();
 });
 
 test('matches the dark background and resizes only height with a 100px default and 75px minimum', async ({ page }) => {

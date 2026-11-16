@@ -82,7 +82,7 @@ function makeTag(text) {
   return tag;
 }
 
-export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls, getAppSetting }) {
+export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls, getAppSetting, superKnob }) {
   const store = new PatchStore();
   const status = createReporter('patches', 'patch-status');
   const cards = root.querySelector('#patch-cards');
@@ -104,6 +104,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   const categoryInput = document.querySelector('#patch-category');
   const categoryOptions = document.querySelector('#patch-category-options');
   const tagsInput = document.querySelector('#patch-tags');
+  const includeSuperKnob = document.querySelector('#patch-include-superknob');
   const cancelEditor = document.querySelector('#patch-editor-cancel');
   const editorStatus = document.querySelector('#patch-editor-status');
   const display = panel.querySelector('#patch-display-screen');
@@ -113,6 +114,14 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   const next = panel.querySelector('#patch-next');
   const newButton = panel.querySelector('#patch-new');
   const displaySaveButton = panel.querySelector('#patch-save-display');
+  const displayMenu = document.createElement('div');
+  displayMenu.id = 'patch-display-menu';
+  displayMenu.className = 'patch-display-menu';
+  displayMenu.setAttribute('popover', 'auto');
+  displayMenu.setAttribute('role', 'menu');
+  displayMenu.setAttribute('aria-label', 'Load filtered patch');
+  displayMenu.tabIndex = -1;
+  document.body.append(displayMenu);
   const preview = new Audio();
   const previewButton = iconButton('Play preview', 'play', 'patch-inline-play', () => {
     if (preview.src) {
@@ -140,6 +149,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   let ready = Promise.resolve();
   let draggingAudio = null;
   let savedControls = getControls();
+  let savedSuperKnob = superKnob.getPatchDefinition();
   let activePatchId = null;
   let detachedPatch = null;
   let initialized = false;
@@ -556,7 +566,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   }
 
   function hasUnsavedControls() {
-    return Boolean(detachedPatch) || controlsDiffer(getControls(), savedControls);
+    return Boolean(detachedPatch) || controlsDiffer(getControls(), savedControls)
+      || JSON.stringify(superKnob.getPatchDefinition()) !== JSON.stringify(savedSuperKnob);
   }
 
   function updateDisplay() {
@@ -588,6 +599,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   }
 
   function render() {
+    closeDisplayMenu();
     const restoreCardFocus = cards.contains(document.activeElement);
     updateFilters();
     const visible = visiblePatches();
@@ -616,7 +628,10 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     categories = await store.listCategories();
     if (activePatchId) {
       const active = patches.find((patch) => patch.id === activePatchId);
-      if (active) savedControls = { ...active.controls };
+      if (active) {
+        savedControls = { ...active.controls };
+        savedSuperKnob = active.superKnob;
+      }
       else if (previousActive) {
         activePatchId = null;
         detachedPatch = previousActive;
@@ -655,6 +670,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     descriptionInput.value = patch?.description ?? copy?.description ?? '';
     categoryInput.value = patch?.category ?? copy?.category ?? 'synth';
     tagsInput.value = (patch?.tags ?? copy?.tags ?? []).join(', ');
+    includeSuperKnob.checked = patch ? patch.superKnob !== undefined : superKnob.getPatchDefinition() !== undefined;
+    includeSuperKnob.disabled = Boolean(patch);
     editor.showModal();
     nameInput.focus();
   }
@@ -699,6 +716,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         ...(editingPatch ?? {
           id: crypto.randomUUID(),
           controls: getControls(),
+          superKnob: includeSuperKnob.checked ? superKnob.getDefinition() : undefined,
           audio: [],
           favorite: false,
           createdAt: now,
@@ -738,6 +756,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         candidate = {
           ...conflict,
           controls: candidate.controls,
+          superKnob: candidate.superKnob,
           audio,
           updatedAt: now,
         };
@@ -746,6 +765,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         }
         if (!audio.length && activePreviewAttachment?.patchId === conflict.id) stopPreview();
         savedControls = { ...candidate.controls };
+        savedSuperKnob = candidate.superKnob;
+        superKnob.setInclude(candidate.superKnob !== undefined);
         activePatchId = candidate.id;
         detachedPatch = null;
         initialized = false;
@@ -761,6 +782,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     if (await persist(candidate, `${candidate.name} saved.`)) {
       if (!editingPatch) {
         savedControls = { ...candidate.controls };
+        savedSuperKnob = candidate.superKnob;
+        superKnob.setInclude(candidate.superKnob !== undefined);
         activePatchId = candidate.id;
         detachedPatch = null;
         initialized = false;
@@ -803,10 +826,11 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     const controls = getControls();
     const audio = await audioForOverwrite(active, controls);
     if (!audio) return false;
-    const candidate = { ...active, controls, audio, updatedAt: new Date().toISOString() };
+    const candidate = { ...active, controls, superKnob: superKnob.getPatchDefinition(), audio, updatedAt: new Date().toISOString() };
     if (!await persist(candidate, `${active.name} updated.`)) return false;
     if (!audio.length && activePreviewAttachment?.patchId === active.id) stopPreview();
     savedControls = { ...controls };
+    savedSuperKnob = candidate.superKnob;
     updateDisplay();
     return true;
   }
@@ -830,6 +854,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
 
   async function saveCurrentPatch() {
     if (loadingPatch) return;
+    superKnob.stop();
     loadingPatch = true;
     try {
       const active = patches.find((item) => item.id === activePatchId);
@@ -850,12 +875,15 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
 
   async function initializePatch(canContinue = () => true) {
     if (loadingPatch) return false;
+    superKnob.stop();
     loadingPatch = true;
     try {
       if (!await preserveUnsavedControls('initialize')) return false;
       if (!canContinue()) return false;
       const result = await applyControls(initialControls);
+      superKnob.loadPatchDefinition(undefined);
       savedControls = { ...initialControls };
+      savedSuperKnob = undefined;
       activePatchId = null;
       detachedPatch = null;
       initialized = true;
@@ -880,13 +908,16 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
 
   async function loadPatch(patch, canContinue = () => true) {
     if (loadingPatch) return false;
+    superKnob.stop();
     loadingPatch = true;
     try {
       if (!getAppSetting('ignoreUnsavedSynthOnLoad') && !await preserveUnsavedControls('load')) return false;
       if (!canContinue()) return false;
       patch = patches.find((item) => item.id === patch.id) ?? patch;
       const result = await applyControls(patch.controls);
+      superKnob.loadPatchDefinition(patch.superKnob);
       savedControls = { ...patch.controls };
+      savedSuperKnob = patch.superKnob;
       activePatchId = patch.id;
       setPreference('lastLoadedPatchId', patch.id);
       detachedPatch = null;
@@ -988,9 +1019,10 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   }
 
   async function exportPatch(patch) {
+    if (patch.id === activePatchId) superKnob.stop();
     let item = patch;
     const controls = getControls();
-    if (patch.id === activePatchId && PATCH_CONTROL_IDS.some((id) => controls[id] !== savedControls[id])) {
+    if (patch.id === activePatchId && hasUnsavedControls()) {
       const dialog = document.querySelector('#patch-export-choice');
       const choice = await new Promise((resolve) => {
         const finish = (event) => {
@@ -1008,7 +1040,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         dialog.showModal();
       });
       if (choice === 'cancel') return;
-      if (choice === 'current') item = { ...patch, controls, updatedAt: new Date().toISOString() };
+      if (choice === 'current') item = { ...patch, controls, superKnob: superKnob.getPatchDefinition(), updatedAt: new Date().toISOString() };
     }
     const result = await exportDialog(item.name, [{ id: 'zip', label: 'Patch ZIP', extension: '.zip' }]);
     if (result) await exportBackup([item], result.filename);
@@ -1119,6 +1151,70 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       }
     });
   }
+  function closeDisplayMenu(restoreFocus = false) {
+    if (!displayMenu.matches(':popover-open')) return;
+    displayMenu.hidePopover();
+    display.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) display.focus({ preventScroll: true });
+  }
+
+  function openDisplayMenu(event) {
+    event.preventDefault();
+    closeDisplayMenu();
+    displayMenu.replaceChildren();
+    const visible = visiblePatches();
+    for (const patch of visible) {
+      const item = button(patch.name, 'patch-display-menu-item', () => {
+        closeDisplayMenu(true);
+        void loadPatch(patch);
+      });
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('aria-checked', String(patch.id === activePatchId));
+      item.tabIndex = -1;
+      displayMenu.append(item);
+    }
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.textContent = patches.length ? 'No patches match these filters.' : 'No patches saved yet.';
+      displayMenu.append(empty);
+    }
+    const anchor = display.querySelector('rect').getBoundingClientRect();
+    displayMenu.showPopover();
+    display.setAttribute('aria-expanded', 'true');
+    const bounds = displayMenu.getBoundingClientRect();
+    const x = event.type === 'contextmenu' && event.button === 2 ? event.clientX : anchor.left;
+    const y = event.type === 'contextmenu' && event.button === 2 ? event.clientY : anchor.bottom;
+    displayMenu.style.left = `${Math.max(8, Math.min(x, innerWidth - bounds.width - 8))}px`;
+    displayMenu.style.top = `${Math.max(8, Math.min(y, innerHeight - bounds.height - 8))}px`;
+    const focused = displayMenu.querySelector('button[aria-checked="true"]')
+      ?? displayMenu.querySelector('button') ?? displayMenu;
+    focused.focus();
+  }
+
+  display.addEventListener('contextmenu', openDisplayMenu);
+  display.addEventListener('keydown', (event) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openDisplayMenu(event);
+  });
+  displayMenu.addEventListener('toggle', () => {
+    display.setAttribute('aria-expanded', String(displayMenu.matches(':popover-open')));
+  });
+  displayMenu.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      closeDisplayMenu(true);
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); }
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const items = [...displayMenu.querySelectorAll('button')];
+    if (!items.length) return;
+    const index = items.indexOf(document.activeElement);
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[target].focus();
+  });
+  for (const event of ['blur', 'resize']) window.addEventListener(event, () => closeDisplayMenu());
   bindPanelButton(newButton, () => { void initializePatch(); });
   bindPanelButton(displaySaveButton, () => { void saveCurrentPatch(); });
   for (const [control, direction] of [[previous, -1], [next, 1]]) {
@@ -1168,6 +1264,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     controlsChanged: updateDisplay,
     async captureWithProtection(capture) {
       if (loadingPatch) return false;
+      superKnob.stop();
       loadingPatch = true;
       try {
         if (!await preserveUnsavedControls('capture')) return false;

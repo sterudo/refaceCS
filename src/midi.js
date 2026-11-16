@@ -48,6 +48,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   let muted = false;
   let transpose = 0;
   let output;
+  let previewNote;
   let controllerPort;
   let lastError = '';
   let savedController = getPreference('controllerInput', (value) => typeof value === 'string', null);
@@ -277,6 +278,14 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     return sendOwned(port, message, owner);
   }
 
+  function endPreviewNote() {
+    if (!previewNote) return true;
+    const { port, channel, note } = previewNote;
+    if (!applyOwned([0x80 | channel, note, 0], 'superknob-preview', outputNotes, (data) => send(port, data))) return false;
+    previewNote = undefined;
+    return true;
+  }
+
   function releaseForwarded(port) {
     for (const [owner, { channel, notes }] of forwarded) {
       for (const note of notes) {
@@ -299,6 +308,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   }
 
   function releaseOutput(port) {
+    groove.onPreviewStop?.();
+    endPreviewNote();
+    previewNote = undefined;
     looper.stop();
     arpeggiator.clear();
     releaseDirect(port);
@@ -825,6 +837,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       notesToRelease.set(key, (notesToRelease.get(key) || 0) + note.count);
     }
     groove.onDrumStop?.();
+    groove.onPreviewStop?.();
     looper.stop();
     arpeggiator.clear();
     cancelScheduled();
@@ -863,6 +876,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     localNotes.clear();
     forwarded.clear();
     outputNotes.clear();
+    previewNote = undefined;
     activeSustain.clear();
     received.clear();
     clearLocalNotes?.();
@@ -883,6 +897,8 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       muted = value;
       looper.setMuted(value);
       if (muted) {
+        groove.onPreviewStop?.();
+        endPreviewNote();
         arpeggiator.silence();
         releaseDirect(output);
       }
@@ -933,6 +949,14 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       return input?.state === 'connected' ? input.id : null;
     },
     resetNotes,
+    startPreviewNote(note) {
+      if (muted) { reportError('Unmute MIDI to audition C major.'); return false; }
+      if (!endPreviewNote()) return false;
+      if (!sendOwned(output, [0x90, note, 100], 'superknob-preview')) return false;
+      previewNote = { port: output, channel: receiveChannel === 16 ? 0 : receiveChannel, note };
+      return true;
+    },
+    endPreviewNote,
     isNoteHeld(note) {
       return [...received.values()].some((value) => value.note === note);
     },

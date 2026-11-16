@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { validateSuperKnob } from './superknob.js';
 
 export const PATCH_CONTROL_IDS = [
   'lfo-assign',
@@ -112,6 +113,7 @@ export function validatePatch(source) {
     category,
     tags,
     controls,
+    ...(source.superKnob === undefined ? {} : { superKnob: validateSuperKnob(source.superKnob) }),
     audio,
     favorite: Boolean(source.favorite),
     createdAt,
@@ -322,6 +324,7 @@ export async function createPatchBackup(patches) {
       tags: patch.tags,
       favorite: Boolean(source.favorite),
       controls: patch.controls,
+      ...(patch.superKnob === undefined ? {} : { superKnob: patch.superKnob }),
       audio,
       createdAt: patch.createdAt,
       updatedAt: patch.updatedAt,

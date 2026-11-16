@@ -36,6 +36,8 @@ export const helpContent = {
     wide: true,
     blocks: [
       paragraph('Dates follow the commits introducing each version. The v0.1 summary also includes improvements made before v0.2.'),
+      heading('v0.11 - 2026-11-16'),
+      paragraph('SuperKnob macro mappings with a movable curve editor, movement-triggered recording with adjustable duration, independently timed or tempo-synced cycling, MIDI Learn with temporary selected-fader control in configuration, C-major audition at shared tempo, independent macro presets, and optional embedded patch definitions.'),
       heading('v0.10 - 2026-11-16'),
       paragraph('Settings for dark synth appearance, startup and MIDI behavior, Groove Studio defaults, patch loading and audio visibility, plus a reset that preserves saved data.'),
       heading('v0.8 - 2026-11-16'),
@@ -87,6 +89,12 @@ export const helpContent = {
         'Generate arpeggios and use Groove Studio for browser audio drums or external MIDI drums.',
         'Export and import library data, or optionally make manual Google Drive backups.',
       ),
+      heading('Messages and appearance'),
+      list(
+        'About sits between Connect MIDI and Settings. The MIDI Learn controls are centered beneath the synth.',
+        'Hidden Messages stay hidden even for MIDI or other errors. A red Messages button indicates a new error; open it to restore the normal button background and show all categories. Message history remains available for this page session.',
+        'Dark Synth brightens cyan actions on and above the housing in both dark modes. The housing + and - controls have larger symbols without changing their actions.',
+      ),
       heading('Limitations'),
       list(
         'Web MIDI requires a secure context and browser permission; SysEx features request additional permission. MIDI support varies by browser and device.',
@@ -96,6 +104,101 @@ export const helpContent = {
         'Parameter graphs are schematic illustrations, not measured audio, calibrated Hz/ms readouts, or simulations of the instrument.',
         'The app cannot independently mute notes played directly on the reface or capture every hardware state, including expression, physical volume, octave, looper phrase, or pitch-bend position.',
       ),
+    ],
+  },
+  superknob: {
+    title: 'SuperKnob',
+    wide: true,
+    blocks: [
+      paragraph('SuperKnob is one macro control for several synth parameters. Each assigned parameter has its own absolute-value curve, so turning one knob can open the filter, reduce resonance, change modulation, and shape effects together. The default mapping controls Cutoff only; custom mappings give the knob an amber glow. Edits apply live to the panel and selected MIDI output.'),
+      details('Getting started and playing the macro', [
+        list(
+          'Connect MIDI, select the reface output, and enable MIDI Control on the instrument to hear parameter changes. Without an output, you can still configure and preview values on screen.',
+          'Find SuperKnob above OSC, beside Dark Synth. Drag vertically, use the wheel, or focus it and use the arrow keys for single steps and Page Up / Page Down for ten steps. Alt+wheel also makes ten-step changes. Home sets the maximum; End sets the minimum.',
+          'Open configuration with EDIT, Configure, a double-click, or a right-click on the knob. With the knob focused, Shift+F10 or the context-menu key also opens it.',
+          'Choose a Parameter and press + Assign parameter. Select its row to edit its curve. All enabled mappings respond together when the macro moves; selecting a row does not solo it.',
+          'Try Cutoff rising from low to high and Resonance falling from high to low. Move Preview position to hear the combined result, optionally using the C-major audition.',
+          'A manual change to an assigned fader remains until the macro next moves. Curves set exact values, not offsets from the current sound.',
+        ),
+      ]),
+      details('Parameters and curve editing', [
+        list(
+          item('Assignable controls', 'Expression, Pitch bend, LFO assign/depth/speed, Texture, Modulation, Cutoff, Resonance, EG balance/attack/decay/sustain/release, and Effect type/depth/rate. A parameter can be assigned only once.'),
+          item('Axes', 'The horizontal axis is SuperKnob position, from 0 to 127. The vertical axis is the selected parameter value. Continuous controls use 0 to 127; LFO assign and Effect type use their five selector positions, 0 to 4. Pitch bend is neutral at 64.'),
+          item('Draw', 'Drag across the graph to draw freehand. The app interpolates between pointer positions and stores 128 samples per curve.'),
+          item('Straight line', 'Select Straight line, then drag between two points to replace that segment with a rising, falling, or flat line.'),
+          item('Exact points', 'Enter a Position and Value, then press Set point to change that sample. Reset curve restores a full minimum-to-maximum ramp for the selected parameter.'),
+          item('Enabled mappings', 'Use each row checkbox to include or bypass its curve. X removes the assignment, not the synth control. The selected curve is emphasized; other curves remain visible for comparison.'),
+          item('Preview', 'Preview position moves the actual macro and applies all enabled mappings. The selected fader below the graph changes that parameter directly instead; it is also the control used for recording.'),
+        ),
+      ]),
+      details('Recording a fader movement', [
+        list(
+          'Select an assigned parameter and set Recording seconds from 0.1 to 120 seconds. The default is five seconds. This is separate from Playback cycle timing.',
+          'Press Record to arm the selected fader. ARMED means the app is waiting: there is no countdown and no recording until that fader actually changes. Moving another fader does not start the take.',
+          'Move the selected editor fader, its original synth fader, or its MIDI control. The first change starts RECORDING and one automatic SuperKnob sweep from minimum to maximum over the chosen duration.',
+          'Perform the desired movement while the sweep runs. The app captures that fader into a position-to-value curve; the old curve never drives the recorded fader during the take. Other enabled parameters continue following their own curves.',
+          'When the sweep finishes, the new curve replaces the previous curve and the state returns to READY. The knob stays at maximum; recording does not loop or start playback cycling.',
+          'Cancel discards an unfinished take and keeps the previous curve. Closing configuration, MIDI Reset, hiding the page, or patch/connection operations also stop unfinished recording. Timing, curve-editing, preset, and selection controls are locked while armed or recording.',
+        ),
+      ]),
+      details('MIDI Learn and temporary fader control', [
+        list(
+          'Select the separate Controller input, enable MIDI Learn, move the on-screen SuperKnob, then move an absolute-CC controller knob or slider. Turn MIDI Learn off when assignment is complete; the learned mapping remains active and is saved for that controller input.',
+          'Outside configuration, that controller moves the whole macro. Pickup prevents jumps: move through the current knob value before the controller takes over. Relative encoders and channel-mode CCs 120 to 127 are not supported.',
+          'While configuration is open, a learned SuperKnob controller temporarily controls the selected recording fader instead of moving the macro. The text above the fader identifies its destination. Selector targets are scaled to their 0-to-4 range automatically.',
+          'Pickup now follows the selected fader value. After opening configuration, changing the selected parameter, or manually changing that fader, move the controller through the displayed fader value to take control.',
+          'You can arm Record and use the learned SuperKnob controller to perform the take. Its movement changes the fader without cancelling or taking over the automatic recording sweep.',
+          'Closing configuration restores whole-macro control and resets pickup for the knob position. The stored MIDI assignment is unchanged; clearing or changing it uses the usual MIDI Learn assignment controls.',
+        ),
+      ]),
+      details('Automatic back-and-forth cycling', [
+        list(
+          'Set Playback cycle timing in configuration or use SuperKnob cycle below the synth. Both views edit the same playback settings, independently of Recording seconds.',
+          item('Duration', 'Choose 0.1 to 120 seconds per one-way sweep. A complete minimum-to-maximum-to-minimum trip takes twice that duration.'),
+          item('Tempo sync', 'Choose a note length from 1/32 note to eight whole notes per one-way sweep. Cycling follows the shared tempo, including tempo changes during playback.'),
+          'Close configuration, then press CYCLE or Start cycle. The macro starts from its current position and repeatedly reverses at the ends. Cycling cannot run while configuration is open.',
+          'Move the knob manually or through learned MIDI to stop cycling at the chosen position. Stop cycle also stops it. Restart is always explicit; manual movement never starts an automatic countdown or restart.',
+          'Opening configuration, changing playback timing, patch operations, MIDI Reset, connection changes, and hiding the page stop cycling. Running state is not restored after reloading the page.',
+        ),
+      ]),
+      details('C-major audition for live sound checking', [
+        list(
+          'Check Audition C major in configuration to repeat middle C, E, and G as eighth notes at the shared tempo, with a short gate. Use it while editing, previewing, or recording a curve.',
+          'Audition sends notes through the selected synth MIDI output and its receive-channel routing. Connect an audible instrument and unmute MIDI; Web MIDI carries no audio.',
+          'This preview is independent of the existing arpeggiator. It does not change its enabled, latch, mode, or rate settings, start Groove Studio, or record audition notes into the looper.',
+          'Uncheck the box to stop. Closing configuration, mute, MIDI Reset, patch operations, hiding the page, output/connection changes, or a send failure also stop it. Audition is never saved as enabled or automatically restarted.',
+          'If the output is unavailable or a send fails, the checkbox turns off and Messages reports the error. If a hardware note remains held after a failed note-off, restore the MIDI connection and use MIDI Reset.',
+        ),
+      ]),
+      details('Independent macro presets', [
+        list(
+          'Macro presets contain mappings, their enabled states and curves, Recording seconds, and Playback cycle timing. They are separate from synth patches and saved in this browser.',
+          item('Save', 'Updates the selected macro preset. If none is selected, enter a name to create one.'),
+          item('Save as', 'Creates an independent named copy of the current definition.'),
+          item('Rename and Delete', 'Rename the selected preset or delete it after confirmation. Deleting a preset keeps the current mappings and does not change copies already embedded in synth patches.'),
+          'An asterisk marks changes from a selected preset. Custom (unsaved) or Embedded / custom macro identifies a definition not linked to a named preset. Loading another definition asks before replacing edited mappings.',
+          'Default - cutoff restores the original Cutoff-only ramp and default timing. Presets and current configuration survive reloads, but recording, cycling, and audition do not resume.',
+        ),
+      ]),
+      details('Synth patches, backups, and storage', [
+        list(
+          'Enable Include with synth patch to save an independent SuperKnob definition with a sound. The synth-patch save form offers the same option.',
+          'Embedded copies travel with patch ZIP exports and cloud patch backups. Editing or deleting a named macro preset never changes an embedded copy, and editing a recalled copy does not update the original macro preset.',
+          'Recalling a synth patch stops automation but preserves its saved fader positions; macro curves are not applied until the knob moves. A patch without a SuperKnob definition restores the default Cutoff-only macro. Older definitions without a recording duration use five seconds.',
+          'Definitions do not store a running cycle, audition, or an audio performance. Recorded fader motion is saved as its resulting curve. MIDI Learn assignments remain browser preferences, not part of the macro or patch.',
+          'Standalone macro presets and current editing state are browser-local, tied to this browser profile and site address. Whole-library backups do not include them unless a definition is embedded in a synth patch. Keep exported patches with embedded definitions before clearing site data.',
+        ),
+      ]),
+      details('Window controls and troubleshooting', [
+        list(
+          'Configuration is non-modal: move it by dragging the header and keep using the synth alongside it. Changes apply live; closing the window is not an undo command, except that an unfinished recording is discarded.',
+          'This Help uses the standard movable, resizable, non-modal help window. Expand the sections you need. Alt+click Help keeps other help windows open; Alt+wheel over a help window changes only its background opacity.',
+          'Escape closes the foremost help window first and returns focus to Help without closing configuration or cancelling its armed take. With no help window open, Escape closes configuration.',
+          'If Record stays ARMED, make sure the selected fader actually changes and any learned controller has reached pickup. If a parameter does not follow the macro, check that its assignment is enabled.',
+          'If a selector changes in steps, that is expected: its destination has only five positions. If there is no audible change, check the selected output, synth MIDI Control, mute state, and Messages; successful sends do not confirm hardware receipt.',
+        ),
+      ]),
     ],
   },
   patches: {
@@ -110,6 +213,7 @@ export const helpContent = {
           'Enter a name and main category, and optionally add a description and comma-separated tags. Replacing an existing name requires confirmation.',
           'Edit changes a saved patch’s details. Use the favorite star to add or remove it from favorites; the delete icon removes the patch after confirmation.',
           'Snapshots store browser-known sound controls, not performance/system settings or unreported hardware changes.',
+          'Optionally include an independent SuperKnob definition. Its mappings, recording duration, and playback cycle timing travel with the patch and its backups; changing a macro preset never changes embedded copies. Loading a patch stops cycling and audition without applying macro curves over its saved sound.',
         ),
       ]),
       details('Finding and organizing sounds', [
@@ -135,6 +239,8 @@ export const helpContent = {
         list(
           'The display beside the CS logo names the loaded patch. Its colored dot indicates that browser-known sound controls differ from the saved patch.',
           'The display arrows load the previous or next patch in the current filters without wrapping. Unlike card selection, these arrows recall the sound.',
+          'Right-click the patch display, or focus it and press Shift+F10 or the Menu key, to open the current filtered, name-sorted patch list. The loaded patch is highlighted if it matches the filters.',
+          'Choose a name to load it with the usual unsaved-change protection. Use Up/Down, Home/End, and Enter to choose by keyboard; Escape or clicking outside dismisses the menu. Long lists scroll; empty libraries or filters show an explanation.',
           'The * button starts an INIT sound by resetting only patch controls, after protecting unsaved edits. Save it as a new patch if you want to keep it.',
           'Reloading the page does not automatically load a patch into the panel or synth.',
         ),

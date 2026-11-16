@@ -750,7 +750,7 @@ test('Home moves every fader to the top and End to the bottom at both travel siz
       await page.locator('#hide-speakers').click();
       await page.locator('#focus-mode').click();
     }
-    for (const fader of await page.locator('#synth').getByRole('slider').all()) {
+    for (const fader of await page.locator('#synth .fader').all()) {
       await fader.press('Home');
       await expect(fader).toHaveAttribute('aria-valuenow', await fader.getAttribute('aria-valuemax'));
       await expect(fader.locator('.cap')).toHaveAttribute('y', '0');
@@ -916,7 +916,7 @@ test('page load and Reset apply the requested fader positions without changing t
   await expectStartingPositions(80);
   for (const travel of [80, 160]) {
     if (travel === 160) await page.locator('#fader-size').click();
-    for (const fader of await page.locator('#synth').getByRole('slider').all()) {
+    for (const fader of await page.locator('#synth .fader').all()) {
       await fader.focus();
       await page.keyboard.press('Home');
     }
@@ -1205,7 +1205,7 @@ for (const reset of ['double-click', 'Delete']) {
         await page.locator('#hide-speakers').click();
         await page.locator('#focus-mode').click();
       }
-      for (const fader of await page.locator('#synth').getByRole('slider').all()) {
+      for (const fader of await page.locator('#synth .fader').all()) {
         const id = await fader.getAttribute('id');
         const min = await fader.getAttribute('aria-valuemin');
         const max = await fader.getAttribute('aria-valuemax');

@@ -197,7 +197,13 @@ test('About, Looper, Groove Studio, and Patch Manager default to 900px width wit
   await expect.poll(async () => (await dialog.boundingBox()).width).toBeLessThanOrEqual(464);
 });
 
-test('top Help includes the playing tips instead of a separate bottom panel', async ({ page }) => {
+test('About sits between Connect MIDI and Settings and includes the playing tips', async ({ page }) => {
+  const about = page.locator('#help-open');
+  await expect(about).toHaveText('About');
+  expect(await about.evaluate((button) => ({
+    before: button.previousElementSibling.id, after: button.nextElementSibling.id,
+    inBrand: Boolean(button.closest('.toolbar-brand')),
+  }))).toEqual({ before: 'midi-connect', after: 'app-settings-open', inBrand: false });
   await expect(page.locator('main > details > summary').filter({ hasText: /^Help$/ })).toHaveCount(0);
   await page.locator('#help-open').click();
   const dialog = page.getByRole('dialog', { name: 'About refaceCS', exact: true });
@@ -212,7 +218,7 @@ test('top Help includes the playing tips instead of a separate bottom panel', as
 
 test('version opens dated history in newest-first order and supports keyboard reopening', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Open Version History help', exact: true });
-  await expect(trigger).toHaveText('v0.10');
+  await expect(trigger).toHaveText('v0.11');
   await expect(trigger).toHaveAttribute('title', /released 2026-11-16/);
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Version History', exact: true });
@@ -220,7 +226,7 @@ test('version opens dated history in newest-first order and supports keyboard re
   expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(false);
   expect((await dialog.boundingBox()).width).toBeCloseTo(900, 0);
   await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
-    'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
+    'v0.11 - 2026-11-16', 'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
     'v0.4 - 2026-11-15', 'v0.3 - 2026-11-15', 'v0.2 - 2026-11-15', 'v0.1 - 2026-11-12',
   ]);
   await expect(dialog).toContainText('Contextual help');
@@ -258,6 +264,73 @@ test('Patch Manager help has collapsed feature sections and does not toggle the 
   await expect(dialog).toBeVisible();
   await expect(panel).toHaveAttribute('open', '');
   await expect(page.locator('#patch-editor')).not.toBeVisible();
+});
+
+test('SuperKnob help is structured, opens above configuration, and dismisses before an armed editor', async ({ page }) => {
+  await page.locator('#super-knob-configure').click();
+  const editor = page.getByRole('dialog', { name: 'SuperKnob configuration', exact: true });
+  const trigger = editor.getByRole('button', { name: 'Open SuperKnob help', exact: true });
+  await page.locator('#superknob-record').click();
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'SuperKnob', exact: true });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(false);
+  expect(Number(await dialog.evaluate((element) => getComputedStyle(element).zIndex)))
+    .toBeGreaterThan(Number(await editor.evaluate((element) => getComputedStyle(element).zIndex)));
+  await expect(dialog.locator('summary')).toHaveText([
+    'Getting started and playing the macro',
+    'Parameters and curve editing',
+    'Recording a fader movement',
+    'MIDI Learn and temporary fader control',
+    'Automatic back-and-forth cycling',
+    'C-major audition for live sound checking',
+    'Independent macro presets',
+    'Synth patches, backups, and storage',
+    'Window controls and troubleshooting',
+  ]);
+  await expect(dialog.locator('details[open]')).toHaveCount(0);
+  await dialog.getByText('Recording a fader movement', { exact: true }).click();
+  await expect(dialog.getByText('Select an assigned parameter and set Recording seconds', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('Press Record to arm the selected fader.', { exact: false })).toContainText('no countdown');
+  await dialog.getByText('MIDI Learn and temporary fader control', { exact: true }).click();
+  await expect(dialog.getByText('While configuration is open, a learned SuperKnob controller', { exact: false })).toBeVisible();
+  await expect(page.locator('#superknob-record-state')).toHaveText('ARMED');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(editor).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('#superknob-record-state')).toHaveText('ARMED');
+  await trigger.press('Enter');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close SuperKnob help', exact: true }).click();
+  await expect(editor).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await trigger.press('Space');
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(editor).not.toBeVisible();
+});
+
+test('SuperKnob Help follows standard replacement and Alt-click behavior without changing the macro', async ({ page }) => {
+  await page.locator('#help-open').click();
+  await page.locator('#super-knob-configure').press('Enter');
+  const trigger = page.getByRole('button', { name: 'Open SuperKnob help', exact: true });
+  await page.locator('#superknob-record-seconds').fill('2');
+  await page.locator('#superknob-record-seconds').press('Tab');
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobState);
+  await trigger.click({ modifiers: ['Alt'] });
+  await expect(page.locator('.help-window')).toHaveCount(2);
+  await expect(page.locator('#superknob-editor')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.help-window')).toHaveCount(1);
+  await trigger.click();
+  await expect(page.locator('.help-window')).toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: 'SuperKnob', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobState)).toEqual(before);
+  await expect(page.locator('#superknob-record-state')).toHaveText('READY');
+  await expect(page.locator('#superknob-cycle-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#superknob-audition')).not.toBeChecked();
 });
 
 test('Groove Studio help leaves the panel closed and keeps all sections after the introduction collapsed', async ({ page }) => {
