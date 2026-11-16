@@ -56,6 +56,22 @@ export function isDefaultSuperKnob(definition) {
     && mapping.enabled && mapping.values.every((value, i) => value === i);
 }
 
+export function validateSuperKnobPresets(records) {
+  if (!Array.isArray(records)) throw new Error('Invalid SuperKnob preset list.');
+  const ids = new Set();
+  const names = new Set();
+  return records.map((preset) => {
+    if (!preset || typeof preset.id !== 'string' || !preset.id
+      || typeof preset.name !== 'string' || !preset.name.trim()
+      || ids.has(preset.id) || names.has(preset.name.trim().toLocaleLowerCase())) {
+      throw new Error('Invalid or duplicate SuperKnob preset.');
+    }
+    ids.add(preset.id);
+    names.add(preset.name.trim().toLocaleLowerCase());
+    return { id: preset.id, name: preset.name.trim(), definition: validateSuperKnob(preset.definition) };
+  });
+}
+
 export function mappingValue(mapping, position) {
   const x = Math.max(0, Math.min(127, position));
   const index = Math.floor(x);

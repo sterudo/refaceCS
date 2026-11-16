@@ -977,6 +977,6 @@ setupAppSettings({
 document.querySelector('#capture-warning-close').addEventListener('click', () => {
   document.querySelector('#capture-warning').close();
 });
-setupBackup({ patches: patchLibrary, drums, looper: midi });
-setupCloudBackup({ patches: patchLibrary, drums, looper: midi });
+setupBackup({ patches: patchLibrary, drums, looper: midi, superKnob });
+setupCloudBackup({ patches: patchLibrary, drums, looper: midi, superKnob });
 status('Panel ready. Connect MIDI to send notes and supported controls.');

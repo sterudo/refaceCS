@@ -1,9 +1,10 @@
 import { createSuperKnobAudition, createSuperKnobEngine, defaultSuperKnob, drawMapping, isDefaultSuperKnob,
-  SUPERKNOB_TARGETS, validateSuperKnob } from './superknob.js';
+  SUPERKNOB_TARGETS, validateSuperKnobPresets } from './superknob.js';
 import { askName, confirmAction } from './dialogs.js';
 import { clampPosition, setupHelpTrigger, trackPointer } from './help.js';
 import { createReporter } from './notifications.js';
 import { getPreference, setPreference } from './preferences.js';
+import { resolveImport } from './import-conflicts.js';
 import './superknob.css';
 
 const colors = ['#ffb347', '#5bc9bb', '#a69aff', '#79b9f4', '#ed95ba'];
@@ -156,21 +157,7 @@ export function setupSuperKnob({ panel, clock, apply, getValue, midiLearn, start
 
   try {
     const saved = getPreference('superKnobPresets', () => true, undefined);
-    if (saved !== undefined) {
-      if (!Array.isArray(saved)) throw new Error('Invalid macro preset list.');
-      const ids = new Set();
-      const names = new Set();
-      presets = saved.map((preset) => {
-        if (!preset || typeof preset.id !== 'string' || !preset.id
-          || typeof preset.name !== 'string' || !preset.name.trim()
-          || ids.has(preset.id) || names.has(preset.name.trim().toLocaleLowerCase())) {
-          throw new Error('Invalid or duplicate macro preset.');
-        }
-        ids.add(preset.id);
-        names.add(preset.name.trim().toLocaleLowerCase());
-        return { id: preset.id, name: preset.name.trim(), definition: validateSuperKnob(preset.definition) };
-      });
-    }
+    if (saved !== undefined) presets = validateSuperKnobPresets(saved);
   } catch (error) {
     report(`Could not restore SuperKnob presets: ${error.message}`, 'error');
   }
@@ -565,6 +552,31 @@ export function setupSuperKnob({ panel, clock, apply, getValue, midiLearn, start
   });
 
   function persistPresets() { setPreference('superKnobPresets', presets); }
+  function replacePresets(records) {
+    const next = validateSuperKnobPresets(records);
+    setPreference('superKnobPresets', next, { requirePersistence: true });
+    presets = next;
+    if (presetId && !presets.some(({ id }) => id === presetId)) {
+      presetId = '';
+      saveState();
+    }
+    render();
+  }
+
+  async function importPresets(records) {
+    const imported = validateSuperKnobPresets(records);
+    const next = validateSuperKnobPresets(presets);
+    let changed = false;
+    for (const preset of imported) {
+      const resolution = await resolveImport(preset, next, 'SuperKnob preset');
+      if (resolution.action === 'ignore' || resolution.action === 'identical') continue;
+      if (resolution.match) next.splice(next.indexOf(resolution.match), 1);
+      next.push(resolution.item);
+      changed = true;
+    }
+    if (changed) replacePresets(next);
+  }
+
   function validateName(name) {
     return presets.some((preset) => preset.id !== presetId && preset.name.toLocaleLowerCase() === name.toLocaleLowerCase())
       ? 'A macro preset with that name already exists.' : '';
@@ -626,6 +638,9 @@ export function setupSuperKnob({ panel, clock, apply, getValue, midiLearn, start
   render();
 
   return {
+    listPresets: () => validateSuperKnobPresets(presets),
+    importPresets,
+    replacePresets,
     setPosition(value, channel) {
       if (!dialog.open) { manualPosition(value, channel, false); return; }
       if (selected && value !== getValue(selected)) {

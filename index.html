@@ -276,8 +276,9 @@
           <option value="loops">Looper</option>
           <option value="patterns">Groove Studio</option>
           <option value="patches">Patch Manager</option>
+          <option value="superknob">SuperKnob</option>
         </select></label>
-        <p>Browser preferences are not included. Imports merge and ask before replacing saved items.</p>
+        <p>Everything includes saved SuperKnob presets. Browser preferences and the current unsaved macro configuration are not included. Imports merge and ask before replacing saved items.</p>
         <input id="backup-file" type="file" accept=".zip,application/zip" hidden>
         <div class="patch-editor-actions">
           <button id="backup-import" type="button">Import backup</button>
@@ -288,7 +289,7 @@
       </dialog>
       <dialog id="cloud-dialog" class="patch-editor" aria-labelledby="cloud-title">
         <h2 id="cloud-title">Google Drive backups</h2>
-        <p>Backups are stored in a visible refaceCS folder in your Google Drive. They can contain patches, loops, patterns and audio. Google Drive storage and account access are your responsibility; sync and deletion mistakes can affect other devices. Browser preferences are not included.</p>
+        <p>Backups are stored in a visible refaceCS folder in your Google Drive. They contain patches, loops, patterns, saved SuperKnob presets and audio. Google Drive storage and account access are your responsibility; sync and deletion mistakes can affect other devices. Browser preferences and the current unsaved macro configuration are not included.</p>
         <p>Use the same Google OAuth client ID and account on each device. Google may require you to reconnect after a reload or token expiry. Automatic sync is not yet available.</p>
         <details class="cloud-setup">
           <summary>How to set up Google Drive access</summary>

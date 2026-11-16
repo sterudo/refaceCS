@@ -148,7 +148,7 @@ export function setupCloudBackup(sources) {
   });
   async function restore(replaceExisting) {
     if (replaceExisting && !await confirmAction('Replace browser data',
-      'Replace saved patches, patterns and loops with this backup? A recovery backup will first be saved to Google Drive.', 'Replace')) return;
+      'Replace saved patches, patterns, loops and SuperKnob presets with this backup? Older backups leave SuperKnob presets unchanged. A recovery backup will first be saved to Google Drive.', 'Replace')) return;
     await run(async () => {
       const remote = connectedDrive();
       const snapshot = await readCloudBackup(remote, versions.value);

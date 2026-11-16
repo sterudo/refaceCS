@@ -14,10 +14,9 @@ test('Drive setup instructions show the current app origin', async ({ page }) =>
   await expect(setup).not.toHaveAttribute('open');
 });
 
-test('named Drive backups keep audio separate and preserve a recovery point on replacement', async ({ page }) => {
+async function mockDrive(page, failRecovery = () => false) {
   const files = new Map();
   let nextId = 0;
-  let failRecovery = false;
   await page.addInitScript(() => {
     window.google = { accounts: { oauth2: {
       initTokenClient(config) {
@@ -49,7 +48,7 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
       return route.fulfill({ json: { id }, headers: cors });
     }
     if (url.pathname === '/upload/drive/v3/files' && request.method() === 'POST') {
-      if (failRecovery && request.postDataJSON().appProperties?.kind === 'recovery') {
+      if (failRecovery() && request.postDataJSON().appProperties?.kind === 'recovery') {
         return route.fulfill({ status: 500, body: 'recovery failed', headers: cors });
       }
       const id = `id${++nextId}`;
@@ -68,6 +67,12 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
     }
     throw new Error(`Unexpected Drive request: ${request.method()} ${url}`);
   });
+  return files;
+}
+
+test('named Drive backups keep audio separate and preserve a recovery point on replacement', async ({ page }) => {
+  let failRecovery = false;
+  const files = await mockDrive(page, () => failRecovery);
   await page.goto('/static/reface/');
   await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#footer-panel').first().locator('summary').click();
@@ -137,4 +142,135 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   await expect(card.locator('.patch-audio-item')).toContainText('audio.mp3');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.drumTones.v1')).tones.map((tone) => tone.name)))
     .toEqual(['Cloud kick']);
+});
+
+test('cloud SuperKnob presets merge, replace, recover and preserve legacy backups and unsaved configuration', async ({ page }) => {
+  const files = await mockDrive(page);
+  await page.goto('/static/reface/');
+  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch Manager ready.');
+  async function editMacro(seconds, name) {
+    await page.locator('#super-knob-configure').click();
+    await page.locator('#superknob-record-seconds').fill(String(seconds));
+    await page.locator('#superknob-record-seconds').dispatchEvent('change');
+    if (name) {
+      await page.locator('#superknob-save-as').click();
+      const prompt = page.getByRole('dialog', { name: 'Save SuperKnob preset', exact: true });
+      await prompt.getByLabel('Name', { exact: true }).fill(name);
+      await prompt.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(prompt).toHaveCount(0);
+    }
+    await page.locator('#superknob-close').click();
+  }
+  async function openCloud() {
+    await page.locator('#backup-open').click();
+    await page.locator('#cloud-open').click();
+  }
+  async function closeCloud() {
+    await page.locator('#cloud-close').click();
+    await page.locator('#backup-close').click();
+  }
+  const presets = () => page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobPresets);
+  const current = () => page.evaluate(() => {
+    const { presetId, ...state } = JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobState;
+    return state;
+  });
+  const backupFiles = () => [...files.values()].filter((file) => file.appProperties?.refaceType === 'backup' && file.content);
+  await editMacro(2, 'Cloud macro');
+  await editMacro(3);
+  await openCloud();
+  await page.locator('#cloud-client-id').fill('test-client-id');
+  await page.locator('#cloud-connect').click();
+  await expect(page.locator('#cloud-save')).toBeEnabled();
+  await page.locator('#cloud-name').fill('Macro backup');
+  await page.locator('#cloud-save').click();
+  const status = page.locator('.message-entry[data-source="cloud-status"]').last();
+  await expect(status).toContainText('Saved cloud backup');
+  const backup = backupFiles()[0];
+  const manifest = JSON.parse(backup.content.toString());
+  expect(manifest.sections.superknob).toBe(1);
+  expect(manifest.superknob.map(({ name }) => name)).toEqual(['Cloud macro']);
+  expect(manifest.superknob[0].definition.recordSeconds).toBe(2);
+  expect(manifest.superKnobState).toBeUndefined();
+  expect(manifest.preferences).toBeUndefined();
+  await closeCloud();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-delete').click();
+  await page.getByRole('dialog', { name: 'Delete SuperKnob preset', exact: true })
+    .getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('#superknob-presets option')).toHaveText(['Default - cutoff', 'Custom (unsaved)']);
+  await page.locator('#superknob-close').click();
+  await editMacro(4, 'Local macro');
+  await editMacro(5);
+  const editing = await current();
+  await openCloud();
+  await page.locator('#cloud-versions').selectOption(backup.id);
+  await page.locator('#cloud-merge').click();
+  await expect(status).toContainText('Cloud backup merged');
+  expect((await presets()).map(({ name }) => name).sort()).toEqual(['Cloud macro', 'Local macro']);
+  expect(await current()).toEqual(editing);
+
+  for (const [invalid, error] of [
+    [{ ...manifest, sections: { ...manifest.sections, superknob: 2 } }, 'Unsupported cloud backup'],
+    [{ ...manifest, superknob: [{ ...manifest.superknob[0], definition: {} }] }, 'Invalid SuperKnob'],
+  ]) {
+    backup.content = Buffer.from(JSON.stringify(invalid));
+    await page.locator('#cloud-replace').click();
+    await page.getByRole('dialog', { name: 'Replace browser data', exact: true })
+      .getByRole('button', { name: 'Replace', exact: true }).click();
+    await expect(status).toContainText(error);
+    await expect(page.locator('#cloud-replace')).toBeEnabled();
+    expect(backupFiles()).toHaveLength(1);
+    expect((await presets()).map(({ name }) => name).sort()).toEqual(['Cloud macro', 'Local macro']);
+  }
+  backup.content = Buffer.from(JSON.stringify(manifest));
+  async function replaceBackup() {
+    await page.locator('#cloud-versions').selectOption(backup.id);
+    await page.locator('#cloud-replace').click();
+    await page.getByRole('dialog', { name: 'Replace browser data', exact: true })
+      .getByRole('button', { name: 'Replace', exact: true }).click();
+    await expect(status).toContainText('recovery backup was saved');
+    await expect(page.locator('#cloud-replace')).toBeEnabled();
+  }
+  await replaceBackup();
+  expect(await presets()).toEqual(manifest.superknob);
+  expect(await current()).toEqual(editing);
+  let recovery = backupFiles().filter((file) => file.appProperties.kind === 'recovery').at(-1);
+  expect(JSON.parse(recovery.content.toString()).superknob.map(({ name }) => name).sort()).toEqual(['Cloud macro', 'Local macro']);
+  const legacy = structuredClone(manifest);
+  delete legacy.sections.superknob;
+  delete legacy.superknob;
+  backup.content = Buffer.from(JSON.stringify(legacy));
+  await replaceBackup();
+  expect(await presets()).toEqual(manifest.superknob);
+  expect(await current()).toEqual(editing);
+  backup.content = Buffer.from(JSON.stringify({ ...manifest, superknob: [] }));
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.restoreStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'refaceCS.preferences.v1' && JSON.parse(value).superKnobPresets?.length === 0) {
+        throw new DOMException('Preset storage full', 'QuotaExceededError');
+      }
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator('#cloud-versions').selectOption(backup.id);
+  await page.locator('#cloud-replace').click();
+  await page.getByRole('dialog', { name: 'Replace browser data', exact: true })
+    .getByRole('button', { name: 'Replace', exact: true }).click();
+  await expect(status).toContainText('Preset storage full');
+  await expect(status).toContainText('Already restored: patches, patterns, drum tones, loops');
+  await expect(page.locator('#cloud-replace')).toBeEnabled();
+  expect(await presets()).toEqual(manifest.superknob);
+  expect(await current()).toEqual(editing);
+  await page.evaluate(() => window.restoreStorage());
+  await replaceBackup();
+  expect(await presets()).toEqual([]);
+  expect(await current()).toEqual(editing);
+  recovery = backupFiles().filter((file) => file.appProperties.kind === 'recovery').at(-1);
+  expect(JSON.parse(recovery.content.toString()).superknob).toEqual(manifest.superknob);
+  await closeCloud();
+  await page.locator('#super-knob-configure').click();
+  await expect(page.locator('#superknob-record-seconds')).toHaveValue('5');
+  await expect(page.locator('#superknob-presets option')).toHaveText(['Default - cutoff']);
 });

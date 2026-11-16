@@ -2,6 +2,7 @@ import { validPatterns } from './drum-machine.js';
 import { validTones } from './drum-tones.js';
 import { validateSavedLoops } from './looper.js';
 import { validatePatch } from './patches.js';
+import { validateSuperKnobPresets } from './superknob.js';
 
 const format = 'refaceCS-cloud-backup';
 const maxBytes = 256 * 1024 * 1024;
@@ -18,6 +19,7 @@ export async function saveCloudBackup(drive, folder, sources, name, kind = 'name
   const patterns = sources.drums.listPatterns();
   const tones = sources.drums.listTones();
   const loops = await sources.looper.listSavedLoops();
+  const superknob = sources.superKnob.listPresets();
   const createdAt = new Date().toISOString();
   const audioSize = patches.reduce((sum, patch) => sum + patch.audio.reduce((size, item) => size + item.data.size, 0), 0);
   if (audioSize > maxBytes) throw new Error('Cloud backup audio exceeds 256 MB.');
@@ -34,8 +36,8 @@ export async function saveCloudBackup(drive, folder, sources, name, kind = 'name
     records.push({ ...patch, audio });
   }
   const snapshot = {
-    format, version: 1, sections: { patches: 1, patterns: 2, loops: 1 }, name, createdAt, kind,
-    patches: records, categories, patterns, tones, loops,
+    format, version: 1, sections: { patches: 1, patterns: 2, loops: 1, superknob: 1 }, name, createdAt, kind,
+    patches: records, categories, patterns, tones, loops, superknob,
   };
   const data = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
   if (data.size > maxBytes) throw new Error('Cloud backup metadata exceeds 256 MB.');
@@ -55,15 +57,18 @@ export async function readCloudBackup(drive, id) {
   if (blob.size > maxBytes) throw new Error('Cloud backup metadata exceeds 256 MB.');
   const data = JSON.parse(await blob.text());
   const sections = data?.sections;
-  if (data?.format !== format || data.version !== 1 || !sections || Array.isArray(sections)
-    || Object.keys(sections).length !== 3 || sections.patches !== 1 || sections.loops !== 1
-    || ![1, 2].includes(sections.patterns)) {
+  const hasSuperKnob = sections && Object.hasOwn(sections, 'superknob');
+  if (data?.format !== format || data.version !== 1 || !sections || typeof sections !== 'object' || Array.isArray(sections)
+    || Object.keys(sections).length !== (hasSuperKnob ? 4 : 3) || sections.patches !== 1 || sections.loops !== 1
+    || ![1, 2].includes(sections.patterns) || (hasSuperKnob && sections.superknob !== 1)) {
     throw new Error('Unsupported cloud backup format or section version.');
   }
   if (!Array.isArray(data.patches) || !Array.isArray(data.categories)
     || !data.categories.every((value) => typeof value === 'string' && value.trim())
     || !validPatterns(data.patterns) || (sections.patterns === 2 && !validTones(data.tones))) throw new Error('Invalid cloud backup data.');
   validateSavedLoops(data.loops);
+  if (Object.hasOwn(data, 'superknob') !== Boolean(hasSuperKnob)) throw new Error('SuperKnob data does not match the cloud backup sections.');
+  const superknob = hasSuperKnob ? validateSuperKnobPresets(data.superknob) : undefined;
   const patches = [];
   let total = 0;
   for (const patch of data.patches) {
@@ -83,7 +88,7 @@ export async function readCloudBackup(drive, id) {
     patches.push(validatePatch({ ...patch, audio }));
   }
   if (new Set(patches.map((patch) => patch.id)).size !== patches.length) throw new Error('Duplicate patch IDs in cloud backup.');
-  return { patches, categories: data.categories, patterns: data.patterns, tones: data.tones, loops: data.loops };
+  return { patches, categories: data.categories, patterns: data.patterns, tones: data.tones, loops: data.loops, superknob };
 }
 
 export async function applyCloudBackup(sources, snapshot, replace) {
@@ -105,6 +110,11 @@ export async function applyCloudBackup(sources, snapshot, replace) {
     }
     if (replace) await sources.looper.replaceSavedLoops(snapshot.loops);
     else await sources.looper.importSavedLoops(snapshot.loops, { activateSingle: false });
+    completed.push('loops');
+    if (snapshot.superknob !== undefined) {
+      if (replace) sources.superKnob.replacePresets(snapshot.superknob);
+      else await sources.superKnob.importPresets(snapshot.superknob);
+    }
   } catch (error) {
     throw new Error(`${error.message || error}${completed.length ? ` Already restored: ${completed.join(', ')}.` : ''}`);
   }

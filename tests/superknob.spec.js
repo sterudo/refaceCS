@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createPatchBackup, readPatchBackup, validatePatch, PATCH_CONTROL_IDS } from '../src/patches.js';
-import { defaultSuperKnob, drawMapping, mappingValue, validateSuperKnob } from '../src/superknob.js';
+import { defaultSuperKnob, drawMapping, mappingValue, validateSuperKnob, validateSuperKnobPresets } from '../src/superknob.js';
 
 test('macro definitions validate targets, independent curves, and supported cycle timing', () => {
   const definition = defaultSuperKnob();
@@ -28,6 +28,20 @@ test('drawing supports descending lines and interpolation at fractional knob pos
   expect(mappingValue({ values }, 63.5)).toBe(63.5);
   drawMapping(values, { x: 10, y: 200 }, { x: 10, y: 200 });
   expect(values[10]).toBe(127);
+});
+
+test('preset backup validation rejects duplicate identities and invalid definitions without sharing curves', () => {
+  const preset = { id: 'macro', name: ' Bloom ', definition: defaultSuperKnob() };
+  const restored = validateSuperKnobPresets([preset]);
+  expect(restored[0].name).toBe('Bloom');
+  preset.definition.mappings[0].values[0] = 100;
+  expect(restored[0].definition.mappings[0].values[0]).toBe(0);
+  for (const invalid of [
+    null, {}, [null], [{ ...preset, name: ' ' }],
+    [preset, { ...preset, name: 'Other' }],
+    [preset, { ...preset, id: 'other', name: 'bloom' }],
+    [{ ...preset, definition: { ...preset.definition, recordSeconds: 0 } }],
+  ]) expect(() => validateSuperKnobPresets(invalid)).toThrow(/SuperKnob/);
 });
 
 test('embedded macros round-trip through patch ZIPs without changing legacy patches', async () => {

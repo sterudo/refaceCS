@@ -20,7 +20,12 @@ export function getPreference(name, valid, fallback) {
   return valid(preferences[name]) ? preferences[name] : fallback;
 }
 
-export function setPreference(name, value) {
+export function setPreference(name, value, { requirePersistence = false } = {}) {
+  if (requirePersistence) {
+    localStorage.setItem(key, JSON.stringify({ ...preferences, [name]: value }));
+    preferences[name] = value;
+    return;
+  }
   preferences[name] = value;
   savePreferences();
 }

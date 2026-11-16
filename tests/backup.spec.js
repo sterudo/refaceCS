@@ -3,6 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { strToU8, unzipSync, zipSync } from 'fflate';
 import { writeMidi } from '../src/midi-file.js';
 import { createPatchBackup, PATCH_CONTROL_IDS } from '../src/patches.js';
+import { defaultSuperKnob } from '../src/superknob.js';
+
+function macroBackup(presets, sections = { superknob: 1 }) {
+  return Buffer.from(zipSync({
+    'manifest.json': strToU8(JSON.stringify({ format: 'refaceCS-backup', version: 1, sections })),
+    'superknob.json': strToU8(JSON.stringify(presets)),
+  }));
+}
 
 test('saving information can be closed and reopened across reloads', async ({ page }) => {
   await page.goto('/static/reface/');
@@ -33,6 +41,18 @@ test('exports and imports all sections without browser preferences or recalling 
   await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#data-info-close').click();
   await page.locator('#focus-mode').click();
+  await page.locator('#super-knob-configure').click();
+  await page.locator('#superknob-record-seconds').fill('2');
+  await page.locator('#superknob-record-seconds').dispatchEvent('change');
+  await page.locator('#superknob-save').click();
+  const macroName = page.getByRole('dialog', { name: 'Save SuperKnob preset', exact: true });
+  await macroName.getByLabel('Name', { exact: true }).fill('Backup macro');
+  await macroName.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(macroName).toHaveCount(0);
+  await page.locator('#superknob-record-seconds').fill('3');
+  await page.locator('#superknob-record-seconds').dispatchEvent('change');
+  await page.locator('#superknob-close').click();
+  const savedPresets = await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobPresets);
   await page.locator('#lfo-depth').press('Home');
   await page.locator('#footer-panel').first().locator('summary').click();
   await page.locator('#patch-save').click();
@@ -67,8 +87,10 @@ test('exports and imports all sections without browser preferences or recalling 
   const bytes = await readFile(await download.path());
   await expect(page.locator('#backup-dialog')).not.toBeVisible();
   expect(Object.keys(unzipSync(bytes)).sort()).toEqual([
-    'drum-tones.json', 'loops.json', 'manifest.json', 'patch-categories.json', 'patches.zip', 'patterns.json',
+    'drum-tones.json', 'loops.json', 'manifest.json', 'patch-categories.json', 'patches.zip', 'patterns.json', 'superknob.json',
   ]);
+  expect(JSON.parse(new TextDecoder().decode(unzipSync(bytes)['superknob.json']))).toEqual(savedPresets);
+  expect(savedPresets[0].definition.recordSeconds).toBe(2);
 
   const context = await browser.newContext();
   const target = await context.newPage();
@@ -82,6 +104,9 @@ test('exports and imports all sections without browser preferences or recalling 
   await expect(target.locator('#focus-mode')).toHaveAttribute('aria-pressed', 'false');
   await expect(target.locator('#data-info')).toBeVisible();
   await expect(target.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+  expect(await target.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobPresets)).toEqual(savedPresets);
+  await expect(target.locator('#superknob-presets option')).toHaveText(['Default - cutoff', 'Backup macro']);
+  await expect(target.locator('#superknob-record-seconds')).toHaveValue('5');
   await expect(target.locator('.patch-card')).toHaveCount(1);
   await expect(target.locator('.patch-audio-item')).toHaveCount(1);
   expect(await target.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.drumTones.v1')).tones.map((tone) => tone.name)))
@@ -89,6 +114,105 @@ test('exports and imports all sections without browser preferences or recalling 
   await target.getByRole('button', { name: 'Load saved loop' }).click();
   await expect(target.locator('#looper-library-select option')).toHaveText('Backup loop');
   await context.close();
+});
+
+test('standalone SuperKnob exports and conflict imports preserve the current unsaved macro', async ({ page }) => {
+  const preset = { id: 'bloom', name: 'Bloom', definition: { ...defaultSuperKnob(), recordSeconds: 2 } };
+  const state = { definition: { ...defaultSuperKnob(), recordSeconds: 3 }, position: 87, include: false, presetId: 'bloom' };
+  await page.addInitScript(({ preset, state }) => {
+    localStorage.setItem('refaceCS.preferences.v1', JSON.stringify({ superKnobPresets: [preset], superKnobState: state }));
+  }, { preset, state });
+  await page.goto('/static/reface/');
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-section').selectOption({ label: 'SuperKnob' });
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-export').click()]);
+  const bytes = await readFile(await download.path());
+  const files = unzipSync(bytes);
+  expect(Object.keys(files).sort()).toEqual(['manifest.json', 'superknob.json']);
+  expect(JSON.parse(new TextDecoder().decode(files['manifest.json'])).sections).toEqual({ superknob: 1 });
+  expect(JSON.parse(new TextDecoder().decode(files['superknob.json']))).toEqual([preset]);
+
+  async function importFile(buffer) {
+    await page.locator('#backup-open').click();
+    await page.locator('#backup-file').setInputFiles({ name: 'macros.zip', mimeType: 'application/zip', buffer });
+  }
+  const readPresets = () => page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobPresets);
+  await importFile(bytes);
+  await expect(page.locator('#backup-dialog')).toBeHidden();
+  expect(await readPresets()).toEqual([preset]);
+  const changed = { ...preset, definition: { ...preset.definition, recordSeconds: 4 } };
+  const conflict = page.getByRole('dialog', { name: 'Import SuperKnob preset', exact: true });
+  await importFile(macroBackup([changed]));
+  await conflict.getByRole('button', { name: 'Ignore', exact: true }).click();
+  await expect(page.locator('#backup-dialog')).toBeHidden();
+  expect(await readPresets()).toEqual([preset]);
+  await importFile(macroBackup([changed]));
+  await conflict.getByRole('button', { name: 'Create new', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: 'Create new SuperKnob preset', exact: true });
+  await expect(rename.getByLabel('Name', { exact: true })).toHaveValue('Bloom (2)');
+  await rename.getByLabel('Name', { exact: true }).fill('Imported Bloom');
+  await rename.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('#backup-dialog')).toBeHidden();
+  expect((await readPresets()).map(({ name }) => name)).toEqual(['Bloom', 'Imported Bloom']);
+  await importFile(macroBackup([changed]));
+  await conflict.getByRole('button', { name: 'Overwrite', exact: true }).click();
+  await expect(page.locator('#backup-dialog')).toBeHidden();
+  expect((await readPresets()).find(({ id }) => id === 'bloom')).toEqual(changed);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).superKnobState)).toEqual(state);
+  await expect(page.locator('#superknob-record-seconds')).toHaveValue('3');
+  await expect(page.locator('#superknob-presets option:checked')).toHaveText('Bloom *');
+});
+
+test('invalid SuperKnob datasets reject the whole backup before applying other sections', async ({ page }) => {
+  const preset = { id: 'bloom', name: 'Bloom', definition: defaultSuperKnob() };
+  const patchBytes = new Uint8Array(await (await createPatchBackup([{
+    id: 'never-import', name: 'Must not import', category: 'synth', tags: [], audio: [],
+    controls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [id, 0])),
+  }])).arrayBuffer());
+  await page.goto('/static/reface/');
+  await page.locator('#backup-open').click();
+  for (const [presets, version, error] of [
+    [[{ ...preset, definition: { ...preset.definition, recordSeconds: 0 } }], 1, 'Invalid SuperKnob'],
+    [[preset, { ...preset, id: 'other', name: 'BLOOM' }], 1, 'duplicate SuperKnob'],
+    [[preset], 2, 'Unsupported backup section'],
+  ]) {
+    const files = unzipSync(macroBackup(presets, { patches: 1, superknob: version }));
+    files['patches.zip'] = patchBytes;
+    await page.locator('#backup-file').setInputFiles({
+      name: 'invalid.zip', mimeType: 'application/zip', buffer: Buffer.from(zipSync(files)),
+    });
+    await expect(page.locator('.message-entry[data-source="backup-status"]').last()).toContainText(error);
+    await expect(page.locator('#backup-dialog')).toBeVisible();
+    await expect(page.locator('#backup-import')).toBeEnabled();
+    await expect(page.locator('.patch-card')).toHaveCount(0);
+    await expect(page.locator('#superknob-presets option')).toHaveText(['Default - cutoff']);
+  }
+});
+
+test('failed SuperKnob import persistence reports failure without changing the preset library', async ({ page }) => {
+  const preset = { id: 'imported', name: 'Imported', definition: defaultSuperKnob() };
+  await page.goto('/static/reface/');
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.restoreStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'refaceCS.preferences.v1') throw new DOMException('Preset storage full', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  await page.locator('#backup-open').click();
+  await page.locator('#backup-file').setInputFiles({
+    name: 'macro.zip', mimeType: 'application/zip', buffer: macroBackup([preset]),
+  });
+  await expect(page.locator('.message-entry[data-source="backup-status"]').last()).toContainText('Preset storage full');
+  await expect(page.locator('#backup-dialog')).toBeVisible();
+  await expect(page.locator('#superknob-presets option')).toHaveText(['Default - cutoff']);
+  await expect(page.locator('.message-entry[data-source="backup-result"]')).toHaveCount(0);
+  await page.evaluate(() => window.restoreStorage());
+  await page.locator('#backup-section').selectOption('superknob');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-export').click()]);
+  const files = unzipSync(await readFile(await download.path()));
+  expect(JSON.parse(new TextDecoder().decode(files['superknob.json']))).toEqual([]);
 });
 
 test('rejects unknown newer sections before changing data', async ({ page }) => {

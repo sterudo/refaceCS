@@ -37,7 +37,7 @@ export const helpContent = {
     blocks: [
       paragraph('Dates follow the commits introducing each version. The v0.1 summary also includes improvements made before v0.2.'),
       heading('v0.11 - 2026-11-16'),
-      paragraph('SuperKnob macro mappings with a movable curve editor, movement-triggered recording with adjustable duration, independently timed or tempo-synced cycling, MIDI Learn with temporary selected-fader control in configuration, C-major audition at shared tempo, independent macro presets, and optional embedded patch definitions.'),
+      paragraph('SuperKnob macro mappings with a movable curve editor, movement-triggered recording with adjustable duration, independently timed or tempo-synced cycling, MIDI Learn with temporary selected-fader control in configuration, C-major audition at shared tempo, independent macro presets with standalone/Everything/cloud backups, and optional embedded patch definitions.'),
       heading('v0.10 - 2026-11-16'),
       paragraph('Settings for dark synth appearance, startup and MIDI behavior, Groove Studio defaults, patch loading and audio visibility, plus a reset that preserves saved data.'),
       heading('v0.8 - 2026-11-16'),
@@ -187,7 +187,9 @@ export const helpContent = {
           'Embedded copies travel with patch ZIP exports and cloud patch backups. Editing or deleting a named macro preset never changes an embedded copy, and editing a recalled copy does not update the original macro preset.',
           'Recalling a synth patch stops automation but preserves its saved fader positions; macro curves are not applied until the knob moves. A patch without a SuperKnob definition restores the default Cutoff-only macro. Older definitions without a recording duration use five seconds.',
           'Definitions do not store a running cycle, audition, or an audio performance. Recorded fader motion is saved as its resulting curve. MIDI Learn assignments remain browser preferences, not part of the macro or patch.',
-          'Standalone macro presets and current editing state are browser-local, tied to this browser profile and site address. Whole-library backups do not include them unless a definition is embedded in a synth patch. Keep exported patches with embedded definitions before clearing site data.',
+          'Use Import / Export > SuperKnob to back up all saved named macro presets on their own. Everything and Google Drive backups include them too, independently of embedded synth-patch copies. Save the current macro as a preset first if you want to back it up.',
+          'Imports merge saved presets: identical matches are skipped; differing matches offer Overwrite, Ignore, or Create new with a unique name. Imports and cloud restores update the preset list without loading a preset or replacing the current unsaved macro configuration.',
+          'Cloud replacement saves a recovery snapshot including saved macro presets first. Older backups without a SuperKnob dataset leave presets unchanged; an explicitly empty preset dataset clears the library only on replacement. Current unsaved configuration, knob position, running state, and MIDI Learn assignments remain browser-local and are not backed up.',
         ),
       ]),
       details('Window controls and troubleshooting', [

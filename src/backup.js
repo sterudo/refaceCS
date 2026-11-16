@@ -4,11 +4,12 @@ import { createPatchBackup, readPatchBackup } from './patches.js';
 import { validPatterns } from './drum-machine.js';
 import { validTones } from './drum-tones.js';
 import { validateSavedLoops } from './looper.js';
+import { validateSuperKnobPresets } from './superknob.js';
 
-const paths = { patches: 'patches.zip', patterns: 'patterns.json', loops: 'loops.json' };
+const paths = { patches: 'patches.zip', patterns: 'patterns.json', loops: 'loops.json', superknob: 'superknob.json' };
 const maxBytes = 256 * 1024 * 1024;
 
-export function setupBackup({ patches, drums, looper }) {
+export function setupBackup({ patches, drums, looper, superKnob }) {
   const dialog = document.querySelector('#backup-dialog');
   const section = document.querySelector('#backup-section');
   const status = createReporter('backups', 'backup-status');
@@ -41,6 +42,7 @@ export function setupBackup({ patches, drums, looper }) {
         files['drum-tones.json'] = strToU8(JSON.stringify(drums.listTones()));
       }
       if (selected.includes('loops')) files[paths.loops] = strToU8(JSON.stringify(await looper.listSavedLoops()));
+      if (selected.includes('superknob')) files[paths.superknob] = strToU8(JSON.stringify(superKnob.listPresets()));
       files['manifest.json'] = strToU8(JSON.stringify({
         format: 'refaceCS-backup', version: 1,
         sections: Object.fromEntries(selected.map((name) => [name, name === 'patterns' ? 2 : 1])),
@@ -123,6 +125,9 @@ export function setupBackup({ patches, drums, looper }) {
         data.loops = JSON.parse(strFromU8(files[paths.loops]));
         validateSavedLoops(data.loops);
       }
+      if (names.includes('superknob')) {
+        data.superknob = validateSuperKnobPresets(JSON.parse(strFromU8(files[paths.superknob])));
+      }
       const options = { activateSingle: names.length === 1 };
       if (data.patches) {
         await patches.importPatches(data.patches, options);
@@ -132,6 +137,7 @@ export function setupBackup({ patches, drums, looper }) {
       if (data.patterns) { await drums.importPatterns(data.patterns, options); applied.push('patterns'); }
       if (data.tones) { await drums.importTones(data.tones); applied.push('drum tones'); }
       if (data.loops) { await looper.importSavedLoops(data.loops, options); applied.push('loops'); }
+      if (data.superknob) { await superKnob.importPresets(data.superknob); applied.push('SuperKnob presets'); }
       result(`Imported ${applied.join(', ')}. Existing items were kept unless replacement was confirmed.`);
       dialog.close();
     } catch (error) {
