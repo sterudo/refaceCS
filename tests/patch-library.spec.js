@@ -4,8 +4,8 @@ import { readPatchBackup } from '../src/patches.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('#app-status')).toContainText('Panel ready.');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Panel ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
 });
 
 async function savePatch(page, { name, description = '', category = 'synth', tags = '' }) {
@@ -336,7 +336,7 @@ async function connectMockMidi(page) {
     Object.defineProperty(navigator, 'requestMIDIAccess', { value: async () => access });
   });
   await page.reload();
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#midi-connect').click();
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports available');
 }
@@ -395,7 +395,7 @@ test('records selected audio input for at most ten seconds, previews and persist
   expect(await page.evaluate(() => window.patchMessages)).toHaveLength(17);
   await dialog.locator('#patch-record-input').selectOption({ label: 'Synth interface' });
   await dialog.locator('#patch-record-start').click();
-  await expect(dialog.locator('#patch-record-status')).toContainText('Recording');
+  await expect(page.locator('.message-entry[data-source="patch-record-status"] .message-text').last()).toContainText('Recording');
   await expect(dialog.locator('#patch-record-save')).toBeEnabled({ timeout: 15000 });
   await expect(dialog.locator('audio')).toBeVisible();
   await expect(card.locator('.patch-audio-item')).toHaveCount(0);
@@ -438,7 +438,7 @@ test('manual stop supports discarding and storage-error retry without losing the
   await dialog.locator('#patch-record-start').click();
   await expect(dialog.locator('#patch-record-stop')).toBeEnabled();
   await expect.poll(async () => Number(
-    (await dialog.locator('#patch-record-status').textContent()).match(/^Recording ([\d.]+)/)?.[1],
+    (await dialog.locator('#patch-record-progress').textContent()).match(/^([\d.]+)/)?.[1],
   )).toBeGreaterThanOrEqual(0.3);
   await dialog.locator('#patch-record-stop').click();
   await expect(dialog.locator('#patch-record-save')).toBeEnabled();
@@ -448,7 +448,7 @@ test('manual stop supports discarding and storage-error retry without losing the
     IDBObjectStore.prototype.put = () => { throw new DOMException('Storage quota exceeded', 'QuotaExceededError'); };
   });
   await dialog.locator('#patch-record-save').click();
-  await expect(dialog.locator('#patch-record-status')).toContainText('Storage quota exceeded');
+  await expect(page.locator('.message-entry[data-source="patch-record-status"] .message-text').last()).toContainText('Storage quota exceeded');
   await expect(dialog.locator('#patch-record-save')).toBeEnabled();
   await expect(dialog.locator('audio')).toHaveAttribute('src', url);
   await expect(card.locator('.patch-audio-item')).toHaveCount(0);
@@ -470,7 +470,7 @@ test('manual stop supports discarding and storage-error retry without losing the
   await expect(dialog.locator('#patch-record-start')).toBeEnabled();
   await dialog.locator('#patch-record-start').click();
   await expect.poll(async () => Number(
-    (await dialog.locator('#patch-record-status').textContent()).match(/^Recording ([\d.]+)/)?.[1],
+    (await dialog.locator('#patch-record-progress').textContent()).match(/^([\d.]+)/)?.[1],
   )).toBeGreaterThanOrEqual(0.3);
   await dialog.locator('#patch-record-stop').click();
   await expect(dialog.locator('#patch-record-save')).toBeEnabled();
@@ -491,7 +491,7 @@ test('reports denied audio permission and cleans up a late permission grant afte
   });
   const dialog = page.locator('#patch-recorder');
   await card.getByRole('button', { name: 'Record', exact: true }).click();
-  await expect(dialog.locator('#patch-record-status')).toContainText('permission was denied');
+  await expect(page.locator('.message-entry[data-source="patch-record-status"] .message-text').last()).toContainText('permission was denied');
   await expect(dialog.locator('#patch-record-start')).toBeDisabled();
   await dialog.locator('#patch-record-discard').click();
   await page.evaluate(() => {
@@ -537,7 +537,7 @@ test('remembers selected input for other patches and across reloads, and records
   await expect(dialog.locator('#patch-record-input')).toHaveValue('interface');
   await dialog.locator('#patch-record-discard').click();
   await page.reload();
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#midi-connect').click();
   await second.getByRole('button', { name: 'Record', exact: true }).click();
   await expect(dialog.locator('#patch-record-start')).toBeEnabled();
@@ -562,7 +562,7 @@ test('warns and selects the default input when the remembered device is unavaila
   await card.getByRole('button', { name: 'Record', exact: true }).click();
   await expect(dialog.locator('#patch-record-start')).toBeEnabled();
   await expect(dialog.locator('#patch-record-input')).toHaveValue('default');
-  await expect(dialog.locator('#patch-record-warning')).toContainText('previously selected audio input is unavailable');
+  await expect(page.locator('.message-entry[data-source="patch-record-warning"] .message-text').last()).toContainText('previously selected audio input is unavailable');
 });
 
 test('reports preference-storage errors while remembering the input within the open page', async ({ page }) => {
@@ -585,9 +585,9 @@ test('reports preference-storage errors while remembering the input within the o
   const dialog = page.locator('#patch-recorder');
   await card.getByRole('button', { name: 'Record', exact: true }).click();
   await expect(dialog.locator('#patch-record-start')).toBeEnabled();
-  await expect(dialog.locator('#patch-record-warning')).toContainText('Could not restore');
+  await expect(page.locator('.message-entry[data-source="patch-record-warning"] .message-text').last()).toContainText('Could not restore');
   await dialog.locator('#patch-record-input').selectOption('interface');
-  await expect(dialog.locator('#patch-record-warning')).toContainText('Could not remember');
+  await expect(page.locator('.message-entry[data-source="patch-record-warning"] .message-text').last()).toContainText('Could not remember');
   await dialog.locator('#patch-record-discard').click();
   await page.evaluate(() => { Storage.prototype.getItem = window.originalStorageGet; });
   await card.getByRole('button', { name: 'Record', exact: true }).click();
@@ -603,7 +603,7 @@ test('explains secure-context and unsupported-browser recording requirements', a
   }));
   const dialog = page.locator('#patch-recorder');
   await card.getByRole('button', { name: 'Record', exact: true }).click();
-  await expect(dialog.locator('#patch-record-status')).toContainText('HTTPS or localhost');
+  await expect(page.locator('.message-entry[data-source="patch-record-status"] .message-text').last()).toContainText('HTTPS or localhost');
   await expect(dialog.locator('#patch-record-start')).toBeDisabled();
   await dialog.locator('#patch-record-discard').click();
   await page.evaluate(() => {
@@ -611,7 +611,7 @@ test('explains secure-context and unsupported-browser recording requirements', a
     window.MediaRecorder = undefined;
   });
   await card.getByRole('button', { name: 'Record', exact: true }).click();
-  await expect(dialog.locator('#patch-record-status')).toContainText('not supported in this browser');
+  await expect(page.locator('.message-entry[data-source="patch-record-status"] .message-text').last()).toContainText('not supported in this browser');
   await expect(dialog.locator('#patch-record-start')).toBeDisabled();
 });
 
@@ -628,8 +628,8 @@ test('Record loads app controls but blocks audio capture when MIDI output is una
   await page.locator('#lfo-depth').press('End');
   await card.getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
-  await expect(page.locator('#patch-status')).toContainText('MIDI output unavailable');
-  await expect(page.locator('#patch-status')).toContainText('Recording blocked');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('MIDI output unavailable');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('Recording blocked');
   await expect(page.locator('#patch-recorder')).not.toBeVisible();
   expect(await page.evaluate(() => window.captureRequests)).toBe(0);
   await expect(card.getByRole('button', { name: 'Record', exact: true })).toBeEnabled();
@@ -676,8 +676,8 @@ test('filters by favorites, category, and tag and recalls locally without MIDI',
   await page.locator('#filter-cutoff').press('End');
   await page.locator('.patch-card').getByRole('button', { name: 'Load' }).click();
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
-  await expect(page.locator('#patch-status')).toContainText('MIDI output unavailable');
-  await expect(page.locator('#midi-status')).toContainText('patch values were not sent');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('MIDI output unavailable');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('patch values were not sent');
 });
 
 test('multi-select filters use OR within each group and AND with name and favorites', async ({ page }) => {
@@ -806,7 +806,7 @@ test('keyboard selection starts the next preview immediately and ignores stale p
     };
   });
   await page.reload();
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   const first = await savePatch(page, { name: 'A Preview' });
   const second = await savePatch(page, { name: 'B Preview' });
   for (const [card, filename] of [[first, 'first.mp3'], [second, 'second.mp3']]) {
@@ -824,9 +824,9 @@ test('keyboard selection starts the next preview immediately and ignores stale p
   await expect.poll(() => page.evaluate(() => window.previewRequests.length)).toBe(2);
   expect(await page.evaluate(async () => (await fetch(window.previewRequests[1].url)).text())).toBe('second.mp3');
   await page.evaluate(() => window.previewRequests[1].resolve());
-  await expect(page.locator('#patch-status')).toContainText('Playing second.mp3 from B Preview.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('Playing second.mp3 from B Preview.');
   await page.evaluate(() => window.previewRequests[0].reject(new DOMException('Interrupted', 'AbortError')));
-  await expect(page.locator('#patch-status')).toContainText('Playing second.mp3 from B Preview.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('Playing second.mp3 from B Preview.');
 });
 
 test('upgrades existing version-one patch storage without losing saved sounds', async ({ page }) => {
@@ -865,7 +865,7 @@ test('upgrades existing version-one patch storage without losing saved sounds', 
     });
   }, patch);
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await expect(page.locator('.patch-card h3')).toHaveText('Legacy Patch');
   await expect(page.locator('#patch-category-filter').getByRole('button', { name: 'Legacy category', exact: true })).toBeVisible();
   await expect(page.locator('.patch-tags')).toHaveText('legacy');
@@ -881,15 +881,15 @@ test('deletes unused categories persistently and removes a tag from every patch 
   const manager = page.locator('#patch-label-manager');
   await expect(manager.getByRole('button', { name: 'Delete category pads', exact: true })).toBeDisabled();
   await manager.getByRole('button', { name: 'Delete category Unused later', exact: true }).click();
-  await expect(page.locator('#patch-label-status')).toContainText('Unused later deleted.');
+  await expect(page.locator('.message-entry[data-source="patch-label-status"] .message-text').last()).toContainText('Unused later deleted.');
   await manager.getByRole('button', { name: 'Delete category FM', exact: true }).click();
   await manager.getByRole('button', { name: 'Delete tag shared', exact: true }).click();
   await page.getByRole('dialog', { name: 'Delete tag' }).getByRole('button', { name: 'Delete' }).click();
-  await expect(page.locator('#patch-label-status')).toContainText('shared removed');
+  await expect(page.locator('.message-entry[data-source="patch-label-status"] .message-text').last()).toContainText('shared removed');
   await page.locator('#patch-label-manager-close').click();
   await expect(first.locator('.patch-tags')).toHaveText('keep');
   await page.reload();
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await expect(page.locator('#patch-category-filter').getByRole('button', { name: 'FM', exact: true })).toHaveCount(0);
   await expect(page.locator('#patch-category-filter').getByRole('button', { name: 'Unused later', exact: true })).toHaveCount(0);
   await expect(page.locator('#patch-tag-filter').getByRole('button', { name: 'shared', exact: true })).toHaveCount(0);
@@ -950,12 +950,12 @@ test('continues patch CC sends and reports a partial recall after one send failu
     Object.defineProperty(navigator, 'requestMIDIAccess', { value: async () => access });
   });
   await page.reload();
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#midi-connect').click();
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports available');
   const card = await savePatch(page, { name: 'Partial Send' });
   await card.getByRole('button', { name: 'Load' }).click();
-  await expect(page.locator('#patch-status')).toContainText('16 CC values sent, 1 failed');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('16 CC values sent, 1 failed');
   expect(await page.evaluate(() => window.patchMessages)).toHaveLength(16);
   expect(await page.evaluate(() => window.patchMessages.some((message) => message[1] === 77))).toBe(false);
   await page.evaluate(() => {
@@ -966,8 +966,8 @@ test('continues patch CC sends and reports a partial recall after one send failu
     } });
   });
   await card.getByRole('button', { name: 'Record', exact: true }).click();
-  await expect(page.locator('#patch-status')).toContainText('Recording blocked');
-  await expect(page.locator('#patch-status')).toContainText('16 CC values sent, 1 failed');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('Recording blocked');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('16 CC values sent, 1 failed');
   await expect(page.locator('#patch-recorder')).not.toBeVisible();
   expect(await page.evaluate(() => window.captureRequests)).toBe(0);
 });

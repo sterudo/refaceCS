@@ -1,3 +1,4 @@
+import { createReporter, setupNotifications } from './notifications.js';
 import './style.css';
 import panelMarkup from './synth.svg?raw';
 import { createVisualizations } from './visualizations.js';
@@ -14,7 +15,10 @@ import { setupBackup } from './backup.js';
 import { setupCloudBackup } from './cloud-ui.js';
 import { setupDeviceSettings } from './device-settings.js';
 import { choose } from './dialogs.js';
+import { setupHelp } from './help.js';
 
+setupNotifications();
+const reportAudio = createReporter('groove', 'audio-connect-status');
 const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
 const dataInfoClose = document.querySelector('#data-info-close');
@@ -39,8 +43,9 @@ const container = document.querySelector('#synth');
 container.innerHTML = panelMarkup;
 
 const panel = container.querySelector('svg');
+setupHelp(panel);
 const displays = document.querySelector('#visualizations');
-const status = document.querySelector('#app-status');
+const status = createReporter('app', 'app-status');
 const sizeButton = document.querySelector('#fader-size');
 const faders = [...panel.querySelectorAll('.fader')];
 const readouts = new Map();
@@ -155,7 +160,7 @@ const midi = setupMidiDiscovery(() => {
 });
 const drums = createDrumMachine(grooveClock, {
   onAudioStatus(message) {
-    document.querySelector('#audio-connect-status').textContent = message;
+    reportAudio(message, 'error');
   },
   onTempo(bpm) {
     midi.setTempo(bpm);
@@ -259,7 +264,7 @@ async function changePitchRange(value, force = false, prefix = '') {
   try {
     if (!midi.hasDeviceConnection()) {
       updatePitchRange(magnitude);
-      status.textContent = `${prefix}Pitch bend range: ${magnitude} semitones shown locally; no device setting was sent.`;
+      status(`${prefix}Pitch bend range: ${magnitude} semitones shown locally; no device setting was sent.`);
       return;
     }
     if (pitchDirection === null) {
@@ -277,7 +282,7 @@ async function changePitchRange(value, force = false, prefix = '') {
           }
         });
       } catch (error) {
-        status.textContent = `Could not read pitch-bend direction: ${error.message || error}`;
+        status(`Could not read pitch-bend direction: ${error.message || error}`, 'error');
       }
       if (revision !== deviceRevision) return;
       if (pitchDirection === null) {
@@ -293,7 +298,7 @@ async function changePitchRange(value, force = false, prefix = '') {
     midi.setControl('pitch-range', pitchDirection * magnitude);
     deviceSettings?.pitchSent();
     if (magnitude === 0) pitchDirection = null;
-    status.textContent = `${prefix}Pitch bend range: ${magnitude} semitones; MIDI send is not confirmed.`;
+    status(`${prefix}Pitch bend range: ${magnitude} semitones; MIDI send is not confirmed.`);
   } finally {
     pitchRangeChanging = false;
   }
@@ -356,7 +361,7 @@ function updateFader(fader, value, announce = true) {
   updateVisualizations(fader.id);
   if (changed && PATCH_CONTROL_IDS.includes(fader.id)) patchLibrary?.controlsChanged();
   if (announce) {
-    status.textContent = `${fader.dataset.label}: ${valueText(fader)}`;
+    status(`${fader.dataset.label}: ${valueText(fader)}`);
   }
 }
 
@@ -622,7 +627,7 @@ for (const key of keys) {
     }
     activePointers.set(event.pointerId, { element: key });
     updateKey(key);
-    status.textContent = `${key.getAttribute('aria-label')} pressed`;
+    status(`${key.getAttribute('aria-label')} pressed`);
   });
 
   key.addEventListener('keydown', (event) => {
@@ -653,7 +658,7 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   computerKeys.set(event.code, key);
   updateKey(key);
-  status.textContent = `${key.getAttribute('aria-label')} pressed`;
+  status(`${key.getAttribute('aria-label')} pressed`);
 });
 
 document.addEventListener('keyup', (event) => {
@@ -736,7 +741,7 @@ sizeButton.addEventListener('click', () => {
   travel = baseTravel * (doubled ? 2 : 1);
   setPreference('faderTravel', doubled);
   layoutPanel();
-  status.textContent = `${doubled ? 'Double' : 'Normal'} fader travel. Control values preserved.`;
+  status(`${doubled ? 'Double' : 'Normal'} fader travel. Control values preserved.`);
 });
 
 function resetSection(section) {
@@ -747,7 +752,7 @@ function resetSection(section) {
   for (const fader of sectionFaders) {
     updateFaderFromInput(fader, startingValues.get(fader), false);
   }
-  status.textContent = `${section.toUpperCase()} faders reset to starting positions.`;
+  status(`${section.toUpperCase()} faders reset to starting positions.`);
 }
 
 document.querySelector('#reset-faders').addEventListener('click', () => {
@@ -761,7 +766,7 @@ document.querySelector('#reset-faders').addEventListener('click', () => {
   for (const [fader, value] of startingValues) {
     updateFaderFromInput(fader, value, false);
   }
-  status.textContent = 'Faders reset to starting positions.';
+  status('Faders reset to starting positions.');
   void changePitchRange(defaultPitchRange, true, 'Faders reset to starting positions. ');
 });
 
@@ -774,7 +779,7 @@ function toggleMute() {
   muteButton.setAttribute('aria-pressed', String(volumeMuted));
   muteButton.setAttribute('aria-disabled', 'false');
   muteButton.querySelector('title').textContent = volumeMuted ? 'Unmute notes' : 'Mute notes';
-  status.textContent = volumeMuted ? 'Notes muted.' : 'Notes unmuted.';
+  status(volumeMuted ? 'Notes muted.' : 'Notes unmuted.');
 }
 
 bindButton(muteButton, toggleMute);
@@ -785,14 +790,14 @@ document.querySelector('#focus-mode').addEventListener('click', (event) => {
   faders.forEach(updateFaderTooltip);
   event.currentTarget.setAttribute('aria-pressed', String(enabled));
   setPreference('focusMode', enabled);
-  status.textContent = `Focus Mode ${enabled ? 'on' : 'off'}. Control values preserved.`;
+  status(`Focus Mode ${enabled ? 'on' : 'off'}. Control values preserved.`);
 });
 
 document.querySelector('#hide-displays').addEventListener('click', (event) => {
   displays.hidden = !displays.hidden;
   event.currentTarget.setAttribute('aria-pressed', String(displays.hidden));
   setPreference('hideDisplays', displays.hidden);
-  status.textContent = `Displays ${displays.hidden ? 'hidden' : 'shown'}. Control values preserved.`;
+  status(`Displays ${displays.hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
 
 document.querySelector('#hide-speakers').addEventListener('click', (event) => {
@@ -801,7 +806,7 @@ document.querySelector('#hide-speakers').addEventListener('click', (event) => {
   event.currentTarget.setAttribute('aria-pressed', String(hidden));
   setPreference('hideSpeakers', hidden);
   layoutPanel();
-  status.textContent = `Speakers ${hidden ? 'hidden' : 'shown'}. Control values preserved.`;
+  status(`Speakers ${hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
 
 document.querySelector('#five-octaves').addEventListener('click', (event) => {
@@ -813,7 +818,7 @@ document.querySelector('#five-octaves').addEventListener('click', (event) => {
   standardKeys.setAttribute('transform', `translate(${expanded ? 7 * 62 : 0} 0)`);
   panel.querySelector('#panel-description').textContent =
     `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
-  status.textContent = `${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`;
+  status(`${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`);
 });
 
 updatePitchRange(defaultPitchRange);
@@ -848,4 +853,4 @@ patchLibrary = createPatchLibrary({
 });
 setupBackup({ patches: patchLibrary, drums, looper: midi });
 setupCloudBackup({ patches: patchLibrary, drums, looper: midi });
-status.textContent = 'Panel ready. Connect MIDI to send notes and supported controls.';
+status('Panel ready. Connect MIDI to send notes and supported controls.');

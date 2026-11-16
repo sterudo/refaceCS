@@ -69,7 +69,7 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
     throw new Error(`Unexpected Drive request: ${request.method()} ${url}`);
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#footer-panel').first().locator('summary').click();
   await page.locator('#patch-save').click();
   await page.locator('#patch-name').fill('Cloud pad');
@@ -91,10 +91,10 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   await page.locator('#cloud-open').click();
   await page.locator('#cloud-client-id').fill('test-client-id');
   await page.locator('#cloud-connect').click();
-  await expect(page.locator('#cloud-status')).toContainText('Connected to Google Drive');
+  await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('Connected to Google Drive');
   await page.locator('#cloud-name').fill('My backup');
   await page.locator('#cloud-save').click();
-  await expect(page.locator('#cloud-status')).toContainText('Saved cloud backup');
+  await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('Saved cloud backup');
   const audioFile = [...files.values()].find((file) => file.appProperties?.refaceType === 'audio');
   const backup = [...files.values()].find((file) => file.appProperties?.refaceType === 'backup');
   expect(audioFile.content).toEqual(Buffer.from('audio bytes'));
@@ -105,7 +105,7 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   expect(JSON.stringify(manifest)).not.toContain('test-token');
   audioFile.content = Buffer.from('damaged');
   await page.locator('#cloud-merge').click();
-  await expect(page.locator('#cloud-status')).toContainText('damaged or changed');
+  await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('damaged or changed');
   expect([...files.values()].filter((file) => file.appProperties?.refaceType === 'backup')).toHaveLength(1);
   audioFile.content = Buffer.from('audio bytes');
   await page.locator('#cloud-close').click();
@@ -122,12 +122,12 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   failRecovery = true;
   await page.locator('#cloud-replace').click();
   await page.getByRole('dialog', { name: 'Replace browser data' }).getByRole('button', { name: 'Replace' }).click();
-  await expect(page.locator('#cloud-status')).toContainText('recovery failed');
+  await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('recovery failed');
   await expect(page.locator('.patch-card')).toHaveCount(0);
   failRecovery = false;
   await page.locator('#cloud-replace').click();
   await page.getByRole('dialog', { name: 'Replace browser data' }).getByRole('button', { name: 'Replace' }).click();
-  await expect(page.locator('#cloud-status')).toContainText('recovery backup was saved');
+  await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('recovery backup was saved');
   await expect(page.locator('#cloud-versions option')).toHaveCount(2);
   const recovery = [...files.values()].find((file) => file.appProperties?.kind === 'recovery');
   expect(JSON.parse(recovery.content.toString()).patches).toHaveLength(0);

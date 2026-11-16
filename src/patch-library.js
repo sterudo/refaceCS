@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import {
   createPatchBackup,
   PATCH_CONTROL_IDS,
@@ -82,7 +83,7 @@ function makeTag(text) {
 
 export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls }) {
   const store = new PatchStore();
-  const status = document.querySelector('#patch-status');
+  const status = createReporter('patches', 'patch-status');
   const cards = root.querySelector('#patch-cards');
   const favoritesOnly = document.querySelector('#patch-favorites-only');
   const categoryFilter = document.querySelector('#patch-category-filter');
@@ -90,7 +91,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   const nameFilter = document.querySelector('#patch-name-filter');
   const viewToggle = document.querySelector('#patch-view-toggle');
   const labelManager = document.querySelector('#patch-label-manager');
-  const labelStatus = document.querySelector('#patch-label-status');
+  const labelStatus = createReporter('patches', 'patch-label-status');
   const managedCategories = document.querySelector('#patch-managed-categories');
   const managedTags = document.querySelector('#patch-managed-tags');
   const saveButton = document.querySelector('#patch-save');
@@ -117,7 +118,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       preview.play().then(() => {
         previewButton.hidden = true;
       }).catch(() => {
-        status.textContent = 'Audio playback is still blocked. Use the track Play button to try again.';
+        status('Audio playback is still blocked. Use the track Play button to try again.', 'error');
       });
     }
   });
@@ -162,23 +163,23 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         audio: [...patch.audio, attachment],
         updatedAt: now.toISOString(),
       }, `Recorded MP3 saved to ${patch.name}.`))) {
-        throw new Error(status.textContent);
+        throw new Error(status.message);
       }
     },
   });
 
   preview.preload = 'none';
   preview.addEventListener('ended', () => {
-    status.textContent = 'Audio preview ended.';
+    status('Audio preview ended.');
   });
   preview.addEventListener('error', () => {
-    status.textContent = 'The selected audio file could not be played.';
+    status('The selected audio file could not be played.', 'error');
   });
   previewButton.hidden = true;
-  status.after(previewButton);
+  cards.before(previewButton);
 
-  function setStatus(message) {
-    status.textContent = message;
+  function setStatus(message, severity = 'normal') {
+    status(message, severity);
     previewButton.hidden = true;
   }
 
@@ -242,9 +243,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
           categories = categories.filter((value) => value !== category);
           selectedCategories.delete(category);
           render();
-          labelStatus.textContent = `${category} deleted.`;
+          labelStatus(`${category} deleted.`);
         } catch (error) {
-          labelStatus.textContent = `Could not delete category: ${error.message || error}`;
+          labelStatus(`Could not delete category: ${error.message || error}`, 'error');
         }
       });
       remove.disabled = used > 0;
@@ -261,9 +262,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
           await store.deleteTag(tag);
           selectedTags.delete(tag);
           await reload();
-          labelStatus.textContent = `${tag} removed from all patches.`;
+          labelStatus(`${tag} removed from all patches.`);
         } catch (error) {
-          labelStatus.textContent = `Could not delete tag: ${error.message || error}`;
+          labelStatus(`Could not delete tag: ${error.message || error}`, 'error');
         }
       });
       row.append(label, remove);
@@ -357,7 +358,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       setStatus(`Playing ${attachment.name} from ${patch.name}.`);
     } catch {
       if (activePreviewUrl !== requestedUrl) return;
-      status.textContent = `Audio playback was blocked for ${attachment.name}. Use the track's Play button to start it.`;
+      status(`Audio playback was blocked for ${attachment.name}. Use the track's Play button to start it.`, 'error');
       previewButton.hidden = false;
       previewButton.setAttribute('aria-label', `Play preview for ${attachment.name}`);
       previewButton.title = `Play preview for ${attachment.name}`;
@@ -494,7 +495,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         if (await loadPatch(patch)) {
           await recording.open(patch);
         } else {
-          setStatus(`${status.textContent} Recording blocked: successfully send all patch values over MIDI before recording.`);
+          setStatus(`${status.message} Recording blocked: successfully send all patch values over MIDI before recording.`, 'error');
         }
       } finally {
         recordButton.disabled = patch.audio.length >= MAX_AUDIO_ATTACHMENTS;
@@ -608,7 +609,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       setStatus(successMessage);
       return true;
     } catch (error) {
-      setStatus(`Could not save patch: ${error.message || error}`);
+      setStatus(`Could not save patch: ${error.message || error}`, 'error');
       return false;
     }
   }
@@ -686,6 +687,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       editorStatus.textContent = `Patch details are invalid: ${error.message || error}`;
       return;
     }
+    editorStatus.textContent = '';
     candidate.favorite = Boolean(editingPatch?.favorite);
 
     const conflict = patches.find((patch) => patch.id !== candidate.id
@@ -701,7 +703,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
           await store.replace(editingPatch.id, { ...candidate, id: conflict.id });
           if (activePatchId === editingPatch.id) activePatchId = conflict.id;
         } catch (error) {
-          editorStatus.textContent = `Could not replace patch: ${error.message || error}`;
+          status(`Could not replace patch: ${error.message || error}`, 'error');
           return;
         }
       } else {
@@ -714,7 +716,6 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
           updatedAt: now,
         };
         if (!(await persist(candidate, `${conflict.name} updated.`))) {
-          editorStatus.textContent = status.textContent;
           return;
         }
         if (!audio.length && activePreviewAttachment?.patchId === conflict.id) stopPreview();
@@ -742,8 +743,6 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       editorSaved = true;
       editor.close();
       updateDisplay();
-    } else {
-      editorStatus.textContent = status.textContent;
     }
   }
 
@@ -768,7 +767,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       render();
       setStatus(`${patch.name} deleted.`);
     } catch (error) {
-      setStatus(`Could not delete patch: ${error.message || error}`);
+      setStatus(`Could not delete patch: ${error.message || error}`, 'error');
     }
   }
 
@@ -817,7 +816,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       if (action === 'overwrite') await overwriteActivePatch();
       if (action === 'save-as') await saveAsCopy();
     } catch (error) {
-      setStatus(`Could not save patch: ${error.message || error}`);
+      setStatus(`Could not save patch: ${error.message || error}`, 'error');
     } finally {
       loadingPatch = false;
     }
@@ -835,14 +834,14 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       initialized = true;
       updateDisplay();
       if (result.unavailable) {
-        setStatus('INIT loaded in the app; MIDI output unavailable, so no values were sent to the synth.');
+        setStatus('INIT loaded in the app; MIDI output unavailable, so no values were sent to the synth.', 'error');
       } else if (result.failed || result.sent !== result.total) {
-        setStatus(`INIT loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`);
+        setStatus(`INIT loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`, 'error');
       } else {
         setStatus(`INIT loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
       }
     } catch (error) {
-      setStatus(`Could not initialize patch: ${error.message || error}`);
+      setStatus(`Could not initialize patch: ${error.message || error}`, 'error');
     } finally {
       loadingPatch = false;
     }
@@ -865,12 +864,12 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         setStatus(`${patch.name} loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
         return true;
       } else if (result.sent === 0) {
-        setStatus(`${patch.name} loaded in the app; MIDI output unavailable, so no values were sent to the synth.`);
+        setStatus(`${patch.name} loaded in the app; MIDI output unavailable, so no values were sent to the synth.`, 'error');
       } else {
-        setStatus(`${patch.name} loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`);
+        setStatus(`${patch.name} loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`, 'error');
       }
     } catch (error) {
-      setStatus(`Could not complete patch load: ${error.message || error}`);
+      setStatus(`Could not complete patch load: ${error.message || error}`, 'error');
     } finally {
       loadingPatch = false;
     }
@@ -988,7 +987,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       download(blob, filename);
       setStatus(`Exported ${items.length} patch(es), including audio, to a ZIP backup.`);
     } catch (error) {
-      setStatus(`Could not export patch backup: ${error.message || error}`);
+      setStatus(`Could not export patch backup: ${error.message || error}`, 'error');
     }
   }
 
@@ -1026,7 +1025,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       return saved;
     } catch (error) {
       await reload();
-      setStatus(`Import stopped after ${saved} patch(es): ${error.message || error}`);
+      setStatus(`Import stopped after ${saved} patch(es): ${error.message || error}`, 'error');
       throw new Error(`Patch import stopped after ${saved} patch(es): ${error.message || error}`);
     }
   }
@@ -1049,7 +1048,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     render();
   });
   document.querySelector('#patch-manage-labels').addEventListener('click', () => {
-    labelStatus.textContent = '';
+    labelStatus('');
     labelManager.showModal();
   });
   document.querySelector('#patch-label-manager-close').addEventListener('click', () => labelManager.close());
@@ -1102,7 +1101,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   window.addEventListener('pagehide', stopPreview);
 
   reload().then(() => setStatus('Patch library ready.'))
-    .catch((error) => setStatus(`Patch library unavailable: ${error.message || error}`));
+    .catch((error) => setStatus(`Patch library unavailable: ${error.message || error}`, 'error'));
   return {
     list: () => store.list(),
     listCategories: () => store.listCategories(),

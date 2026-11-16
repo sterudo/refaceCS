@@ -55,19 +55,20 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto('/static/reface/');
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-settings-status')).toContainText('Read complete');
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
 });
 
 const dialog = (page) => page.getByRole('dialog', { name: 'Device settings' });
 const writes = (page) => page.evaluate(() => window.deviceTest.sent.filter((message) => message[0] === 0xf0 && message[2] === 0x10));
 
-test('connected status is in the dot tooltip and toolbar controls have equal spacing', async ({ page }) => {
+test('connected feedback is in Messages and toolbar controls have equal spacing', async ({ page }) => {
   const badge = page.locator('#midi-badge');
-  await expect(badge).toHaveAttribute('title', /reface input available/);
-  await expect(badge).toHaveAttribute('title', /Device settings read complete/);
-  await expect(page.locator('#midi-status')).toBeHidden();
-  await expect(page.locator('#device-panel-status')).toBeHidden();
+  await expect(badge).toHaveAttribute('title', /message log/);
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('reface input available');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('Device settings read complete');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toBeVisible();
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toBeVisible();
   await page.locator('#data-info-close').click();
   const elements = await Promise.all(['#midi-badge', '#device-settings-open', '#midi-reset', '#backup-open', '#data-info-open']
     .map((selector) => page.locator(selector).boundingBox()));
@@ -82,14 +83,14 @@ test('reads settings, stages verified defaults and leaves unknown defaults untou
   const settings = dialog(page);
   await expect(settings.getByRole('row', { name: /Master Tune/ })).toContainText('0.1');
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await expect(settings.getByRole('row', { name: /Master Tune/ })).toContainText('0.1');
   await expect(settings.getByLabel('Pitch-bend direction')).toHaveValue('-1');
   await settings.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(settings.getByLabel('Pitch-bend direction')).toHaveValue('1');
   await expect(settings.getByLabel('MIDI Control')).toHaveValue('0');
   await expect(settings.getByLabel('Master Tune (cents)')).toHaveValue('0.1');
-  await expect(settings.locator('#device-settings-status')).toContainText('Defaults not verified');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Defaults not verified');
   expect(await writes(page)).toEqual([]);
 });
 
@@ -97,12 +98,12 @@ test('applies only edits, verifies replies and synchronizes the panel bend range
   await page.locator('#device-settings-open').click();
   const settings = dialog(page);
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await settings.getByLabel('MIDI receive channel').selectOption('1');
   await settings.getByLabel('Master Tune (cents)').fill('-1.2');
   await settings.getByLabel('Pitch-bend range (semitones)').fill('7');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toHaveText('Changes confirmed by the synth.');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toHaveText('Changes confirmed by the synth.');
   await expect(page.locator('#device-midi-receive')).toHaveAttribute('data-value', '1');
   expect(await writes(page)).toEqual([
     [0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 1, 1, 0xf7],
@@ -116,11 +117,11 @@ test('does not claim confirmation when a setting reads back differently', async 
   await page.locator('#device-settings-open').click();
   const settings = dialog(page);
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await page.evaluate(() => { window.deviceTest.ignoreWrites = true; });
   await settings.getByLabel('Speaker output').selectOption('0');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('could not be confirmed');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('could not be confirmed');
   await expect(settings.getByRole('row', { name: /Speaker output/ })).toContainText('unconfirmed');
   await expect(settings.getByLabel('Speaker output')).toHaveValue('0');
 });
@@ -131,7 +132,7 @@ test('a different pitch read-back replaces the requested range', async ({ page }
   const settings = dialog(page);
   await settings.getByLabel('Pitch-bend range (semitones)').fill('7');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('could not be confirmed');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('could not be confirmed');
   await expect(settings.getByLabel('Pitch-bend range (semitones)')).toHaveValue('7');
   await expect(page.locator('#pitch-range-value')).toHaveText('12');
 });
@@ -142,11 +143,11 @@ test('preserves draft edits during a read and reports missing replies', async ({
   const settings = dialog(page);
   await settings.getByLabel('Speaker output').selectOption('0');
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await expect(settings.getByRole('row', { name: /Speaker output/ })).toContainText('No response');
   await expect(settings.getByLabel('Speaker output')).toHaveValue('0');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toHaveText('Changes confirmed by the synth.');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toHaveText('Changes confirmed by the synth.');
   expect(await writes(page)).toEqual([[0xf0, 0x43, 0x10, 0x7f, 0x1c, 3, 0, 0, 13, 0, 0xf7]]);
 });
 
@@ -160,7 +161,7 @@ test('missing pitch direction requires an explicit direction before sending', as
   await page.evaluate(() => { delete window.deviceTest.values['0,0,15']; });
   await page.locator('#device-settings-open').click();
   await dialog(page).getByRole('button', { name: 'Read settings' }).click();
-  await expect(dialog(page).locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   await page.locator('#pitch-range-up').click();
   await page.getByRole('dialog', { name: 'Pitch-bend direction unknown' }).getByRole('button', { name: 'Read direction' }).click();
@@ -175,15 +176,15 @@ test('changing the selected device clears readings and pending edits', async ({ 
   await page.locator('#device-settings-open').click();
   const settings = dialog(page);
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await settings.getByLabel('Speaker output').selectOption('0');
   await settings.getByRole('button', { name: 'Close' }).click();
   await page.locator('#midi-reface-output').selectOption('');
   await page.locator('#device-settings-open').click();
-  await expect(settings.locator('#device-settings-status')).toContainText('pending edits were cleared');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('pending edits were cleared');
   await expect(settings.getByLabel('Speaker output')).toHaveValue('');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toHaveText('No changes to apply.');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toHaveText('No changes to apply.');
   expect(await writes(page)).toEqual([]);
 });
 
@@ -193,7 +194,7 @@ test('device reads override a legacy saved range without prompting or writing', 
   await expect(page.locator('#pitch-range-value')).toHaveText('12');
   await page.evaluate(() => { window.deviceTest.values['0,0,15'] = [59]; });
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await expect(page.locator('#pitch-range-value')).toHaveText('5');
   await expect(page.getByRole('dialog', { name: 'Restore pitch-bend range' })).toHaveCount(0);
   expect(await writes(page)).toEqual([]);
@@ -201,7 +202,7 @@ test('device reads override a legacy saved range without prompting or writing', 
   await page.evaluate(() => { window.deviceTest.values['0,0,15'] = [58]; });
   await page.locator('#device-settings-open').click();
   await dialog(page).getByRole('button', { name: 'Read settings' }).click();
-  await expect(dialog(page).locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await expect(page.locator('#pitch-range-value')).toHaveText('6');
   expect(await writes(page)).toEqual([]);
 });
@@ -211,9 +212,9 @@ test('a missing pitch read does not prompt or restore a legacy saved range', asy
   await page.reload();
   await page.evaluate(() => { delete window.deviceTest.values['0,0,15']; });
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await expect(page.locator('#pitch-range-value')).toHaveText('12');
-  await expect(page.locator('#device-panel-status')).toContainText('no response');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('no response');
   await expect(page.getByRole('dialog', { name: 'Restore pitch-bend range' })).toHaveCount(0);
   expect(await writes(page)).toEqual([]);
 });
@@ -222,7 +223,7 @@ test('a direction read applies the adjustment to the actual device range', async
   await page.evaluate(() => { delete window.deviceTest.values['0,0,15']; });
   await page.locator('#device-settings-open').click();
   await dialog(page).getByRole('button', { name: 'Read settings' }).click();
-  await expect(dialog(page).locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   await page.evaluate(() => { window.deviceTest.values['0,0,15'] = [60]; });
   await page.locator('#pitch-range-up').click();
@@ -235,7 +236,7 @@ test('a zero direction read updates the display even if the change is cancelled'
   await page.evaluate(() => { delete window.deviceTest.values['0,0,15']; });
   await page.locator('#device-settings-open').click();
   await dialog(page).getByRole('button', { name: 'Read settings' }).click();
-  await expect(dialog(page).locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   await page.evaluate(() => { window.deviceTest.values['0,0,15'] = [64]; });
   await page.locator('#pitch-range-up').click();
@@ -253,7 +254,7 @@ test('failed writes remain pending and are reported', async ({ page }) => {
   await settings.getByLabel('Speaker output').selectOption('0');
   await page.evaluate(() => { window.deviceTest.failWrites = true; });
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('failed or could not be confirmed');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('failed or could not be confirmed');
   await expect(settings.getByRole('row', { name: /Speaker output/ })).toContainText('failed');
   await expect(settings.getByLabel('Speaker output')).toHaveValue('0');
 });
@@ -307,7 +308,7 @@ test('receive changes release old notes and immediately route all outgoing chann
   expect(messages).toContainEqual([0xb1, 74, 55]);
   expect(messages).toContainEqual([0xe1, 0, 64]);
   expect(messages).toContainEqual([0xb1, 74, 0]);
-  await expect(page.locator('#device-panel-status')).toContainText('unconfirmed');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('unconfirmed');
   await page.evaluate(() => { window.deviceTest.noReplies = false; });
   await receive.click({ button: 'right' });
   await page.getByRole('menu', { name: 'Receive channel choices' }).getByRole('menuitemradio', { name: 'All' }).click();
@@ -319,7 +320,7 @@ test('receive changes release old notes and immediately route all outgoing chann
 test('failed panel writes do not change state or routing', async ({ page }) => {
   await page.evaluate(() => { window.deviceTest.failWrites = true; });
   await page.locator('#device-midi-receive').click();
-  await expect(page.locator('#device-panel-status')).toContainText('failed');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('failed');
   await expect(page.locator('#device-midi-receive')).toHaveAttribute('data-value', '16');
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => window.deviceTest.emit([0x92, 65, 90]));
@@ -330,7 +331,7 @@ test('a different receive read-back restores routing to the reported channel', a
   await page.evaluate(() => { window.deviceTest.ignoreWrites = true; });
   const receive = page.locator('#device-midi-receive');
   await receive.click();
-  await expect(page.locator('#device-panel-status')).toContainText('unconfirmed');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('unconfirmed');
   await expect(receive).toHaveAttribute('data-value', '16');
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => window.deviceTest.emit([0x92, 65, 90]));
@@ -341,9 +342,9 @@ test('missing replies leave assumed values visible and first switch click sends 
   await page.evaluate(() => sessionStorage.setItem('device-no-replies', 'true'));
   await page.reload();
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-panel-status')).toContainText('no response', { timeout: 8000 });
-  await expect(page.locator('#device-panel-status')).toBeVisible();
-  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /no response/);
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('no response', { timeout: 8000 });
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toBeVisible();
+  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /message log/);
   const speaker = page.locator('#device-speaker-output');
   await expect(speaker).toHaveAttribute('aria-pressed', 'true');
   await expect(speaker).toHaveAttribute('data-confidence', 'assumed');
@@ -357,24 +358,24 @@ test('SysEx denial leaves MIDI connected and controls report failures without ch
   await page.evaluate(() => sessionStorage.setItem('deny-device-sysex', 'true'));
   await page.reload();
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-panel-status')).toContainText('Could not read');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Could not read');
   await page.setViewportSize({ width: 800, height: 900 });
-  await expect(page.locator('#device-panel-status')).toBeVisible();
-  await expect(page.locator('#midi-status')).toBeVisible();
-  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /Could not read/);
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toBeVisible();
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toBeVisible();
+  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /message log/);
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports available');
   await page.keyboard.press('a');
   expect(await page.evaluate(() => window.deviceTest.sent)).toContainEqual([0x90, 60, 100]);
   await page.locator('#device-speaker-output').click();
-  await expect(page.locator('#device-panel-status')).toContainText('Could not change');
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('Could not change');
   await expect(page.locator('#device-speaker-output')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#device-speaker-output')).toHaveAttribute('data-confidence', 'assumed');
   await page.evaluate(() => sessionStorage.removeItem('deny-device-sysex'));
   await page.locator('#device-settings-open').click();
   await dialog(page).getByRole('button', { name: 'Read settings' }).click();
-  await expect(page.locator('#device-panel-status')).toContainText('Device settings read complete');
-  await expect(page.locator('#midi-status')).toBeHidden();
-  await expect(page.locator('#device-panel-status')).toBeHidden();
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toContainText('Device settings read complete');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toBeVisible();
+  await expect(page.locator('.message-entry[data-source="device-panel-status"] .message-text').last()).toBeVisible();
   await expect(page.locator('#midi-badge')).not.toHaveAttribute('title', /permission denied/);
 });
 
@@ -383,7 +384,7 @@ test('learned controls use the selected receive channel without duplicating the 
   await page.locator('#device-settings-open').click();
   await dialog(page).getByLabel('MIDI receive channel').selectOption('5');
   await dialog(page).getByRole('button', { name: 'Apply changes' }).click();
-  await expect(page.locator('#device-settings-status')).toHaveText('Changes confirmed by the synth.');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toHaveText('Changes confirmed by the synth.');
   await dialog(page).getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('#midi-learn').click();
   await page.locator('#filter-cutoff').press('Home');
@@ -451,7 +452,7 @@ test('panel labels are inline and view controls stay left without overlapping', 
 test('loop playback routes to receive channel and retains source channel when returned to All', async ({ page }) => {
   const phrase = writeMidi([{ start: 0.25, playDuration: 0.5, channel: 2, pitch: 65, velocity: 79 }], 4, 120, 4);
   await page.locator('#looper-file').setInputFiles({ name: 'routing.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded routing.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded routing.mid');
   await page.locator('#device-midi-receive').click();
   await expect(page.locator('#device-midi-receive')).toHaveAttribute('data-value', '0');
   await page.evaluate(() => { window.deviceTest.sent.length = 0; });
@@ -470,10 +471,10 @@ test('zero range has no confirmed direction and requires a fresh choice', async 
   await page.locator('#device-settings-open').click();
   const settings = dialog(page);
   await settings.getByRole('button', { name: 'Read settings' }).click();
-  await expect(settings.locator('#device-settings-status')).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
   await settings.getByLabel('Pitch-bend range (semitones)').fill('0');
   await settings.getByRole('button', { name: 'Apply changes' }).click();
-  await expect(settings.locator('#device-settings-status')).toHaveText('Changes confirmed by the synth.');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toHaveText('Changes confirmed by the synth.');
   await expect(settings.getByRole('row', { name: /Pitch-bend direction/ })).toContainText('No direction at zero');
   await settings.getByRole('button', { name: 'Close' }).click();
   await page.locator('#pitch-range-up').click();

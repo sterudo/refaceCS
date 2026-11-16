@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { tempoRange } from './synth-midi.js';
 import { createSevenSegment } from './seven-segment.js';
 
@@ -19,7 +20,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
   const rateButton = document.querySelector('#arp-rate');
   const modeButton = document.querySelector('#arp-mode');
   const menuLayer = document.querySelector('#arp-menu-layer');
-  const status = document.querySelector('#arp-status');
+  const status = createReporter('arp', 'arp-status');
   const svgNS = 'http://www.w3.org/2000/svg';
   const rates = [2, 4, 8, 16, 32].map((value) => ({ value, label: `1/${value}` }));
   const modes = [
@@ -71,7 +72,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       tempo = next;
       clock?.setTempo(next);
       updateTempoDisplay();
-      status.textContent = `Tempo: ${tempo} BPM.`;
+      status(`Tempo: ${tempo} BPM.`);
       restart();
     }
     if (notify && (changed || forceNotify)) onTempoChange(next);
@@ -94,7 +95,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     value.textContent = (option.display || option.label).toUpperCase();
     button.setAttribute('aria-label', `${name}: ${option.label}`);
     button.dataset.value = String(option.value);
-    status.textContent = `${name}: ${option.label}.`;
+    status(`${name}: ${option.label}.`);
     restart();
   }
 
@@ -219,7 +220,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
         else if (!result.has(pitch)) result.set(pitch, velocity);
       }
     }
-    if (outsideRange) status.textContent = 'Some arpeggiator notes are outside the MIDI range and were skipped.';
+    if (outsideRange) status('Some arpeggiator notes are outside the MIDI range and were skipped.', 'warning');
     return [...result].sort((a, b) => a[0] - b[0]);
   }
 
@@ -290,7 +291,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       return;
     }
     if (!send([0x90, note, velocity])) {
-      status.textContent = 'Arpeggiator stopped: MIDI output is unavailable or sending failed.';
+      status('Arpeggiator stopped: MIDI output is unavailable or sending failed.', 'error');
       stop();
       return;
     }
@@ -301,7 +302,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
         timer = undefined;
         clock?.stop('arpeggiator');
         nextBeat = undefined;
-        status.textContent = 'Arpeggiator stopped: MIDI note-off failed. Use MIDI Reset.';
+        status('Arpeggiator stopped: MIDI note-off failed. Use MIDI Reset.', 'error');
       }
       sounding = undefined;
       gateTimer = undefined;
@@ -335,7 +336,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       }
     }
     enabledButton.setAttribute('aria-pressed', String(enabled));
-    status.textContent = `Arpeggiator ${enabled ? 'on' : 'off'}.`;
+    status(`Arpeggiator ${enabled ? 'on' : 'off'}.`);
     if (enabled) restart();
   });
 

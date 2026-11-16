@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { deviceParameters } from './synth-midi.js';
 import { createDevicePanel } from './device-panel.js';
 
@@ -20,7 +21,8 @@ const fields = [
 
 export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
   const dialog = document.querySelector('#device-settings');
-  const status = document.querySelector('#device-settings-status');
+  const status = createReporter('reface', 'device-settings-status');
+  const validation = document.querySelector('#device-settings-status');
   const controls = new Map();
   const current = new Map();
   const dirty = new Set();
@@ -54,6 +56,7 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
     const result = document.createElement('td');
     result.textContent = '—';
     input.addEventListener('input', () => {
+      validation.textContent = '';
       if (input.value === '') dirty.delete(field.id);
       else if (current.has(field.id) && Number(input.value) === current.get(field.id)) dirty.delete(field.id);
       else dirty.add(field.id);
@@ -113,6 +116,7 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
   }
 
   function connectionChanged() {
+    validation.textContent = '';
     connectionRevision++;
     current.clear();
     dirty.clear();
@@ -121,20 +125,20 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
       control.result.textContent = '—';
       control.input.value = '';
     }
-    status.textContent = 'MIDI connection changed; device values and pending edits were cleared.';
+    status('MIDI connection changed; device values and pending edits were cleared.');
     panel.connectionChanged(midi.hasDeviceOutput());
     panel.status('Device values assumed until read; ? indicates an unconfirmed value.');
   }
 
   async function read() {
     if (busy) return;
+    validation.textContent = '';
     const revision = connectionRevision;
     let pitchRead = false;
     let missing = 0;
     let succeeded = false;
     setBusy(true);
-    status.textContent = 'Reading device settings…';
-    panel.status('Reading device settings…');
+    status('Reading device settings…');
     try {
       await midi.readDeviceSettings(deviceParameters.map((item) => item.id), (id, value, state) => {
         if (revision !== connectionRevision) return;
@@ -143,14 +147,13 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
         result(id, value, state);
       });
       succeeded = true;
-      status.textContent = 'Read complete. No response means the value is unknown.';
+      status('Read complete. No response means the value is unknown.');
       panel.status(missing
         ? `Device settings read: ${missing} no response; ? indicates an assumed or unconfirmed value.`
         : 'Device settings read complete.', missing ? 'warning' : 'normal');
     } catch (error) {
       if (revision === connectionRevision) {
-        status.textContent = `Could not read all settings: ${error.message || error}`;
-        panel.status(status.textContent, 'error');
+        status(`Could not read all settings: ${error.message || error}`, 'error');
       }
     } finally {
       setBusy(false);
@@ -182,6 +185,7 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
   }
 
   function reset() {
+    validation.textContent = '';
     const unknownDefaults = [];
     for (const [id, control] of controls) {
       if (control.field.defaultValue === undefined) {
@@ -191,24 +195,26 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
       control.input.value = String(control.field.defaultValue);
       control.input.dispatchEvent(new Event('input'));
     }
-    status.textContent = `Defaults prepared; Apply sends changes. Defaults not verified, left unchanged: ${unknownDefaults.join(', ')}.`;
+    status(`Defaults prepared; Apply sends changes. Defaults not verified, left unchanged: ${unknownDefaults.join(', ')}.`);
   }
 
   function discard() {
+    validation.textContent = '';
     dirty.clear();
     for (const [id, control] of controls) {
       control.input.value = current.has(id) ? String(current.get(id)) : '';
       control.result.textContent = '—';
     }
-    status.textContent = 'Changes discarded.';
+    status('Changes discarded.');
   }
 
   async function apply() {
+    validation.textContent = '';
     const changes = {};
     for (const id of dirty) {
       const { input, field } = controls.get(id);
       if (!input.checkValidity() || input.value === '') {
-        status.textContent = `Enter a valid value for ${field.label}.`;
+        validation.textContent = `Enter a valid value for ${field.label}.`;
         input.focus();
         return;
       }
@@ -218,21 +224,21 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
       const direction = controls.get('pitch-direction').input.value;
       const magnitude = controls.get('pitch-magnitude').input.value;
       if (!direction || magnitude === '') {
-        status.textContent = 'Choose a pitch-bend direction and range before applying.';
+        validation.textContent = 'Choose a pitch-bend direction and range before applying.';
         return;
       }
       if (Number(magnitude) === 0 && dirty.has('pitch-direction')) {
-        status.textContent = 'A zero pitch-bend range has no direction; choose a nonzero range to set inversion.';
+        validation.textContent = 'A zero pitch-bend range has no direction; choose a nonzero range to set inversion.';
         return;
       }
       changes['pitch-range'] = Number(direction) * Number(magnitude);
     }
     if (!Object.keys(changes).length) {
-      status.textContent = 'No changes to apply.';
+      status('No changes to apply.');
       return;
     }
     setBusy(true);
-    status.textContent = 'Applying changes and requesting read-back…';
+    status('Applying changes and requesting read-back…');
     let hasFailures = false;
     try {
       await midi.applyDeviceSettings(changes, (id, value, state) => {
@@ -253,11 +259,11 @@ export function setupDeviceSettings(midi, { onPitchRead, onPitchUnconfirmed }) {
           hasFailures = true;
         }
       });
-      status.textContent = hasFailures
+      status(hasFailures
         ? 'Some settings failed or could not be confirmed; review their status before retrying.'
-        : 'Changes confirmed by the synth.';
+        : 'Changes confirmed by the synth.', hasFailures ? 'warning' : 'normal');
     } catch (error) {
-      status.textContent = `Could not apply all settings: ${error.message || error}. Review the individual results.`;
+      status(`Could not apply all settings: ${error.message || error}. Review the individual results.`, 'error');
     } finally {
       setBusy(false);
     }

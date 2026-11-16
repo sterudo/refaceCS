@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { createPatchBackup, readPatchBackup } from './patches.js';
 import { validPatterns } from './drum-machine.js';
@@ -10,14 +11,14 @@ const maxBytes = 256 * 1024 * 1024;
 export function setupBackup({ patches, drums, looper }) {
   const dialog = document.querySelector('#backup-dialog');
   const section = document.querySelector('#backup-section');
-  const status = document.querySelector('#backup-status');
-  const result = document.querySelector('#backup-result');
+  const status = createReporter('backups', 'backup-status');
+  const result = createReporter('backups', 'backup-result');
   const fileInput = document.querySelector('#backup-file');
   const controls = [document.querySelector('#backup-import'), document.querySelector('#backup-export')];
 
   document.querySelector('#backup-open').addEventListener('click', () => {
-    status.textContent = '';
-    result.textContent = '';
+    status('');
+    result('');
     dialog.showModal();
   });
   document.querySelector('#backup-close').addEventListener('click', () => dialog.close());
@@ -51,10 +52,10 @@ export function setupBackup({ patches, drums, looper }) {
       link.download = `refaceCS-${section.value}.zip`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      result.textContent = 'Backup exported. Browser preferences are not included.';
+      result('Backup exported. Browser preferences are not included.');
       dialog.close();
     } catch (error) {
-      status.textContent = `Could not export backup: ${error.message || error}.`;
+      status(`Could not export backup: ${error.message || error}.`, 'error');
     } finally {
       controls.forEach((button) => { button.disabled = false; });
     }
@@ -80,7 +81,7 @@ export function setupBackup({ patches, drums, looper }) {
       if (!files['manifest.json'] && files['patches.json']) {
         const imported = await readPatchBackup(file);
         await patches.importPatches(imported);
-        result.textContent = 'Imported legacy patch ZIP.';
+        result('Imported legacy patch ZIP.');
         dialog.close();
         return;
       }
@@ -131,10 +132,10 @@ export function setupBackup({ patches, drums, looper }) {
       if (data.patterns) { await drums.importPatterns(data.patterns, options); applied.push('patterns'); }
       if (data.tones) { await drums.importTones(data.tones); applied.push('drum tones'); }
       if (data.loops) { await looper.importSavedLoops(data.loops, options); applied.push('loops'); }
-      result.textContent = `Imported ${applied.join(', ')}. Existing items were kept unless replacement was confirmed.`;
+      result(`Imported ${applied.join(', ')}. Existing items were kept unless replacement was confirmed.`);
       dialog.close();
     } catch (error) {
-      status.textContent = `Could not import backup: ${error.message || error}.${applied.length ? ` Already imported: ${applied.join(', ')}.` : ''}`;
+      status(`Could not import backup: ${error.message || error}.${applied.length ? ` Already imported: ${applied.join(', ')}.` : ''}`, 'error');
     } finally {
       controls.forEach((button) => { button.disabled = false; });
     }

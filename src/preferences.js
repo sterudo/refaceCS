@@ -1,5 +1,6 @@
+import { createReporter } from './notifications.js';
 const key = 'refaceCS.preferences.v1';
-const status = document.querySelector('#preferences-status');
+const status = createReporter('app', 'preferences-status');
 let preferences = {};
 
 try {
@@ -12,8 +13,7 @@ try {
     preferences = parsed;
   }
 } catch (error) {
-  status.hidden = false;
-  status.textContent = `Could not restore browser preferences: ${error.message || error}. Defaults are in use.`;
+  status(`Could not restore browser preferences: ${error.message || error}. Defaults are in use.`, 'error');
 }
 
 export function getPreference(name, valid, fallback) {
@@ -25,7 +25,6 @@ export function setPreference(name, value) {
   try {
     localStorage.setItem(key, JSON.stringify(preferences));
   } catch (error) {
-    status.hidden = false;
-    status.textContent = `Could not save browser preferences: ${error.message || error}. Changes may be lost on reload.`;
+    status(`Could not save browser preferences: ${error.message || error}. Changes may be lost on reload.`, 'error');
   }
 }

@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { getPreference, setPreference } from './preferences.js';
 import { confirmAction } from './dialogs.js';
 import { GoogleDrive, authorizeDrive, loadGoogleIdentity } from './google-drive.js';
@@ -5,7 +6,8 @@ import { applyCloudBackup, listCloudBackups, readCloudBackup, saveCloudBackup } 
 
 export function setupCloudBackup(sources) {
   const dialog = document.querySelector('#cloud-dialog');
-  const status = document.querySelector('#cloud-status');
+  const status = createReporter('backups', 'cloud-status');
+  const validation = document.querySelector('#cloud-validation');
   const clientId = document.querySelector('#cloud-client-id');
   const name = document.querySelector('#cloud-name');
   const versions = document.querySelector('#cloud-versions');
@@ -57,16 +59,16 @@ export function setupCloudBackup(sources) {
     if (busy) return;
     busy = true;
     updateControls();
-    status.textContent = '';
+    status('');
     try {
       await action();
     } catch (error) {
       if (error.status === 401) {
         session = drive = folder = undefined;
         versions.replaceChildren();
-        status.textContent = 'Google Drive authorization expired or was revoked. Connect again.';
+        status('Google Drive authorization expired or was revoked. Connect again.', 'error');
       } else {
-        status.textContent = `Cloud backup failed: ${error.message || error}`;
+        status(`Cloud backup failed: ${error.message || error}`, 'error');
       }
     } finally {
       busy = false;
@@ -75,16 +77,17 @@ export function setupCloudBackup(sources) {
   }
 
   document.querySelector('#cloud-open').addEventListener('click', () => {
-    status.textContent = '';
+    validation.textContent = '';
+    status('');
     dialog.showModal();
     updateControls();
     if (!identityReady) {
-      status.textContent = 'Loading Google sign-in…';
+      status('Loading Google sign-in…');
       loadGoogleIdentity().then(() => {
         identityReady = true;
-        if (dialog.open) status.textContent = 'Enter your OAuth client ID and connect to Google Drive.';
+        if (dialog.open) status('Enter your OAuth client ID and connect to Google Drive.');
         updateControls();
-      }).catch((error) => { status.textContent = error.message || String(error); });
+      }).catch((error) => { status(error.message || String(error), 'error'); });
     }
   });
   close.addEventListener('click', () => dialog.close());
@@ -92,20 +95,22 @@ export function setupCloudBackup(sources) {
     if (busy) event.preventDefault();
   });
   clientId.addEventListener('change', () => {
+    validation.textContent = '';
     if (session) {
       session = drive = folder = undefined;
       versions.replaceChildren();
-      status.textContent = 'Client ID changed. Connect again.';
+      status('Client ID changed. Connect again.');
       updateControls();
     }
   });
   connect.addEventListener('click', () => {
     const value = clientId.value.trim();
     if (!value) {
-      status.textContent = 'Enter your Google OAuth client ID.';
+      validation.textContent = 'Enter your Google OAuth client ID.';
       clientId.focus();
       return;
     }
+    validation.textContent = '';
     setPreference('googleClientId', value);
     session = drive = folder = undefined;
     versions.replaceChildren();
@@ -114,26 +119,33 @@ export function setupCloudBackup(sources) {
       drive = new GoogleDrive(session.token);
       folder = await drive.folder();
       const count = await loadVersions();
-      status.textContent = `Connected to Google Drive. ${count} backup version(s) available.`;
+      status(`Connected to Google Drive. ${count} backup version(s) available.`);
     });
   });
   disconnect.addEventListener('click', () => {
     session = drive = folder = undefined;
     versions.replaceChildren();
-    status.textContent = 'Disconnected from Google Drive; existing backups were not deleted.';
+    status('Disconnected from Google Drive; existing backups were not deleted.');
     updateControls();
   });
   refresh.addEventListener('click', () => void run(async () => {
     const count = await loadVersions();
-    status.textContent = `${count} backup version(s) available.`;
+    status(`${count} backup version(s) available.`);
   }));
-  save.addEventListener('click', () => void run(async () => {
+  save.addEventListener('click', () => {
     const backupName = name.value.trim();
-    if (!backupName) throw new Error('Enter a backup name.');
-    await saveCloudBackup(connectedDrive(), folder, sources, backupName);
-    await loadVersions();
-    status.textContent = `Saved cloud backup "${backupName}".`;
-  }));
+    if (!backupName) {
+      validation.textContent = 'Enter a backup name.';
+      name.focus();
+      return;
+    }
+    validation.textContent = '';
+    void run(async () => {
+      await saveCloudBackup(connectedDrive(), folder, sources, backupName);
+      await loadVersions();
+      status(`Saved cloud backup "${backupName}".`);
+    });
+  });
   async function restore(replaceExisting) {
     if (replaceExisting && !await confirmAction('Replace browser data',
       'Replace saved patches, patterns and loops with this backup? A recovery backup will first be saved to Google Drive.', 'Replace')) return;
@@ -143,9 +155,9 @@ export function setupCloudBackup(sources) {
       if (replaceExisting) await saveCloudBackup(remote, folder, sources, 'Recovery before restore', 'recovery');
       await applyCloudBackup(sources, snapshot, replaceExisting);
       if (replaceExisting) await loadVersions();
-      status.textContent = replaceExisting
+      status(replaceExisting
         ? 'Cloud backup restored. A recovery backup was saved before replacement.'
-        : 'Cloud backup merged into this browser.';
+        : 'Cloud backup merged into this browser.');
     });
   }
   merge.addEventListener('click', () => void restore(false));

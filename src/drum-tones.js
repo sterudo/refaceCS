@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { DRUM_VOICES, defaultDrumLane } from './drum-audio.js';
 import { askName, choose, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
@@ -164,15 +165,14 @@ export function createDrumTones({ onChange, onLibraryChange, onError, preview })
     sort.add(new Option('Name', 'name'));
     sort.add(new Option('Favorites first', 'favorites'));
     sortLabel.append(sort);
-    const feedback = document.createElement('p');
-    feedback.setAttribute('role', 'status');
+    const feedback = createReporter('groove', 'drum-tone-status');
     const list = document.createElement('div');
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = 'Close';
     close.addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => dialog.remove());
-    dialog.append(title, searchLabel, favoritesLabel, sortLabel, feedback, list, close);
+    dialog.append(title, searchLabel, favoritesLabel, sortLabel, list, close);
     document.body.append(dialog);
     function render() {
       const filtered = tones.filter((tone) => tone.voice === lane.voice
@@ -193,7 +193,7 @@ export function createDrumTones({ onChange, onLibraryChange, onError, preview })
         favorite.setAttribute('aria-label', `${tone.favorite ? 'Unfavorite' : 'Favorite'} ${tone.name}`);
         favorite.addEventListener('click', () => {
           try { write(tones.map((item) => item.id === tone.id ? { ...item, favorite: !item.favorite } : item)); render(); }
-          catch (error) { feedback.textContent = `Could not update favorite: ${error.message || error}`; }
+          catch (error) { feedback(`Could not update favorite: ${error.message || error}`, 'error'); }
         });
         const play = document.createElement('button');
         play.type = 'button';
@@ -201,7 +201,7 @@ export function createDrumTones({ onChange, onLibraryChange, onError, preview })
         play.setAttribute('aria-label', `Preview ${tone.name}`);
         play.addEventListener('click', async () => {
           try { await preview({ ...lane, ...tone.controls }); }
-          catch (error) { feedback.textContent = `Could not preview tone: ${error.message || error}`; }
+          catch (error) { feedback(`Could not preview tone: ${error.message || error}`, 'error'); }
         });
         const load = document.createElement('button');
         load.type = 'button';
@@ -209,7 +209,7 @@ export function createDrumTones({ onChange, onLibraryChange, onError, preview })
         load.setAttribute('aria-label', `Load ${tone.name}`);
         load.addEventListener('click', async () => {
           try { if (await apply(lane, tone)) dialog.close(); }
-          catch (error) { feedback.textContent = `Could not load tone: ${error.message || error}`; }
+          catch (error) { feedback(`Could not load tone: ${error.message || error}`, 'error'); }
         });
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -218,7 +218,7 @@ export function createDrumTones({ onChange, onLibraryChange, onError, preview })
         remove.addEventListener('click', async () => {
           if (!await confirmAction('Delete drum tone', `Delete "${tone.name}"? Patterns keep their own tone settings.`, 'Delete')) return;
           try { write(tones.filter((item) => item.id !== tone.id)); onLibraryChange(); render(); }
-          catch (error) { feedback.textContent = `Could not delete tone: ${error.message || error}`; }
+          catch (error) { feedback(`Could not delete tone: ${error.message || error}`, 'error'); }
         });
         row.append(name, favorite, play, load, remove);
         list.append(row);

@@ -1,8 +1,9 @@
+import { createReporter } from './notifications.js';
 import { getPreference, setPreference } from './preferences.js';
 
 export function createMidiLearn(faders, onControl) {
   const toggle = document.querySelector('#midi-learn');
-  const status = document.querySelector('#midi-learn-status');
+  const status = createReporter('midi', 'midi-learn-status');
   const assignments = document.querySelector('#midi-learn-assignments');
   const clear = document.querySelector('#midi-learn-clear');
   const targets = new Map(faders.map((fader) => [fader.id, fader]));
@@ -29,7 +30,7 @@ export function createMidiLearn(faders, onControl) {
   if (valid) mappings = saved;
 
   function show(message) {
-    status.textContent = message;
+    status(message);
   }
 
   function selectTarget(id) {

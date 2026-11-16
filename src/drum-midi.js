@@ -1,4 +1,5 @@
 import { getPreference, setPreference } from './preferences.js';
+import { createReporter } from './notifications.js';
 import { DRUM_VOICES } from './drum-audio.js';
 
 const xgKits = [
@@ -30,8 +31,7 @@ const validSettings = (value) => value && typeof value === 'object'
 export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
   const el = (name) => document.querySelector(`#drum-${name}`);
   const dialog = el('midi-settings');
-  const status = el('midi-status');
-  const report = (message) => { status.textContent = message; el('midi-output-status').textContent = message; };
+  const report = createReporter('groove', 'drum-midi-status');
   const routing = el('routing');
   const portSelect = el('midi-port');
   const kitSelect = el('midi-kit');
@@ -131,7 +131,7 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
     if (settings.port && port()?.state !== 'connected') {
       stop();
       onRouteChange('Selected drum MIDI output is disconnected. Reconnect it or select another output.');
-      report('Selected drum MIDI output is disconnected. Reconnect it or select another output.');
+      report('Selected drum MIDI output is disconnected. Reconnect it or select another output.', 'error');
     }
   }
 
@@ -171,7 +171,7 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
     for (const [key, hit] of active) {
       clearTimeout(hit.timer);
       try { send(hit.port, [0x80 | hit.channel, hit.note, 0]); }
-      catch (error) { report(`Could not release drum MIDI note: ${error.message || error}`); }
+      catch (error) { report(`Could not release drum MIDI note: ${error.message || error}`, 'error'); }
       active.delete(key);
     }
   }
@@ -199,13 +199,13 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
     const channel = settings.channel - 1;
     const note = noteFor(voice) + (settings.octaves[mappingKey()] ?? 0) * 12;
     if (!integer(note, 0, 127)) {
-      report(`Skipped ${voice.name}: shifted MIDI note ${note} is outside 0-127. Adjust Octave or the lane mapping.`);
+      report(`Skipped ${voice.name}: shifted MIDI note ${note} is outside 0-127. Adjust Octave or the lane mapping.`, 'warning');
       return;
     }
     const timer = setTimeout(() => {
       pending.delete(timer);
       if (performance.now() - at > 100) {
-        report('A late drum MIDI note was skipped. Check browser or system load.');
+        report('A late drum MIDI note was skipped. Check browser or system load.', 'warning');
         return;
       }
       const key = `${channel}:${note}`;
@@ -248,7 +248,7 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
       send(port(), [0xb0 | channel, 32, lsb]);
       send(port(), [0xc0 | channel, program - 1]);
       report('Kit / Performance sent. Verify the instrument’s mode and sound.');
-    } catch (error) { report(`Could not apply kit / Performance: ${error.message || error}`); }
+    } catch (error) { report(`Could not apply kit / Performance: ${error.message || error}`, 'error'); }
   }
 
   routing.addEventListener('change', () => {
@@ -298,12 +298,12 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
   el('midi-settings-open').addEventListener('click', () => {
     render();
     dialog.showModal();
-    void connect().catch((error) => { report(`Could not access MIDI: ${error.message || error}`); });
+    void connect().catch((error) => { report(`Could not access MIDI: ${error.message || error}`, 'error'); });
   });
   el('midi-connect').addEventListener('click', () => {
     void connect().then(() => {
       if (!settings.port || port()?.state === 'connected') report('MIDI outputs refreshed.');
-    }).catch((error) => { report(`Could not access MIDI: ${error.message || error}`); });
+    }).catch((error) => { report(`Could not access MIDI: ${error.message || error}`, 'error'); });
   });
   el('midi-apply').addEventListener('click', () => { void applyKit(); });
   el('midi-octave').addEventListener('change', () => {
@@ -327,7 +327,7 @@ export function createDrumMidi({ onRouteChange, onMappingChange, onError }) {
       if (revision !== settingsRevision) return;
       send(port(), [0xb0 | settings.channel - 1, 91, settings.reverb]);
       report(`External MIDI reverb sent: ${settings.reverb}.`);
-    }).catch((error) => { report(`Could not send external reverb: ${error.message || error}`); });
+    }).catch((error) => { report(`Could not send external reverb: ${error.message || error}`, 'error'); });
   });
   el('midi-close').addEventListener('click', () => dialog.close());
   render();

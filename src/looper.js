@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { tempoRange } from './synth-midi.js';
 import { readMidi, writeMidi } from './midi-file.js';
 import { askName, choose, confirmAction, exportDialog } from './dialogs.js';
@@ -78,7 +79,7 @@ async function equalLoopRecords(a, b) {
 
 export function createLooper(sendNote, onModeChange, onFileTempo, playback = {}) {
   const clock = playback.clock;
-  const status = document.querySelector('#looper-status');
+  const status = createReporter('looper', 'looper-status');
   const recordLed = document.querySelector('#looper .selection-led[data-value="3"]');
   const playLed = document.querySelector('#looper .selection-led[data-value="2"]');
   const meterButton = document.querySelector('#looper-meter');
@@ -90,10 +91,9 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
   const menuLayer = document.querySelector('#looper-menu-layer');
   const fileInput = document.querySelector('#looper-file');
   const transfer = document.querySelector('#looper-transfer');
-  const transferStatus = document.querySelector('#looper-transfer-status');
   const library = document.querySelector('#looper-library');
   const librarySelect = document.querySelector('#looper-library-select');
-  const libraryStatus = document.querySelector('#looper-library-status');
+  const libraryStatus = createReporter('looper', 'looper-library-status');
   const notes = [];
   const scheduledNotes = [];
   const pending = new Map();
@@ -150,8 +150,8 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
   function settingsChanged() {
     clock?.setMeter(settings.meter);
     updateControls();
-    status.textContent = activeSettings
-      ? 'Looper settings will apply to the next new recording.' : 'Looper recording settings updated.';
+    status(activeSettings
+      ? 'Looper settings will apply to the next new recording.' : 'Looper recording settings updated.');
   }
 
   function bindButton(button, action) {
@@ -278,7 +278,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     stopGuide();
     if (!sendNote([0x90, 96, 60], 'looper-guide')) {
       guideEnabled = false;
-      status.textContent = 'Looper armed; guide sound unavailable. Check the MIDI output.';
+      status('Looper armed; guide sound unavailable. Check the MIDI output.');
       return;
     }
     guideSounding = true;
@@ -556,7 +556,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
           return;
         }
-        status.textContent = 'Looper overdubbing.';
+        status('Looper overdubbing.');
       } else if (firstRecording && beat >= maxBeats) {
         beat = maxBeats;
         closePending();
@@ -570,7 +570,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
           return;
         }
         if (playNotes) onModeChange(2);
-        status.textContent = 'Looper reached its maximum length and started playback.';
+        status('Looper reached its maximum length and started playback.');
         setLeds();
         return;
       }
@@ -630,7 +630,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     beat = 0;
     setLeds();
     onModeChange(mode);
-    if (message) status.textContent = message;
+    if (message) status(message, 'error');
     playback.onStop?.();
   }
 
@@ -672,20 +672,20 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       activeSettings = undefined;
       guideBeat = 0;
       guideEnabled = true;
-      status.textContent = 'Looper cleared.';
+      status('Looper cleared.');
     } else if (next === 0) {
       beat = 0;
       for (const note of scheduledNotes.splice(0)) insertNote(note);
-      status.textContent = 'Looper stopped.';
+      status('Looper stopped.');
     } else if (next === 1) {
-      status.textContent = 'Looper paused.';
+      status('Looper paused.');
     } else if (next === 2) {
       if (!length) {
         if (previous === 4) guideEnabled = false;
-        status.textContent = 'Looper is empty.';
+        status('Looper is empty.');
       } else {
         if (previous !== 1 && (previous !== 3 || endingFirstRecording)) beat = 0;
-        status.textContent = 'Looper playing.';
+        status('Looper playing.');
         startSync(startAt);
         if (!restorePlayback(alreadySynced && syncActive ? scheduledBeat : beat)) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
@@ -695,7 +695,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     } else if (next === 3) {
       if (length) {
         if (previous !== 1 && previous !== 2) beat = 0;
-        status.textContent = 'Looper overdubbing.';
+        status('Looper overdubbing.');
         startSync(startAt);
         if (!restorePlayback(alreadySynced && syncActive ? scheduledBeat : beat)) {
           stopTransport('Looper stopped: MIDI output is unavailable or sending failed.');
@@ -704,7 +704,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       } else {
         beat = 0;
         guideBeat = 0;
-        status.textContent = 'Looper armed; recording starts with the first note.';
+        status('Looper armed; recording starts with the first note.');
         guideTick();
       }
     }
@@ -760,7 +760,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     const loops = await loopStoreRequest('readonly', (store) => store.getAll());
     loops.sort((a, b) => a.name.localeCompare(b.name));
     librarySelect.replaceChildren(...loops.map((loop) => new Option(loop.name, loop.id)));
-    libraryStatus.textContent = loops.length ? '' : 'No loops saved in this browser.';
+    libraryStatus(loops.length ? '' : 'No loops saved in this browser.');
     document.querySelector('#looper-library-load').disabled = !loops.length;
     document.querySelector('#looper-library-delete').disabled = !loops.length;
   }
@@ -775,7 +775,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
     applyImportedLoop(record.loop);
     savedLoop = structuredClone(record.loop);
     savedLoopName = record.name;
-    status.textContent = `Loaded imported loop "${record.name}".`;
+    status(`Loaded imported loop "${record.name}".`);
   }
 
   bindButton(document.querySelector('#looper-load'), async () => {
@@ -783,7 +783,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       await renderLibrary();
       library.showModal();
     } catch (error) {
-      status.textContent = `Could not open saved loops: ${error.message || error}.`;
+      status(`Could not open saved loops: ${error.message || error}.`, 'error');
     }
   });
   bindButton(document.querySelector('#looper-save'), async () => {
@@ -799,9 +799,9 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       }));
       savedLoop = structuredClone(loop);
       savedLoopName = name;
-      status.textContent = `Saved loop "${name}" in this browser.`;
+      status(`Saved loop "${name}" in this browser.`);
     } catch (error) {
-      status.textContent = `Could not save loop: ${error.message || error}.`;
+      status(`Could not save loop: ${error.message || error}.`, 'error');
     }
   });
   document.querySelector('#looper-library-close').addEventListener('click', () => library.close());
@@ -817,9 +817,9 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       savedLoop = structuredClone(imported);
       savedLoopName = loop.name;
       library.close();
-      status.textContent = `Loaded saved loop "${loop.name}".`;
+      status(`Loaded saved loop "${loop.name}".`);
     } catch (error) {
-      libraryStatus.textContent = `Could not load loop: ${error.message || error}.`;
+      libraryStatus(`Could not load loop: ${error.message || error}.`, 'error');
     }
   });
   document.querySelector('#looper-library-delete').addEventListener('click', async () => {
@@ -828,18 +828,16 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       if (!loop || !await confirmAction('Delete loop', `Delete saved loop "${loop.name}"?`, 'Delete')) return;
       await loopStoreRequest('readwrite', (store) => store.delete(loop.id));
       await renderLibrary();
-      libraryStatus.textContent = `Deleted "${loop.name}".`;
+      libraryStatus(`Deleted "${loop.name}".`);
     } catch (error) {
-      libraryStatus.textContent = `Could not delete loop: ${error.message || error}.`;
+      libraryStatus(`Could not delete loop: ${error.message || error}.`, 'error');
     }
   });
   bindButton(document.querySelector('#looper-transfer-open'), () => {
-    transferStatus.textContent = '';
     transfer.showModal();
   });
   document.querySelector('#looper-transfer-close').addEventListener('click', () => transfer.close());
   document.querySelector('#looper-midi-import').addEventListener('click', () => {
-    transferStatus.textContent = '';
     fileInput.click();
   });
   fileInput.addEventListener('change', async () => {
@@ -861,29 +859,25 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       }
       if ((length || notes.length || scheduledNotes.length || pending.size) &&
         !await confirmAction('Import loop', 'Replace the current looper phrase with this file?', 'Replace')) {
-        status.textContent = 'MIDI load cancelled; the current loop is unchanged.';
-        transferStatus.textContent = status.textContent;
+        status('MIDI load cancelled; the current loop is unchanged.');
         return;
       }
       applyImportedLoop(imported);
       savedLoop = null;
       savedLoopName = file.name.replace(/\.(midi?|json)$/i, '');
-      status.textContent = `Loaded ${file.name} (${imported.notes.length} notes). ${(imported.warnings ?? []).join(' ')}`.trim();
+      status(`Loaded ${file.name} (${imported.notes.length} notes). ${(imported.warnings ?? []).join(' ')}`.trim());
       if (transfer.open) transfer.close();
     } catch (error) {
       if (revision === loadRevision) {
-        status.textContent = `MIDI load failed: ${error.message || error}.`;
-        transferStatus.textContent = status.textContent;
+        status(`MIDI load failed: ${error.message || error}.`, 'error');
       }
     }
   });
 
   document.querySelector('#looper-midi-export').addEventListener('click', async () => {
-    transferStatus.textContent = '';
     try {
       if (!notes.length && !scheduledNotes.length && !pending.size) {
-        status.textContent = 'MIDI save failed: There is no valid loop to save.';
-        transferStatus.textContent = status.textContent;
+        status('MIDI save failed: There is no valid loop to save.', 'error');
         return;
       }
       const current = mode === 3 ? null : snapshotLoop();
@@ -918,11 +912,10 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       link.download = result.filename;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 0);
-      status.textContent = `Exported loop as ${result.filename}.`;
+      status(`Exported loop as ${result.filename}.`);
       if (transfer.open) transfer.close();
     } catch (error) {
-      status.textContent = `MIDI save failed: ${error.message || error}.`;
-      transferStatus.textContent = status.textContent;
+      status(`MIDI save failed: ${error.message || error}.`, 'error');
     }
   });
 
@@ -1029,7 +1022,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
       advance();
       if (mode !== 3) return;
       if (notes.length + scheduledNotes.length + [...pending.values()].reduce((count, items) => count + items.length, 0) >= maxNotes) {
-        status.textContent = 'Looper is full (2,000 notes); additional notes are not recorded.';
+        status('Looper is full (2,000 notes); additional notes are not recorded.');
         return;
       }
       if (!length && !firstRecording) {
@@ -1038,7 +1031,7 @@ export function createLooper(sendNote, onModeChange, onFileTempo, playback = {})
         beat = 0;
         lastTime = performance.now();
         stopGuide();
-        status.textContent = 'Looper recording.';
+        status('Looper recording.');
       }
       const entries = pending.get(owner) || [];
       entries.push({ id: nextId++, at: beat, channel, pitch, velocity, first: firstRecording });

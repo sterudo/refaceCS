@@ -260,11 +260,13 @@ test('transpose follows changes during arpeggiation and preserves note-off pitch
 
 test('arpeggiator resumes when a transposed held note returns to the MIDI range', async ({ page }) => {
   await page.locator('#transpose').press('ArrowDown');
-  await page.evaluate(() => {
-    window.arpTest.click('#arp-enabled');
-    window.arpTest.emit('ci', [0x92, 0, 87]);
-  });
-  await expect(page.locator('#arp-status')).toContainText('outside the MIDI range');
+  await page.evaluate(() => window.arpTest.click('#arp-enabled'));
+  await page.locator('#messages-close').click();
+  await expect(page.locator('#message-center')).toBeHidden();
+  await page.evaluate(() => window.arpTest.emit('ci', [0x92, 0, 87]));
+  await expect(page.locator('.message-entry[data-source="arp-status"] .message-text').last()).toContainText('outside the MIDI range');
+  await expect(page.locator('.message-entry[data-source="arp-status"]').last()).toHaveAttribute('data-severity', 'warning');
+  await expect(page.locator('#message-center')).toBeHidden();
   expect(await page.evaluate(() => window.arpTest.sent)).toEqual([]);
   await page.locator('#transpose').press('ArrowUp');
   expect(await page.evaluate(() => window.arpTest.sent.map(({ data }) => data))).toEqual([[0x90, 0, 87]]);
@@ -403,7 +405,7 @@ test('failed note-off is reported without continuing playback', async ({ page })
     window.arpTest.emit('ci', [0x90, 60, 90]);
   });
   await page.clock.runFor(500);
-  await expect(page.locator('#arp-status')).toContainText('note-off failed');
+  await expect(page.locator('.message-entry[data-source="arp-status"] .message-text').last()).toContainText('note-off failed');
   expect(await page.evaluate(() => window.arpTest.sent.filter(({ data }) => data[0] === 0x90).length)).toBe(1);
 });
 

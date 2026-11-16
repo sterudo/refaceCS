@@ -89,13 +89,13 @@ test('looper transfer icon opens a dialog and reports errors without closing it'
   const dialog = page.getByRole('dialog', { name: 'Looper Import / Export' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Export loop' }).click();
-  await expect(dialog.getByRole('status')).toContainText('There is no valid loop to save');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('There is no valid loop to save');
   await page.locator('#looper-file').setInputFiles({ name: 'bad.mid', mimeType: 'audio/midi', buffer: Buffer.from([1, 2]) });
-  await expect(dialog.getByRole('status')).toContainText('MIDI load failed');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('MIDI load failed');
   await dialog.press('Escape');
   await expect(dialog).not.toBeVisible();
   await icon.press('Space');
-  await expect(dialog.getByRole('status')).toBeEmpty();
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('MIDI load failed');
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).not.toBeVisible();
 });
@@ -111,18 +111,18 @@ test('loads and saves without MIDI access, preserving a phrase on invalid input 
     page.getByRole('button', { name: 'Import loop file' }).press('Enter'),
   ]);
   await chooser.setFiles({ name: 'phrase.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded phrase.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded phrase.mid');
   await expect(page.locator('#looper-transfer')).not.toBeVisible();
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
   await expect(page.locator('#looper-meter text')).toHaveText('3/4');
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '150');
   await page.getByRole('button', { name: 'Looper import and export' }).click();
   await input.setInputFiles({ name: 'bad.mid', mimeType: 'audio/midi', buffer: Buffer.from([1, 2, 3]) });
-  await expect(page.locator('#looper-status')).toContainText('MIDI load failed');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('MIDI load failed');
   await input.setInputFiles({ name: 'new.mid', mimeType: 'audio/midi', buffer: Buffer.from(midi([oneNote])) });
   await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.locator('#looper-status')).toContainText('load cancelled');
-  await expect(page.locator('#looper-transfer-status')).toContainText('load cancelled');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('load cancelled');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('load cancelled');
   await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
   await page.getByRole('dialog', { name: 'Unsaved loop changes' })
     .getByRole('button', { name: 'Export current unsaved state' }).click();
@@ -135,13 +135,13 @@ test('loads and saves without MIDI access, preserving a phrase on invalid input 
   ]);
   expect(download.suggestedFilename()).toBe('my loop.mid');
   await expect(page.locator('#looper-transfer')).not.toBeVisible();
-  await expect(page.locator('#looper-status')).toHaveText('Exported loop as my loop.mid.');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toHaveText('Exported loop as my loop.mid.');
   const result = readMidi(new Uint8Array(await readFile(await download.path())), 4);
   expect(result).toMatchObject({ length: 3, meter: 3, tempo: 150 });
   expect(result.notes[0]).toMatchObject({ start: 1, duration: 0.5, channel: 3, pitch: 64, velocity: 75 });
   await input.setInputFiles({ name: 'phrase.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
   await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Replace' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Loaded phrase.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded phrase.mid');
 });
 
 test('reports ignored events and retains unsupported tempo and meter on import', async ({ page }) => {
@@ -155,16 +155,16 @@ test('reports ignored events and retains unsupported tempo and meter on import',
 
   await expect(page.locator('#looper-meter text')).toHaveText('3/4');
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '120');
-  await expect(page.locator('#looper-status')).toContainText('outside 40–240 BPM');
-  await expect(page.locator('#looper-status')).toContainText('Unsupported time signature');
-  await expect(page.locator('#looper-status')).toContainText('Ignored 1 non-note');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('outside 40–240 BPM');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Unsupported time signature');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Ignored 1 non-note');
 });
 
 test('native loop JSON preserves exact length and can be reimported', async ({ page }) => {
   await page.goto('/static/reface/');
   const phrase = writeMidi([{ start: 0.5, playDuration: 0.25, channel: 2, pitch: 60, velocity: 37 }], 8, 120, 4);
   await page.locator('#looper-file').setInputFiles({ name: 'source.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded source.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded source.mid');
   await page.getByRole('button', { name: 'Looper import and export' }).click();
   await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
   await page.getByRole('dialog', { name: 'Unsaved loop changes' }).getByRole('button', { name: 'Export current unsaved state' }).click();
@@ -176,7 +176,7 @@ test('native loop JSON preserves exact length and can be reimported', async ({ p
   expect(JSON.parse(bytes.toString()).loop.length).toBe(8);
   await page.locator('#looper-file').setInputFiles({ name: 'phrase.json', mimeType: 'application/json', buffer: bytes });
   await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Replace' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Loaded phrase.json');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded phrase.json');
   await page.getByRole('button', { name: 'Looper import and export' }).click();
   await page.getByRole('dialog', { name: 'Looper Import / Export' }).getByRole('button', { name: 'Export loop' }).click();
   await page.getByRole('dialog', { name: 'Unsaved loop changes' }).getByRole('button', { name: 'Export current unsaved state' }).click();

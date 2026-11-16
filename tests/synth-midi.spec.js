@@ -48,8 +48,8 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto('/static/reface/');
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#device-settings-status')).toContainText('Read complete');
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
   await page.evaluate(() => { window.testSynth.sent.length = 0; });
 });
 
@@ -66,12 +66,12 @@ test('automatically captures the connected synth without a capture button or wri
   await page.reload();
   await page.evaluate(() => { window.testSynth.values['48,0,9'] = [37]; });
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '37');
   await expect(page.locator('#capture-synth')).toHaveCount(0);
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xf0 && message[2] === 0x10))).toBe(false);
-  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /Captured/);
+  await expect(page.locator('#midi-badge')).toHaveAttribute('title', /message log/);
 });
 
 test('asks before capture replaces unsaved edits and respects cancellation', async ({ page }) => {
@@ -83,13 +83,13 @@ test('asks before capture replaces unsaved edits and respects cancellation', asy
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xf0 && message[2] === 0x30 && message[6] === 48 && message[8] === 9))).toBe(false);
   await prompt.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.locator('#capture-status')).toContainText('current sound was kept');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('current sound was kept');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '0');
 
   await reconnectSynth(page);
   await expect(prompt).toBeVisible();
   await prompt.getByRole('button', { name: 'Discard and capture' }).click();
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
 });
 
@@ -104,7 +104,7 @@ test('automatically captures after manually selecting the reface ports', async (
   await expect(page.locator('#midi-badge')).toHaveText('reface MIDI ports unavailable');
   await page.locator('#midi-reface-input').selectOption('ri');
   await page.locator('#midi-reface-output').selectOption('ro');
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '41');
 });
 
@@ -120,17 +120,17 @@ test('a connection change while confirmation is open requires a fresh confirmati
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xf0 && message[2] === 0x30 && message[6] === 48 && message[8] === 9))).toBe(false);
   await prompt.getByRole('button', { name: 'Discard and capture' }).click();
-  await expect(page.locator('#capture-status')).toContainText('Captured');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
 });
 
 test('a device settings action interrupts an in-progress automatic capture', async ({ page }) => {
   await page.evaluate(() => { delete window.testSynth.values['48,0,2']; });
   await reconnectSynth(page);
-  await expect(page.locator('#capture-status')).toContainText('requesting lfo-assign');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('requesting lfo-assign');
   await page.locator('#device-speaker-output').click();
   await expect(page.locator('#device-speaker-output')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#capture-status')).toContainText('stopped for another device settings operation');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('stopped for another device settings operation');
 });
 
 test('CC and pitch bend send and receive without echo or connect synchronization', async ({ page }) => {
@@ -236,7 +236,7 @@ test('capture replaces a locally changed range with the synth readout without wr
     window.testSynth.values['0,0,15'] = [70];
   });
   await reconnectSynth(page);
-  await expect(page.locator('#capture-status')).toContainText('Not captured', { timeout: 5000 });
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Not captured', { timeout: 5000 });
   await expect(page.locator('#pitch-range-value')).toHaveText('6');
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
     message[0] === 0xf0 && message[2] === 0x10 && message[8] === 15))).toBe(false);
@@ -252,12 +252,12 @@ test('capture applies valid replies, reports missing values, and preserves newer
     delete window.testSynth.values['48,0,18'];
   });
   await reconnectSynth(page);
-  await expect(page.locator('#capture-status')).toContainText('requesting filter-cutoff');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('requesting filter-cutoff');
   await page.locator('#filter-cutoff').press('End');
-  await expect(page.locator('#capture-status')).toContainText('Not captured', { timeout: 5000 });
-  await expect(page.locator('#capture-status')).toContainText('filter-cutoff');
-  await expect(page.locator('#capture-status')).toContainText('effect-rate');
-  await expect(page.locator('#midi-status')).toContainText('MIDI Control: on');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Not captured', { timeout: 5000 });
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('filter-cutoff');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('effect-rate');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI Control: on');
   await expect(page.locator('#transpose')).toHaveAttribute('aria-valuenow', '2');
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '128');
   await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '128');
@@ -317,8 +317,8 @@ test('capture reports synth tempo outside the shared range without changing it',
   await page.evaluate(() => { window.testSynth.values['0,0,8'] = [1, 127]; });
   await page.setViewportSize({ width: 800, height: 900 });
   await reconnectSynth(page);
-  await expect(page.locator('#capture-status')).toContainText('tempo (255 BPM outside 40–240 BPM)', { timeout: 5000 });
-  await expect(page.locator('#capture-status')).toBeVisible();
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('tempo (255 BPM outside 40–240 BPM)', { timeout: 5000 });
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toBeVisible();
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '120');
   await expect(page.locator('#arp-tempo')).toHaveAttribute('data-value', '120');
   expect(await page.evaluate(() => window.testSynth.sent.some((message) =>
@@ -331,7 +331,7 @@ test('denied tempo SysEx reports failure while linked controls still update', as
   await page.locator('#midi-connect').click();
   await page.locator('#arp-tempo-up').click();
   await expect(page.locator('#tempo')).toHaveAttribute('aria-valuenow', '121');
-  await expect(page.locator('#midi-status')).toContainText('permission denied');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('permission denied');
   expect(await page.evaluate(() => window.testSynth.sent)).toEqual([]);
 });
 
@@ -405,8 +405,8 @@ test('denied SysEx leaves ordinary MIDI working and reports capture failure', as
   await page.evaluate(() => sessionStorage.setItem('test-deny-sysex', 'true'));
   await page.reload();
   await page.locator('#midi-connect').click();
-  await expect(page.locator('#capture-status')).toContainText('Automatic capture skipped');
-  await expect(page.locator('#midi-status')).toContainText('permission denied');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Automatic capture skipped');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('permission denied');
   await page.keyboard.press('a');
   expect(await page.evaluate(() => window.testSynth.sent)).toEqual([[0x90, 60, 100], [0x80, 60, 0]]);
 });

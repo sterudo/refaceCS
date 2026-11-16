@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('#app-status')).toContainText('Panel ready.');
+  await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Panel ready.');
 });
 
 async function faderPoint(page, id, y) {
@@ -486,6 +486,7 @@ test('Focus key labels follow both pitch controls while letters stay anchored an
     await expect(page.locator(`#key-c-${expanded ? 0 : 1} .key-note`)).toHaveText(expanded ? 'C2' : 'C3');
     await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'C7' : 'C6');
 
+    await page.locator('#keyboard').scrollIntoViewIfNeeded();
     const misplaced = await page.locator('.key:visible').evaluateAll((keys) => keys.flatMap((key) => {
       const label = key.querySelector('.key-note');
       const bounds = label.getBoundingClientRect();
@@ -823,7 +824,7 @@ test('oscillator positions select FM through Saw and light only their colored LE
       const point = await faderPoint(page, 'osc-type', index * travel / 4);
       await page.mouse.click(point.x, point.y);
       await expect(fader).toHaveAttribute('aria-valuetext', mode);
-      await expect(page.locator('#app-status')).toHaveText(`Oscillator type: ${mode}`);
+      await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toHaveText(`Oscillator type: ${mode}`);
       const activeLED = fader.locator('.selection-led.is-on');
       await expect(activeLED).toHaveCount(1);
       await expect(activeLED).toHaveCSS('fill', colors[index]);
@@ -932,7 +933,7 @@ test('page load and Reset apply the requested fader positions without changing t
     await page.keyboard.up(' ');
     await expectStartingPositions(travel);
     await expect(page.locator('#fader-size')).toHaveAttribute('aria-pressed', String(travel === 160));
-    await expect(page.locator('#app-status')).toContainText('Faders reset');
+    await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Faders reset');
   }
 });
 
@@ -1029,7 +1030,7 @@ test('Hide Speakers narrows the case without scaling controls or losing state', 
   const geometry = () => page.evaluate(() => {
     const box = (selector) => {
       const { width, height } = document.querySelector(selector).getBoundingClientRect();
-      return { width, height };
+      return { width: Number(width.toFixed(2)), height: Number(height.toFixed(2)) };
     };
     const body = document.querySelector('#body').getBoundingClientRect();
     const keyboard = document.querySelector('#keyboard').getBoundingClientRect();
@@ -1132,7 +1133,7 @@ test('end panels synchronize the bounded Octave selector in every view combinati
         await up.click();
         await expect(octave).toHaveAttribute('aria-valuetext', '-1');
         await expect(down).toHaveAttribute('aria-disabled', 'false');
-        await expect(page.locator('#app-status')).toContainText('Octave: -1');
+        await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Octave: -1');
         await page.locator('#reset-faders').click();
         await expect(octave).toHaveAttribute('aria-valuetext', '0');
         await expect(down).toHaveAttribute('aria-disabled', 'false');
@@ -1615,7 +1616,7 @@ test('pitch bend range steps by semitones, stays within 0-24, and does not move 
   await down.click();
   await expect(range).toHaveText('23');
   await expect(up).toHaveAttribute('aria-disabled', 'false');
-  await expect(page.locator('#app-status')).toContainText('Pitch bend range: 23 semitones');
+  await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Pitch bend range: 23 semitones');
   await bend.locator('.cap').dblclick();
   await expect(bend).toHaveAttribute('aria-valuenow', '64');
   await expect(range).toHaveText('23');

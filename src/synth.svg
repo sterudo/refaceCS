@@ -149,16 +149,16 @@
     <rect id="focus-effect" class="focus-section" x="1412" y="70" width="188" height="178" rx="5" fill="#e5a9cd"/>
   </g>
   <g class="section-label">
-    <text x="185" y="83">PITCH BEND</text>
-    <text x="302" y="83" textLength="61" lengthAdjust="spacingAndGlyphs">EXPRESSION</text>
-    <text x="372" y="83">OCTAVE</text>
-    <text class="focus-looper" x="442" y="83">LOOPER</text>
-    <text x="600" y="83">LFO</text>
-    <text x="758" y="83">PORTAMENTO</text>
-    <text x="854" y="83">OSC</text>
-    <text x="1023" y="83">FILTER</text>
-    <text x="1151" y="83">EG</text>
-    <text x="1420" y="83">EFFECT</text>
+    <text data-help-target="pitch-bend" x="185" y="83">PITCH BEND</text>
+    <text data-help-target="expression" x="302" y="83" textLength="61" lengthAdjust="spacingAndGlyphs">EXPRESSION</text>
+    <text data-help-target="octave" x="372" y="83">OCTAVE</text>
+    <text class="focus-looper" data-help-target="looper" x="442" y="83">LOOPER</text>
+    <text data-help-target="lfo" x="600" y="83">LFO</text>
+    <text data-help-target="portamento" x="758" y="83">PORTAMENTO</text>
+    <text data-help-target="osc" x="854" y="83">OSC</text>
+    <text data-help-target="filter" x="1023" y="83">FILTER</text>
+    <text data-help-target="eg" x="1151" y="83">EG</text>
+    <text data-help-target="effect" x="1420" y="83">EFFECT</text>
   </g>
   <g id="looper-transfer-open" class="clickable-label focus-looper" role="button" tabindex="0" aria-label="Looper import and export" aria-haspopup="dialog">
     <title>Import or export a loop file</title>
@@ -296,12 +296,23 @@
   </g>
   <g id="lower-panel">
     <g class="control-label">
-      <text x="275" y="225">TRANSPOSE</text>
-      <text class="focus-looper" x="558" y="225">TEMPO</text><text x="620" y="225">ASSIGN</text><text x="688" y="225">DEPTH</text><text x="734" y="225">SPEED</text>
-      <text x="864" y="225">TYPE</text><text x="950" y="225">TEXTURE</text><text x="998" y="225">MOD</text>
-      <text x="1048" y="225">CUTOFF</text><text x="1110" y="225">RESONANCE</text>
-      <text x="1236" y="225">A</text><text x="1284" y="225">D</text><text x="1332" y="225">S</text><text x="1380" y="225">R</text>
-      <text x="1444" y="225">TYPE</text><text x="1524" y="225">DEPTH</text><text x="1572" y="225">RATE</text>
+      <text data-help-target="transpose" x="275" y="225">TRANSPOSE</text>
+      <text class="focus-looper" data-help-target="tempo" x="558" y="225">TEMPO</text>
+      <text data-help-target="lfo-assign" x="620" y="225">ASSIGN</text>
+      <text data-help-target="lfo-depth" x="688" y="225">DEPTH</text>
+      <text data-help-target="lfo-speed" x="734" y="225">SPEED</text>
+      <text data-help-target="osc-type" x="864" y="225">TYPE</text>
+      <text data-help-target="osc-texture" x="950" y="225">TEXTURE</text>
+      <text data-help-target="osc-mod" x="998" y="225">MOD</text>
+      <text data-help-target="filter-cutoff" x="1048" y="225">CUTOFF</text>
+      <text data-help-target="filter-resonance" x="1110" y="225">RESONANCE</text>
+      <text data-help-target="eg" x="1236" y="225">A</text>
+      <text data-help-target="eg" x="1284" y="225">D</text>
+      <text data-help-target="eg" x="1332" y="225">S</text>
+      <text data-help-target="eg" x="1380" y="225">R</text>
+      <text data-help-target="effect-type" x="1444" y="225">TYPE</text>
+      <text data-help-target="effect-depth" x="1524" y="225">DEPTH</text>
+      <text data-help-target="effect-rate" x="1572" y="225">RATE</text>
     </g>
     <g id="pitch-range" class="control-label" role="group" aria-label="Pitch bend range" stle="font-size:12px;">
       <g id="pitch-range-down" class="clickable-label" role="button" tabindex="0" aria-label="Decrease pitch bend range" data-step="-1">
@@ -343,6 +354,8 @@
     </g>
     <g id="fader-values" aria-hidden="true"/>
     <g id="lower-instrument" transform="translate(0 18)">
+    <a id="yamaha-link" href="https://www.yamaha.com/en/" target="_blank" rel="noopener noreferrer" aria-label="Yamaha website">
+    <rect x="200" y="244" width="147" height="35" fill="transparent" pointer-events="all"/>
     <g style="transform: translate(203px,142px) scale(0.45);">
     <switch   
        transform="translate(0,235.576)"
@@ -373,7 +386,8 @@
     </switch>
   </g>
     <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="#1e2221" style="transform: scaleX(0.7) translateX(144px);">YAMAHA</text>
-    <text id="arp-label" class="section-label" x="355" y="264">ARPEGGIATOR</text>
+    </a>
+    <text id="arp-label" class="section-label" data-help-target="arpeggiator" x="355" y="264">ARPEGGIATOR</text>
     <g id="arp-controls" aria-label="Arpeggiator controls" transform="translate(110 0)">
       <g id="arp-enabled" class="arp-button arp-toggle" role="button" tabindex="0" aria-label="Arpeggiator on/off" aria-pressed="false" transform="translate(345 244)">
         <title>Arpeggiator on/off</title><rect class="arp-bezel" width="54" height="31" rx="4"/><rect class="arp-lens" x="1" y="1.5" width="52" height="28" rx="3"/><path class="arp-shine" d="M5 5H49"/><text x="27" y="20">ON</text>
@@ -425,7 +439,7 @@
         <title>Save current patch</title><rect class="arp-bezel" width="24" height="31" rx="4"/><rect class="arp-lens" x="1" y="1.5" width="22" height="28" rx="3"/><path d="M6 8h10l2 2v13H6z M9 8v5h6V8 M9 23v-7h6v7" fill="none" stroke="#252a26" stroke-width="1.5" stroke-linejoin="round"/>
       </g>
     </g>
-    <path id="cs-logo" role="img" aria-label="CS" transform="translate(1474 248)" d="M40 0H12a12 12 0 0 0 0 24h66a6 6 0 0 0 0-12H52a6 6 0 0 1 0-12h32" fill="none" stroke="#515650" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="cs-logo" data-help-target="cs" transform="translate(1474 248)" d="M40 0H12a12 12 0 0 0 0 24h66a6 6 0 0 0 0-12H52a6 6 0 0 1 0-12h32" fill="none" stroke="#515650" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <g id="keyboard" transform="translate(196 296)">
       <rect x="-3" y="-3" width="1370" height="288" rx="2" fill="#101312"/>
       <g id="keyboard-keys">

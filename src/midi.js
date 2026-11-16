@@ -1,4 +1,5 @@
 import { createArpeggiator } from './arpeggiator.js';
+import { createReporter } from './notifications.js';
 import { createLooper } from './looper.js';
 import { getPreference, setPreference } from './preferences.js';
 import { captureParameters, deviceParameters, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
@@ -7,20 +8,15 @@ import { captureParameters, deviceParameters, decodeControl, decodeParameter, en
 export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}) {
   const connect = document.querySelector('#midi-connect');   
   const badge = document.querySelector('#midi-badge');
-  const status = document.querySelector('#midi-status');
+  const status = createReporter('midi', 'midi-status');
   const refaceInput = document.querySelector('#midi-reface-input');
   const refaceOutput = document.querySelector('#midi-reface-output');
   const controllerInput = document.querySelector('#midi-controller-input');
   const modwheelValue = document.querySelector('#midi-modwheel-value');
   const modwheelReadout = document.querySelector('#midi-modwheel-readout');
-  const deviceStatus = document.querySelector('#device-panel-status');
-  const statusLog = document.querySelector('#midisettingslog');
-  const captureStatus = document.querySelector('#capture-status');
-  const statusMessages = [status, deviceStatus, captureStatus];
+  const captureStatus = createReporter('reface', 'capture-status');
   const statusObserver = new MutationObserver(updateStatusPresentation);
   statusObserver.observe(badge, { attributes: true, attributeFilter: ['data-state'] });
-  statusObserver.observe(statusLog, { subtree: true, childList: true, characterData: true,
-    attributes: true, attributeFilter: ['data-severity'] });
   updateStatusPresentation();
   const selected = { input: '', output: '', controller: '' };
   const manuallySelected = { input: false, output: false, controller: false };
@@ -66,30 +62,23 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
 
   function updateStatusPresentation() {
     const connected = badge.dataset.state === 'connected';
-    const messages = statusMessages.map((element) => element.textContent.trim()).filter(Boolean);
     if (connected) {
-      badge.title = ['midi connected', ...messages].join('\n');
-      badge.setAttribute('aria-label', ['MIDI connected', ...messages].join('. '));
+      badge.title = 'MIDI connected: reface ports available. See the message log for details.';
+      badge.setAttribute('aria-label', badge.title);
       badge.tabIndex = 0;
     } else {
       badge.removeAttribute('title');
       badge.removeAttribute('aria-label');
       badge.removeAttribute('tabindex');
     }
-    for (const element of statusMessages) {
-      element.hidden = connected && !['error', 'warning'].includes(element.dataset.severity);
-    }
-    statusLog.hidden = !statusMessages.some((element) => !element.hidden && element.textContent.trim());
   }
 
   function setStatus(message, severity = 'normal') {
-    status.dataset.severity = severity;
-    status.textContent = message;
+    status(message, severity);
   }
 
   function setCaptureStatus(message, severity = 'normal') {
-    captureStatus.dataset.severity = severity;
-    captureStatus.textContent = message;
+    captureStatus(message, severity);
   }
 
   function finishSettingsOperation() {

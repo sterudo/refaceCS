@@ -30,7 +30,7 @@ test('saving information can be closed and reopened across reloads', async ({ pa
 
 test('exports and imports all sections without browser preferences or recalling a patch', async ({ page, browser }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#data-info-close').click();
   await page.locator('#focus-mode').click();
   await page.locator('#lfo-depth').press('Home');
@@ -54,11 +54,11 @@ test('exports and imports all sections without browser preferences or recalling 
   await page.getByRole('dialog', { name: 'Save drum tone' }).getByRole('button', { name: 'Save' }).click();
   const phrase = writeMidi([{ start: 0, playDuration: 0.5, channel: 0, pitch: 60, velocity: 90 }], 4, 120, 4);
   await page.locator('#looper-file').setInputFiles({ name: 'loop.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded loop.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded loop.mid');
   await page.getByRole('button', { name: 'Save loop', exact: true }).click();
   await page.getByRole('dialog', { name: 'Save loop' }).getByLabel('Name').fill('Backup loop');
   await page.getByRole('dialog', { name: 'Save loop' }).getByRole('button', { name: 'Save' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Saved loop');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Saved loop');
   await page.locator('#backup-open').click();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -73,11 +73,11 @@ test('exports and imports all sections without browser preferences or recalling 
   const context = await browser.newContext();
   const target = await context.newPage();
   await target.goto('http://localhost:5174/static/reface/');
-  await expect(target.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(target.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await target.locator('#backup-open').click();
   await target.locator('#backup-file').setInputFiles({ name: 'all.zip', mimeType: 'application/zip', buffer: bytes });
   await target.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
-  await expect(target.locator('#backup-result')).toContainText('Imported patches, patterns, drum tones, loops');
+  await expect(target.locator('.message-entry[data-source="backup-result"] .message-text').last()).toContainText('Imported patches, patterns, drum tones, loops');
   await expect(target.locator('#backup-dialog')).not.toBeVisible();
   await expect(target.locator('#focus-mode')).toHaveAttribute('aria-pressed', 'false');
   await expect(target.locator('#data-info')).toBeVisible();
@@ -99,7 +99,7 @@ test('rejects unknown newer sections before changing data', async ({ page }) => 
   });
 
   await page.locator('#backup-file').setInputFiles({ name: 'newer.zip', mimeType: 'application/zip', buffer: Buffer.from(bytes) });
-  await expect(page.locator('#backup-status')).toContainText('Unsupported backup section');
+  await expect(page.locator('.message-entry[data-source="backup-status"] .message-text').last()).toContainText('Unsupported backup section');
   await expect(page.locator('#backup-dialog')).toBeVisible();
   await expect(page.locator('.patch-card')).toHaveCount(0);
 });
@@ -117,7 +117,7 @@ test('imports a version 1 Groove Studio backup without a tone library', async ({
   await page.locator('#backup-open').click();
   await page.locator('#backup-file').setInputFiles({ name: 'legacy.zip', mimeType: 'application/zip', buffer: Buffer.from(bytes) });
   await page.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
-  await expect(page.locator('#backup-result')).toContainText('Imported patterns');
+  await expect(page.locator('.message-entry[data-source="backup-result"] .message-text').last()).toContainText('Imported patterns');
   await expect(page.locator('#drum-pattern option:checked')).toHaveText('Legacy groove');
 });
 
@@ -127,19 +127,19 @@ test('global import accepts an existing patch ZIP', async ({ page }) => {
     controls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [id, 0])),
   }]);
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#backup-open').click();
   await page.locator('#backup-file').setInputFiles({
     name: 'legacy.zip', mimeType: 'application/zip', buffer: Buffer.from(await blob.arrayBuffer()),
   });
-  await expect(page.locator('#backup-result')).toHaveText('Imported legacy patch ZIP.');
+  await expect(page.locator('.message-entry[data-source="backup-result"] .message-text').last()).toHaveText('Imported legacy patch ZIP.');
   await expect(page.locator('#backup-dialog')).not.toBeVisible();
   await expect(page.locator('.patch-card')).toHaveCount(1);
 });
 
 test('identical imports are silent; different items offer ignore, create new and overwrite', async ({ page }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   await page.locator('#footer-panel').first().locator('summary').click();
   await page.locator('#patch-save').click();
   await page.locator('#patch-name').fill('Pad');
@@ -200,7 +200,7 @@ test('patch equality ignores IDs and timestamps but compares attachment bytes', 
     ...patch, audio: [{ ...patch.audio[0], data: new Blob(['diff bytes']) }],
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('#patch-status')).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
   async function importFile(buffer) {
     await page.locator('#backup-open').click();
     await page.locator('#backup-file').setInputFiles({ name: 'patch.zip', mimeType: 'application/zip', buffer });
@@ -223,11 +223,11 @@ test('loop backup imports skip identical content and preserve both versions when
     { start: 1, playDuration: 0.5, channel: 0, pitch: 65, velocity: 90 },
   ], 4, 120, 4);
   await page.locator('#looper-file').setInputFiles({ name: 'loop.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded loop.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded loop.mid');
   await page.getByRole('button', { name: 'Save loop', exact: true }).click();
   await page.getByRole('dialog', { name: 'Save loop' }).getByLabel('Name').fill('Phrase');
   await page.getByRole('dialog', { name: 'Save loop' }).getByRole('button', { name: 'Save' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Saved loop');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Saved loop');
   await page.locator('#backup-open').click();
   await page.locator('#backup-section').selectOption('loops');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-export').click()]);

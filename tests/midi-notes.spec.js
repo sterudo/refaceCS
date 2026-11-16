@@ -40,7 +40,7 @@ async function learnFader(page, target, cc, { channel = 2, initial = 0, key = 'H
     window.testNotes.sent.length = 0;
     window.testNotes.emit('ci', [0xb0 | channel, cc, initial]);
   }, { cc, channel, initial });
-  await expect(page.locator('#midi-learn-status')).toContainText(`CC ${cc}, channel ${channel + 1} assigned`);
+  await expect(page.locator('.message-entry[data-source="midi-learn-status"] .message-text').last()).toContainText(`CC ${cc}, channel ${channel + 1} assigned`);
 }
 
 test('MIDI Learn selects only on-screen faders, consumes assignment CCs and repeats until disabled', async ({ page }) => {
@@ -238,7 +238,7 @@ test('MIDI Learn accepts channel-10 CCs without consuming drum notes or channel-
     window.testNotes.sent.length = 0;
     window.testNotes.emit('ci', [0xb2, 123, 0]);
   });
-  await expect(page.locator('#midi-learn-status')).toContainText('cannot be learned');
+  await expect(page.locator('.message-entry[data-source="midi-learn-status"] .message-text').last()).toContainText('cannot be learned');
   await expect(page.locator('#filter-cutoff')).toHaveClass(/is-midi-learn-target/);
   await page.evaluate(() => {
     window.testNotes.emit('ci', [0xb9, 21, 0]);
@@ -272,7 +272,7 @@ test('MIDI Learn applies local octave changes and the looper Stop action, not ju
   ]);
   await learnFader(page, 'looper', 22, { key: 'End' });
   await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 22, 0]));
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
   expect(await page.evaluate(() => window.testNotes.sent.length)).toBe(48);
   expect(await page.evaluate(() => window.testNotes.sent.at(-1).data)).toEqual([0xbf, 120, 0]);
 });
@@ -296,14 +296,14 @@ test('MIDI Learn reports persistence and MIDI send failures without losing the l
     Storage.prototype.setItem = () => { throw new Error('storage blocked'); };
   });
   await learnFader(page, 'filter-cutoff', 21);
-  await expect(page.locator('#preferences-status')).toContainText('storage blocked');
+  await expect(page.locator('.message-entry[data-source="preferences-status"] .message-text').last()).toContainText('storage blocked');
   await page.evaluate(() => {
     window.testNotes.access.outputs.get('ro').send = () => { throw new Error('learned send failed'); };
     window.testNotes.emit('ci', [0xb2, 21, 127]);
     window.testNotes.emit('ci', [0xb2, 21, 55]);
   });
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '55');
-  await expect(page.locator('#midi-status')).toContainText('learned send failed');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('learned send failed');
 });
 
 test('MIDI Learn reports invalid saved bindings instead of installing them', async ({ page }) => {
@@ -311,7 +311,7 @@ test('MIDI Learn reports invalid saved bindings instead of installing them', asy
     midiLearn: [{ port: 'ci', channel: 2, cc: 21, target: 'nonexistent' }],
   })));
   await page.reload();
-  await expect(page.locator('#midi-learn-status')).toContainText('Invalid saved MIDI Learn assignments');
+  await expect(page.locator('.message-entry[data-source="midi-learn-status"] .message-text').last()).toContainText('Invalid saved MIDI Learn assignments');
   await page.getByRole('button', { name: 'Connect MIDI' }).click();
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => window.testNotes.emit('ci', [0xb2, 21, 55]));
@@ -384,7 +384,7 @@ test('notes shifted outside the MIDI range are reported and not sent', async ({ 
     window.testNotes.emit('ci', [0x90, 0, 100]);
     window.testNotes.emit('ci', [0x80, 0, 0]);
   });
-  await expect(page.locator('#midi-status')).toContainText('outside the MIDI range');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('outside the MIDI range');
   expect(await page.evaluate(() => window.testNotes.sent)).toEqual([]);
 });
 
@@ -489,7 +489,7 @@ test('modulation slider reports unavailable output and keeps its local CC 1 read
   await page.locator('#midi-modwheel-value').press('ArrowRight');
   await expect(page.locator('#midi-modwheel-readout')).toHaveText('1');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
-  await expect(page.locator('#midi-status')).toContainText('MIDI output unavailable');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI output unavailable');
 });
 
 test('obsolete wheel mappings do not override standard CC 1 after reload', async ({ page }) => {
@@ -511,7 +511,7 @@ test('controller send failures are reported without suppressing panel updates', 
     window.testNotes.access.outputs.get('ro').send = () => { throw new Error('controller output failed'); };
     window.testNotes.emit('ci', [0xb3, 74, 45]);
   });
-  await expect(page.locator('#midi-status')).toContainText('controller output failed');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('controller output failed');
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '45');
 });
 
@@ -584,7 +584,7 @@ test('MIDI Reset releases controller sustain before resetting notes', async ({ p
   const messages = await page.evaluate(() => window.testNotes.sent);
   expect(messages).toHaveLength(48);
   expect(messages[0]).toEqual({ port: 'ro', data: [0xb2, 64, 0] });
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
 });
 
 test('keeps incoming highlights independent of local keys and pitch changes', async ({ page }) => {
@@ -622,7 +622,7 @@ test('surfaces output send errors', async ({ page }) => {
     window.testNotes.access.outputs.get('ro').send = () => { throw new Error('device busy'); };
   });
   await page.keyboard.down('a');
-  await expect(page.locator('#midi-status')).toContainText('MIDI send failed: device busy');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI send failed: device busy');
   await page.keyboard.up('a');
 });
 
@@ -638,7 +638,7 @@ test('MIDI Reset releases sustain and tracked notes before resetting every chann
   for (const id of ['#key-c-2', '#key-d-2', '#key-e-2']) {
     await expect(page.locator(id)).toHaveAttribute('aria-pressed', 'false');
   }
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
   await page.keyboard.up('a');
   await page.evaluate(() => {
     window.testNotes.emit('ri', [0x80, 62, 0]);
@@ -673,20 +673,20 @@ test('MIDI Reset reports partial send failures and still tries every message', a
     };
   });
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
-  await expect(page.locator('#midi-status')).toContainText('1 of 48 messages');
-  await expect(page.locator('#midi-status')).toContainText('device busy');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('1 of 48 messages');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('device busy');
   expect(await page.evaluate(() => window.testNotes.attempts)).toBe(48);
   await page.evaluate(() => {
     window.testNotes.access.outputs.get('ro').send = () => {};
   });
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
 });
 
 test('MIDI Reset reports an unavailable output', async ({ page }) => {
   await page.locator('#midi-reface-output').selectOption('');
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
-  await expect(page.locator('#midi-status')).toContainText('MIDI output unavailable');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI output unavailable');
 });
 
 test('MIDI Reset retries a tracked note-off after the original send failed', async ({ page }) => {
@@ -705,7 +705,7 @@ test('MIDI Reset retries a tracked note-off after the original send failed', asy
   });
   await page.getByRole('button', { name: 'MIDI Reset' }).click();
   expect(await page.evaluate(() => window.testNotes.sent.map((event) => event.data))).toContainEqual([0x84, 72, 0]);
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
 });
 
 test('Stop releases a repeated reface key on its original MIDI channel', async ({ page }) => {

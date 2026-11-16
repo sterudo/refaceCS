@@ -66,17 +66,17 @@ test('saves and restores named loops in browser storage', async ({ page }) => {
   await page.locator('#looper-file').setInputFiles({
     name: 'timing.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase),
   });
-  await expect(page.locator('#looper-status')).toContainText('Loaded timing.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded timing.mid');
   await page.getByRole('button', { name: 'Save loop', exact: true }).click();
   await page.getByRole('dialog', { name: 'Save loop' }).getByLabel('Name').fill('My loop');
   await page.getByRole('dialog', { name: 'Save loop' }).getByRole('button', { name: 'Save' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Saved loop "My loop"');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Saved loop "My loop"');
   await page.reload();
   await page.getByRole('button', { name: 'Load saved loop' }).click();
   await expect(page.locator('#looper-library-select')).toHaveValue(await page.locator('#looper-library-select option').first().getAttribute('value'));
   await expect(page.locator('#looper-library-select option')).toHaveText('My loop');
   await page.locator('#looper-library-load').click();
-  await expect(page.locator('#looper-status')).toContainText('Loaded saved loop "My loop"');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded saved loop "My loop"');
   const dialog = await openMidiExport(page, false);
   await dialog.getByLabel('File name').fill('restored.mid');
   const [download] = await Promise.all([
@@ -165,7 +165,7 @@ test('imported note timing is not quantized and plays on the original channel', 
   await page.locator('#looper-file').setInputFiles({
     name: 'timing.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase),
   });
-  await expect(page.locator('#looper-status')).toContainText('Loaded timing.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded timing.mid');
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
   await sent(page);
   await mode(page, 2);
@@ -182,20 +182,20 @@ test('invalid or cancelled loads leave playback intact; replacement stops and re
     4, 120, 4);
   const input = page.locator('#looper-file');
   await input.setInputFiles({ name: 'first.mid', mimeType: 'audio/midi', buffer: Buffer.from(phrase) });
-  await expect(page.locator('#looper-status')).toContainText('Loaded first.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded first.mid');
   await sent(page);
   await mode(page, 2);
   expect(await sent(page)).toEqual([[0x90, 60, 90]]);
   await input.setInputFiles({ name: 'bad.mid', mimeType: 'audio/midi', buffer: Buffer.from([1, 2]) });
-  await expect(page.locator('#looper-status')).toContainText('MIDI load failed');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('MIDI load failed');
   await input.setInputFiles({ name: 'second.mid', mimeType: 'audio/midi', buffer: Buffer.from(replacement) });
   await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.locator('#looper-status')).toContainText('load cancelled');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('load cancelled');
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '2');
   expect(await sent(page)).toEqual([]);
   await input.setInputFiles({ name: 'second.mid', mimeType: 'audio/midi', buffer: Buffer.from(replacement) });
   await page.getByRole('dialog', { name: 'Import loop' }).getByRole('button', { name: 'Replace' }).click();
-  await expect(page.locator('#looper-status')).toContainText('Loaded second.mid');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('Loaded second.mid');
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
   expect(await sent(page)).toContainEqual([0x80, 60, 0]);
 });
@@ -283,7 +283,7 @@ test('fixed bars count down and wrap to overdubbing without moving the fader', a
   await expect(page.locator('#looper-bars-value')).toHaveText('2');
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '3');
   expect(await sent(page)).toEqual([[0x90, 60, 90]]);
-  await expect(page.locator('#looper-status')).toHaveText('Looper overdubbing.');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toHaveText('Looper overdubbing.');
   await page.clock.runFor(250);
   expect(await sent(page)).toEqual([[0x80, 60, 0]]);
 });
@@ -318,7 +318,7 @@ test('three-four bars and changes during recording apply to the next new loop', 
   await page.locator('#looper-meter').click();
   await page.locator('#looper-bars-up').click();
   await expect(page.locator('#looper-bars-value')).toHaveText('1');
-  await expect(page.locator('#looper-status')).toContainText('next new recording');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('next new recording');
   await sent(page);
   await page.clock.runFor(1400);
   expect(await sent(page)).toEqual([[0x90, 60, 90]]);
@@ -604,12 +604,12 @@ test('new quantization settings do not alter an existing phrase or its overdubs'
 
 test('arms with guide, records keyboard notes, and loops them', async ({ page }) => {
   await mode(page, 3);
-  await expect(page.locator('#looper-status')).toContainText('armed');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('armed');
   expect(await sent(page)).toEqual([[0x90, 96, 60]]);
   await page.clock.runFor(100);
   expect(await sent(page)).toEqual([[0x80, 96, 0]]);
   await page.keyboard.down('a');
-  await expect(page.locator('#looper-status')).toHaveText('Looper recording.');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toHaveText('Looper recording.');
   await page.clock.runFor(250);
   await page.keyboard.up('a');
   await page.clock.runFor(250);
@@ -672,7 +672,7 @@ test('pause preserves position, stop rewinds, and clear removes the phrase', asy
   await mode(page, 2);
   await page.clock.runFor(1000);
   expect(await sent(page)).toEqual([]);
-  await expect(page.locator('#looper-status')).toHaveText('Looper is empty.');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toHaveText('Looper is empty.');
 });
 
 test('overdubs across the loop boundary and follows tempo changes', async ({ page }) => {
@@ -773,8 +773,8 @@ test('stops cleanly and reports playback send failures', async ({ page }) => {
   });
   await page.clock.runFor(500);
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
-  await expect(page.locator('#looper-status')).toContainText('sending failed');
-  await expect(page.locator('#midi-status')).toContainText('device busy');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('sending failed');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('device busy');
 });
 
 test('mute and page hiding release the guide and stop transport safely', async ({ page }) => {
@@ -807,8 +807,8 @@ test('limits recording to 2,000 notes and stops a first take at 1,200 beats', as
       window.looperTest.emit('ri', [0x80, 60, 0]);
     }
   });
-  await expect(page.locator('#looper-status')).toContainText('2,000 notes');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('2,000 notes');
   await page.clock.fastForward(600000);
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '2');
-  await expect(page.locator('#looper-status')).toContainText('maximum length');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('maximum length');
 });

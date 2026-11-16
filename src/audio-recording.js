@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 const MAX_RECORDING_SECONDS = 10;
 const MP3_BITRATE_KBPS = 256;
 const AUDIO_INPUT_KEY = 'refaceCS-recording-input';
@@ -38,8 +39,9 @@ export function createAudioRecorder({ onSave }) {
   const dialog = document.querySelector('#patch-recorder');
   const title = dialog.querySelector('h2');
   const input = dialog.querySelector('#patch-record-input');
-  const status = dialog.querySelector('#patch-record-status');
-  const warning = dialog.querySelector('#patch-record-warning');
+  const status = createReporter('patches', 'patch-record-status');
+  const warning = createReporter('patches', 'patch-record-warning');
+  const progress = dialog.querySelector('#patch-record-progress');
   const start = dialog.querySelector('#patch-record-start');
   const stop = dialog.querySelector('#patch-record-stop');
   const save = dialog.querySelector('#patch-record-save');
@@ -59,13 +61,12 @@ export function createAudioRecorder({ onSave }) {
   let inputPreferenceRead = false;
 
   function showWarning(message) {
-    warning.textContent = [warning.textContent, message].filter(Boolean).join(' ');
-    warning.hidden = false;
+    warning(message, 'warning');
   }
 
-  function setState(next, message) {
+  function setState(next, message, severity = next === 'error' ? 'error' : 'normal') {
     state = next;
-    status.textContent = message;
+    status(message, severity);
     input.disabled = next !== 'ready';
     start.disabled = next !== 'ready';
     stop.disabled = next !== 'recording';
@@ -130,8 +131,7 @@ export function createAudioRecorder({ onSave }) {
     const run = session;
     target = { id: patch.id, name: patch.name };
     title.textContent = `Record audio for ${patch.name}`;
-    warning.textContent = '';
-    warning.hidden = true;
+    progress.textContent = '0.0 / 10 seconds';
     input.replaceChildren(new Option('Default audio input', 'default'));
     setState('opening', 'Requesting audio-input permission...');
     dialog.showModal();
@@ -228,7 +228,7 @@ export function createAudioRecorder({ onSave }) {
       timer = setTimeout(stopRecording, MAX_RECORDING_SECONDS * 1000);
       ticker = setInterval(() => {
         const elapsed = Math.min(MAX_RECORDING_SECONDS, (performance.now() - started) / 1000);
-        status.textContent = `Recording ${elapsed.toFixed(1)} / 10 seconds.`;
+        progress.textContent = `${elapsed.toFixed(1)} / 10 seconds`;
       }, 100);
     } catch (error) {
       if (run === session) fail(error);
@@ -264,7 +264,7 @@ export function createAudioRecorder({ onSave }) {
       if (run === session) dialog.close();
     } catch (error) {
       if (run === session) {
-        setState('review', `Could not save recording: ${error.message || error}. Retry Save MP3 or Discard.`);
+        setState('review', `Could not save recording: ${error.message || error}. Retry Save MP3 or Discard.`, 'error');
       }
     }
   });
@@ -277,7 +277,7 @@ export function createAudioRecorder({ onSave }) {
   });
   preview.addEventListener('error', () => {
     if (state === 'review') {
-      status.textContent = 'The recorded MP3 preview could not be played. Discard to try another recording.';
+      status('The recorded MP3 preview could not be played. Discard to try another recording.', 'error');
     }
   });
   window.addEventListener('pagehide', cleanup);

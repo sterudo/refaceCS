@@ -1,4 +1,5 @@
 import { createSevenSegment } from './seven-segment.js';
+import { createReporter } from './notifications.js';
 
 const svgNS = 'http://www.w3.org/2000/svg';
 const defaults = { 'midi-transmit': 0, 'midi-receive': 16, 'local-control': 1, 'speaker-output': 1 };
@@ -9,7 +10,7 @@ const labels = {
 
 export function createDevicePanel(change) {
   const layer = document.querySelector('#device-menu-layer');
-  const status = document.querySelector('#device-panel-status');
+  const report = createReporter('reface', 'device-panel-status');
   const state = new Map();
   const controls = new Map();
   let busy = false;
@@ -162,8 +163,7 @@ export function createDevicePanel(change) {
       for (const id of state.keys()) render(id);
     },
     status(message, severity = 'normal') {
-      status.dataset.severity = severity;
-      status.textContent = message;
+      report(message, severity);
     },
   };
 }

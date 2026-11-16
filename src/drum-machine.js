@@ -1,3 +1,4 @@
+import { createReporter } from './notifications.js';
 import { createDrumAudio, defaultDrumLane, DRUM_VOICES } from './drum-audio.js';
 import { askName, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
@@ -47,9 +48,9 @@ function validStore(store) {
 
 export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper, getRefaceInput, onAudioStatus }) {
   const element = (id) => document.querySelector(`#drum-${id}`);
-  const status = element('status');
-  const storageStatus = element('storage-status');
-  const outputStatus = element('output-status');
+  const status = createReporter('groove', 'drum-status');
+  const storageStatus = createReporter('groove', 'drum-storage-status');
+  const outputStatus = createReporter('groove', 'drum-output-status');
   const lanesElement = element('lanes');
   const patternSelect = element('pattern');
   const instrumentSelect = element('instrument');
@@ -58,7 +59,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   const outputChoose = element('output-choose');
   const outputRefresh = element('output-refresh');
   const calibrationDialog = element('calibration');
-  const calibrationStatus = element('calibration-status');
+  const calibrationStatus = createReporter('groove', 'drum-calibration-status');
   const calibrationDelay = element('calibration-delay');
   const calibrationDone = element('calibration-done');
   const audio = createDrumAudio(clock, fail);
@@ -66,7 +67,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     onRouteChange: (message) => {
       if (playing || starting) {
         stop();
-        status.textContent = message || 'Drums stopped after MIDI settings changed.';
+        status(message || 'Drums stopped after MIDI settings changed.');
       }
     },
     onMappingChange: () => {
@@ -118,14 +119,14 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
     }
   } catch (error) {
-    storageStatus.textContent = `Could not restore drum patterns: ${error.message || error}. `
-      + 'Starting a temporary pattern; the stored data will not change until you edit or save.';
+    storageStatus(`Could not restore drum patterns: ${error.message || error}. `
+      + 'Starting a temporary pattern; the stored data will not change until you edit or save.', 'error');
   }
   const pattern = () => store.patterns.find((item) => item.id === store.selected);
   const tones = createDrumTones({
     onChange: () => { render(); edited(); },
     onLibraryChange: () => { render(); },
-    onError: (message) => { storageStatus.textContent = message; },
+    onError: (message) => { storageStatus(message, 'error'); },
     preview: async (lane) => { await enable(); audio.trigger(lane, 127); },
   });
   element('volume').value = String(store.volume);
@@ -136,17 +137,17 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   function persist() {
     try {
       localStorage.setItem(storageKey, JSON.stringify(store));
-      storageStatus.textContent = 'Drum patterns saved in this browser.';
+      storageStatus('Drum patterns saved in this browser.');
     } catch (error) {
-      storageStatus.textContent = `Could not save drum patterns: ${error.message || error}. `
-        + 'Changes are only available until this page is closed.';
+      storageStatus(`Could not save drum patterns: ${error.message || error}. `
+        + 'Changes are only available until this page is closed.', 'error');
     }
   }
 
   function fail(message) {
     stop();
     if (!clock.enabled) element('enable').textContent = 'Enable audio';
-    status.textContent = message;
+    status(message, 'error');
   }
 
   async function enable() {
@@ -159,7 +160,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       outputSelect.disabled = !supported;
       outputChoose.hidden = !supported || !navigator.mediaDevices?.selectAudioOutput;
       outputRefresh.disabled = !supported || !navigator.mediaDevices?.enumerateDevices;
-      if (!supported) outputStatus.textContent = 'Output selection is unavailable in this browser; using the system default. No direct ASIO.';
+      if (!supported) outputStatus('Output selection is unavailable in this browser; using the system default. No direct ASIO.');
       else await refreshOutputs();
       onAudioStatus('');
     })();
@@ -186,7 +187,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   function stopTogether() {
     stop();
     onStopLooper();
-    status.textContent = 'Drums and looper stopped. MIDI reset requested.';
+    status('Drums and looper stopped. MIDI reset requested.');
   }
 
   function audible(lane) {
@@ -297,7 +298,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       nextMidiBeat = firstBeat;
       playing = true;
       playButton.setAttribute('aria-pressed', 'true');
-      status.textContent = 'Drums playing. Looper playback follows the shared tempo and bar grid.';
+      status('Drums playing. Looper playback follows the shared tempo and bar grid.');
       if (store.linked) onStartLooper(at, looperMode);
       tick();
     } catch (error) {
@@ -343,7 +344,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       steps: lane.steps.slice(bar * 16, bar * 16 + clock.meter * 4),
     }));
     for (const button of lanesElement.querySelectorAll('.drum-bar-paste')) button.disabled = false;
-    status.textContent = `Copied bar ${bar + 1} from ${selected.length} lane(s).`;
+    status(`Copied bar ${bar + 1} from ${selected.length} lane(s).`);
   }
 
   function pasteBar(bar) {
@@ -368,7 +369,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     lanesElement.querySelector(`.drum-bar-paste[data-bar="${bar}"]`)?.focus({ preventScroll: true });
     lanesElement.parentElement.scrollLeft = scroll;
     edited();
-    status.textContent = `Pasted into bar ${bar + 1}.`;
+    status(`Pasted into bar ${bar + 1}.`);
   }
 
   function clearBar(bar) {
@@ -382,7 +383,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
     }
     edited();
-    status.textContent = `Cleared bar ${bar + 1} in ${selected.length} lane(s).`;
+    status(`Cleared bar ${bar + 1} in ${selected.length} lane(s).`);
   }
 
   function updateToneVisibility() {
@@ -540,7 +541,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
         button.setAttribute('aria-label', `${label} ${voice.name}`);
         button.addEventListener('click', async () => {
           try { await handler(); }
-          catch (error) { status.textContent = `${label} failed: ${error.message || error}`; }
+          catch (error) { status(`${label} failed: ${error.message || error}`, 'error'); }
         });
         actions.append(button);
         return button;
@@ -573,7 +574,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       toneFile.addEventListener('change', async () => {
         if (!toneFile.files?.[0]) return;
         try { await tones.importFile(lane, toneFile.files[0]); }
-        catch (error) { status.textContent = `Could not import tone: ${error.message || error}`; }
+        catch (error) { status(`Could not import tone: ${error.message || error}`, 'error'); }
       });
       actions.append(toneFile);
       controls.append(actions);
@@ -683,9 +684,9 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       link.download = result.filename;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      status.textContent = `Exported pattern "${selected.name}".`;
+      status(`Exported pattern "${selected.name}".`);
     } catch (error) {
-      status.textContent = `Could not export pattern: ${error.message || error}.`;
+      status(`Could not export pattern: ${error.message || error}.`, 'error');
     }
   });
   element('import').addEventListener('click', () => {
@@ -705,9 +706,9 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       const candidate = { ...store, patterns: [imported], selected: imported?.id };
       if (!validStore(candidate)) throw new Error('Invalid pattern data');
       const count = await importPatterns([imported]);
-      status.textContent = count === null ? 'Pattern import ignored.' : `Imported pattern "${imported.name}"; playback stopped.`;
+      status(count === null ? 'Pattern import ignored.' : `Imported pattern "${imported.name}"; playback stopped.`);
     } catch (error) {
-      status.textContent = `Could not import pattern: ${error.message || error}.`;
+      status(`Could not import pattern: ${error.message || error}.`, 'error');
     }
   });
   element('add').addEventListener('click', () => {
@@ -722,7 +723,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   async function enableAudio() {
     try {
       await enable();
-      status.textContent = 'Drum audio ready. Channel-10 MIDI and instrument previews are available.';
+      status('Drum audio ready. Channel-10 MIDI and instrument previews are available.');
     } catch (error) {
       const message = `Could not enable drum audio: ${error.message || error}`;
       fail(message);
@@ -738,7 +739,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     const value = Number(element('tempo').value);
     if (!Number.isInteger(value) || value < 40 || value > 240) {
       element('tempo').value = String(clock.tempo);
-      status.textContent = 'Tempo must be a whole number from 40 to 240 BPM.';
+      status('Tempo must be a whole number from 40 to 240 BPM.');
       return;
     }
     onTempo(value);
@@ -764,7 +765,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     const meter = Number(element('meter').value);
     if (meter !== 3 && meter !== 4) {
       element('meter').value = String(clock.meter);
-      status.textContent = 'Choose a 3/4 or 4/4 time signature.';
+      status('Choose a 3/4 or 4/4 time signature.');
       return;
     }
     clock.setMeter(meter);
@@ -773,7 +774,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     const bars = Number(element('bars').value);
     if (!Number.isInteger(bars) || bars < 1 || bars > 16) {
       element('bars').value = String(pattern().bars ?? 1);
-      status.textContent = 'Pattern length must be a whole number from 1 to 16 bars.';
+      status('Pattern length must be a whole number from 1 to 16 bars.');
       return;
     }
     pattern().bars = bars;
@@ -798,7 +799,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     const value = Number(element('offset').value);
     if (!Number.isInteger(value) || Math.abs(value) > maxOffset) {
       element('offset').value = String(store.offset);
-      status.textContent = `Looper MIDI offset must be a whole number from -${maxOffset} to ${maxOffset} ms.`;
+      status(`Looper MIDI offset must be a whole number from -${maxOffset} to ${maxOffset} ms.`);
       return;
     }
     applyOffset(value);
@@ -819,12 +820,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     calibrationDone.disabled = true;
     if (calibrationDialog.open && !keepOpen) calibrationDialog.close();
     if (wasCalibrating) audio.stop();
-    if (message) status.textContent = message;
+    if (message) status(message);
   }
 
   function calibrationError(message) {
     closeCalibration(message, true);
-    calibrationStatus.textContent = message;
+    calibrationStatus(message, 'error');
     calibrationDelay.textContent = 'Unavailable';
     if (!calibrationDialog.open) calibrationDialog.showModal();
   }
@@ -864,7 +865,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     onStopLooper();
     const revision = ++calibrationRevision;
     calibration = { input, kicks: [], latest: null, origin: 0, next: 0 };
-    calibrationStatus.textContent = 'Starting the 100 BPM kick...';
+    calibrationStatus('Starting the 100 BPM kick...');
     calibrationDelay.textContent = 'No note received';
     calibrationDone.disabled = true;
     calibrationDialog.showModal();
@@ -873,8 +874,8 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       if (revision !== calibrationRevision) return;
       calibration.origin = performance.now() + clock.lead;
       calibration.next = calibration.origin;
-      calibrationStatus.textContent = 'Play notes on the reface in time with the kick. Each Note On replaces the previous delay.';
-      status.textContent = '100 BPM MIDI offset test running. Normal drum and looper playback are stopped.';
+      calibrationStatus('Play notes on the reface in time with the kick. Each Note On replaces the previous delay.');
+      status('100 BPM MIDI offset test running. Normal drum and looper playback are stopped.');
       calibrationTick();
     } catch (error) {
       if (revision === calibrationRevision) {
@@ -892,26 +893,26 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       calibration.latest = null;
       calibrationDone.disabled = true;
       calibrationDelay.textContent = 'No recent kick';
-      calibrationStatus.textContent = 'Wait for the next kick, then play a note to measure its delay.';
+      calibrationStatus('Wait for the next kick, then play a note to measure its delay.');
       return true;
     }
     calibration.latest = delay;
     calibrationDelay.textContent = `${delay} ms`;
     calibrationDone.disabled = false;
-    calibrationStatus.textContent = `Latest delay: ${delay} ms. Done will set the looper MIDI offset to +${delay} ms.`;
+    calibrationStatus(`Latest delay: ${delay} ms. Done will set the looper MIDI offset to +${delay} ms.`);
     return true;
   }
 
   element('calibrate').addEventListener('click', () => { void startCalibration(); });
   calibrationDone.addEventListener('click', () => {
     if (calibration?.latest === null || !calibration) {
-      calibrationStatus.textContent = 'Play a note after a test kick before applying an offset.';
+      calibrationStatus('Play a note after a test kick before applying an offset.');
       return;
     }
     const delay = calibration.latest;
     closeCalibration();
     applyOffset(delay);
-    status.textContent = `Looper MIDI offset set to +${delay} ms from the latest received Note On.`;
+    status(`Looper MIDI offset set to +${delay} ms from the latest received Note On.`);
   });
   const cancelCalibration = () => closeCalibration('MIDI offset test cancelled; the offset is unchanged.');
   element('calibration-cancel').addEventListener('click', cancelCalibration);
@@ -926,7 +927,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   async function refreshOutputs() {
     const revision = ++devicesRevision;
     if (!navigator.mediaDevices?.enumerateDevices) {
-      outputStatus.textContent = 'Audio-device discovery is unavailable; using the system output.';
+      outputStatus('Audio-device discovery is unavailable; using the system output.');
       return;
     }
     try {
@@ -939,11 +940,11 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       }
       if (selected && ![...outputSelect.options].some((option) => option.value === selected)) {
         outputSelect.add(new Option('Selected audio output (not listed)', selected));
-        outputStatus.textContent = 'The selected output is not listed. Check its connection or select another output.';
+        outputStatus('The selected output is not listed. Check its connection or select another output.');
       }
       outputSelect.value = selected;
     } catch (error) {
-      outputStatus.textContent = `Could not list audio outputs: ${error.message || error}`;
+      outputStatus(`Could not list audio outputs: ${error.message || error}`, 'error');
     }
   }
 
@@ -952,10 +953,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       await enable();
       await audio.setOutput(deviceId);
       await refreshOutputs();
-      outputStatus.textContent = `Drum audio output: ${outputSelect.selectedOptions[0]?.textContent || deviceId || 'System default'}. No direct ASIO.`;
+      outputStatus(`Drum audio output: ${outputSelect.selectedOptions[0]?.textContent || deviceId || 'System default'}. No direct ASIO.`);
     } catch (error) {
       outputSelect.value = audio.context?.sinkId || '';
-      outputStatus.textContent = `Could not select audio output: ${error.message || error}`;
+      outputStatus(`Could not select audio output: ${error.message || error}`, 'error');
     }
   }
   outputSelect.disabled = true;
@@ -968,7 +969,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       const device = await navigator.mediaDevices.selectAudioOutput();
       await selectOutput(device.deviceId);
     } catch (error) {
-      outputStatus.textContent = `Audio output selection was not completed: ${error.message || error}`;
+      outputStatus(`Audio output selection was not completed: ${error.message || error}`, error.name === 'AbortError' ? 'warning' : 'error');
     }
   });
   navigator.mediaDevices?.addEventListener('devicechange', () => { void refreshOutputs(); });
@@ -985,7 +986,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return;
-    if (playing || starting || calibration) { stop(); status.textContent = 'Drums stopped because the page was hidden.'; }
+    if (playing || starting || calibration) { stop(); status('Drums stopped because the page was hidden.'); }
     else drumMidi.stop();
   });
   window.addEventListener('pagehide', stop);
@@ -1019,7 +1020,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     directions.clear();
     render();
     invalidate();
-    storageStatus.textContent = 'Drum patterns saved in this browser.';
+    storageStatus('Drum patterns saved in this browser.');
     return last ? saved : null;
   }
 
@@ -1071,7 +1072,7 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
     stopFromLooper() {
       if (store.linked) {
         stop();
-        status.textContent = 'Drums stopped with looper.';
+        status('Drums stopped with looper.');
       }
     },
     stop,
@@ -1079,14 +1080,14 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
       if (calibration) return;
       const alias = { 35: 36, 40: 38, 44: 42, 41: 45, 43: 45, 48: 50, 69: 70 };
       const voice = DRUM_VOICES.find((item) => item.note === (alias[note] ?? note));
-      if (!voice) { status.textContent = `No internal drum is mapped to MIDI note ${note}.`; return; }
+      if (!voice) { status(`No internal drum is mapped to MIDI note ${note}.`); return; }
       const lane = pattern().lanes.find((item) => item.voice === voice.id) || defaultDrumLane(voice);
       if (!audible(lane)) return;
       try {
         if (drumMidi.internal()) audio.trigger(lane, velocity);
         triggerExternal(lane, velocity);
       } catch (error) {
-        status.textContent = `MIDI drum could not play: ${error.message || error}`;
+        status(`MIDI drum could not play: ${error.message || error}`, 'error');
       }
     },
   };

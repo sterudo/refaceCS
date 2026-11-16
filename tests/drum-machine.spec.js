@@ -155,7 +155,7 @@ for (const width of [1440, 390]) {
     expect(mappings[columns].x).toBeCloseTo(mappings[0].x, 0);
     expect(mappings[columns].y).toBeGreaterThan(mappings[0].y);
     await button.click();
-    await expect(page.locator('#drum-midi-status')).toContainText('MIDI outputs refreshed');
+    await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText('MIDI outputs refreshed');
   });
 }
 
@@ -192,7 +192,7 @@ test('CS2x performance mappings persist separately and are not resent on reconne
   await page.locator('#drum-midi-settings-open').click();
   await page.locator('#drum-midi-port').selectOption('external-drums');
   await page.locator('#drum-midi-kit').selectOption('preset2-123');
-  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText('sent');
   expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
     .toEqual([[0xb0, 0, 63], [0xb0, 32, 66], [0xc0, 122]]);
   await page.getByLabel('Kick MIDI note').fill('48');
@@ -231,7 +231,7 @@ test('external-only playback reports a missing output and emits no internal drum
   await page.locator('#drum-routing').selectOption('midi');
   await step(page, 'kick', 0).click();
   await page.locator('#drum-play').click();
-  await expect(page.locator('#drum-status')).toContainText('Select an available drum MIDI output');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('Select an available drum MIDI output');
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBe(0);
 });
@@ -242,7 +242,7 @@ test('external-only previews and controller notes use mapped MIDI, and disconnec
   await page.locator('#drum-midi-settings-open').click();
   await page.locator('#drum-midi-port').selectOption('external-drums');
   await page.locator('#drum-midi-kit').selectOption('xg-26');
-  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText('sent');
   expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
     .toEqual([[0xb9, 0, 127], [0xb9, 32, 0], [0xc9, 25]]);
   await page.getByLabel('Kick MIDI note').fill('37');
@@ -263,7 +263,7 @@ test('external-only previews and controller notes use mapped MIDI, and disconnec
     window.drumTest.access.dispatchEvent(new Event('statechange'));
   });
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#drum-status')).toContainText('disconnected');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('disconnected');
   await page.clock.runFor(500);
   expect(await page.evaluate(() => window.externalDrumEvents.length)).toBe(7);
 });
@@ -274,7 +274,7 @@ test('custom bank and program changes are applied explicitly', async ({ page }) 
   await page.locator('#drum-midi-settings-open').click();
   await page.locator('#drum-midi-port').selectOption('external-drums');
   await page.locator('#drum-midi-kit').selectOption('custom');
-  await expect(page.locator('#drum-midi-status')).toContainText('choose Apply');
+  await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText('choose Apply');
   expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
   for (const [field, value] of [['msb', '42'], ['lsb', '13'], ['program', '128']]) {
     await page.locator(`#drum-midi-${field}`).fill(value);
@@ -282,7 +282,7 @@ test('custom bank and program changes are applied explicitly', async ({ page }) 
   }
   await page.evaluate(() => { window.externalDrumEvents.length = 0; });
   await page.locator('#drum-midi-apply').click();
-  await expect(page.locator('#drum-midi-status')).toContainText('sent');
+  await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText('sent');
   expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
     .toEqual([[0xb9, 0, 42], [0xb9, 32, 13], [0xc9, 127]]);
 });
@@ -329,7 +329,7 @@ test('a failed MIDI note-off stops playback and retries the tracked release', as
   await page.locator('#drum-play').click();
   await page.clock.runFor(250);
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#drum-status')).toContainText('note-off failed: device busy');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('note-off failed: device busy');
   expect(await page.evaluate(() => window.externalDrumEvents.map((event) => event.data)))
     .toEqual([[0x99, 36, 95], [0x89, 36, 0]]);
 });
@@ -428,7 +428,7 @@ for (const [octave, note] of [[-1, 0], [1, 127]]) {
     await page.locator('#drum-midi-octave').selectOption(String(octave));
     await lane(page, 'kick').getByRole('button', { name: 'Kick', exact: true }).click();
     await page.clock.runFor(60);
-    await expect(page.locator('#drum-midi-output-status')).toContainText(`shifted MIDI note ${note + octave * 12} is outside 0-127`);
+    await expect(page.locator('.message-entry[data-source="drum-midi-status"] .message-text').last()).toContainText(`shifted MIDI note ${note + octave * 12} is outside 0-127`);
     expect(await page.evaluate(() => window.externalDrumEvents)).toEqual([]);
   });
 }
@@ -916,7 +916,7 @@ test('play enables audio automatically and reports failures', async ({ page }) =
   await page.evaluate(() => { AudioContext.prototype.resume = async () => { throw new Error('audio denied'); }; });
   await page.locator('#drum-play').click();
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#drum-status')).toContainText('Could not start drums: audio denied');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('Could not start drums: audio denied');
 });
 
 test('connecting MIDI enables audio without starting playback', async ({ page }) => {
@@ -943,12 +943,12 @@ test('audio failure does not block MIDI connection and is reported outside Groov
   await page.evaluate(() => { AudioContext.prototype.resume = async () => { throw new Error('audio denied'); }; });
   await page.locator('#midi-connect').click();
   await expect(page.locator('#midi-connect')).toBeHidden();
-  await expect(page.locator('#audio-connect-status')).toContainText('Could not enable drum audio: audio denied');
+  await expect(page.locator('.message-entry[data-source="audio-connect-status"] .message-text').last()).toContainText('Could not enable drum audio: audio denied');
   await expect(page.locator('#groove-panel')).not.toHaveAttribute('open');
   await page.evaluate(() => { AudioContext.prototype.resume = async function () { this.state = 'running'; }; });
   await page.locator('#groove-panel > summary').click();
   await page.locator('#drum-enable').click();
-  await expect(page.locator('#audio-connect-status')).toBeEmpty();
+  await expect(page.locator('.message-entry[data-source="audio-connect-status"] .message-text').last()).toContainText('audio denied');
   await expect(page.locator('#drum-enable')).toHaveText('Audio enabled');
 });
 
@@ -1121,7 +1121,7 @@ test('tone export captures current edits and import rejects another instrument',
   const snare = lane(page, 'snare');
   await snare.getByRole('button', { name: 'Snare lane options' }).click();
   await snare.locator('input[type="file"]').setInputFiles({ name: 'kick.json', mimeType: 'application/json', buffer: bytes });
-  await expect(page.locator('#drum-status')).toContainText('different instrument');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('different instrument');
   await expect(snare.getByRole('slider', { name: 'Snare tune' })).toHaveValue('0');
 });
 
@@ -1166,7 +1166,7 @@ test('exports and imports a pattern without starting playback', async ({ page })
   await step(page, 'kick', 0).click();
   await page.locator('#drum-import-file').setInputFiles(path);
   await page.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
-  await expect(page.locator('#drum-status')).toContainText('playback stopped');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('playback stopped');
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
 });
@@ -1209,7 +1209,7 @@ test('pattern import can keep a differently named copy without overwriting', asy
   await expect(rename.getByLabel('Name')).toHaveValue('Pattern 1 (2)');
   await rename.getByLabel('Name').fill('My pattern');
   await rename.getByRole('button', { name: 'Save' }).click();
-  await expect(page.locator('#drum-status')).toContainText('playback stopped');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('playback stopped');
   await expect(page.locator('#drum-pattern option')).toHaveText(['Pattern 1', 'My pattern']);
   await expect(step(page, 'kick', 0)).toHaveAttribute('data-level', '5');
 });
@@ -1297,7 +1297,7 @@ test('named patterns persist independent lanes, velocities, and sound settings a
 test('invalid saved patterns and storage failures are reported without blocking the synth', async ({ page }) => {
   await page.evaluate((key) => localStorage.setItem(key, '{"version":1,"patterns":[]}'), storageKey);
   await page.reload();
-  await expect(page.locator('#drum-storage-status')).toContainText('invalid format');
+  await expect(page.locator('.message-entry[data-source="drum-storage-status"] .message-text').last()).toContainText('invalid format');
   await page.evaluate(() => {
     const save = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key, value) {
@@ -1306,8 +1306,8 @@ test('invalid saved patterns and storage failures are reported without blocking 
     };
   });
   await step(page, 'kick', 0).click();
-  await expect(page.locator('#drum-storage-status')).toContainText('storage is full');
-  await expect(page.locator('#app-status')).not.toHaveText('Loading panel...');
+  await expect(page.locator('.message-entry[data-source="drum-storage-status"] .message-text').last()).toContainText('storage is full');
+  await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).not.toHaveText('Loading panel...');
 });
 
 test('channel-10 drums stay internal, preserve velocity, and do not enter the melodic looper', async ({ page }) => {
@@ -1322,7 +1322,7 @@ test('channel-10 drums stay internal, preserve velocity, and do not enter the me
   });
   expect(await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.kind))).toEqual(['oscillator', 'noise']);
   expect(await page.evaluate(() => window.drumTest.sent)).toEqual([]);
-  await expect(page.locator('#looper-status')).toContainText('armed');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('armed');
   await page.evaluate(() => window.drumTest.emit([0x90, 60, 85]));
   expect(await page.evaluate(() => window.drumTest.delivered.map((event) => event.data))).toEqual([[0x90, 60, 85]]);
 });
@@ -1375,7 +1375,7 @@ test('starting the looper can start both, while unlinked drums remain independen
   await page.locator('#drum-linked').check();
   await mode(page, 2);
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#looper-status')).toContainText('playing');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('playing');
   const note = await page.evaluate(() => window.drumTest.sent.filter((event) => event.data[0] === 0x90).at(-1));
   expect(note.at).toBeGreaterThan(note.submitted);
   await page.clock.runFor(200);
@@ -1506,7 +1506,7 @@ for (const combination of playbackCombinations) {
       else await mode(page, 0);
       await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
       await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
-      await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+      await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
       await expect(page.locator('#arp-held-notes')).toHaveText('None');
       const reset = await page.evaluate((before) => window.drumTest.delivered.slice(before)
         .map((event) => event.data), before);
@@ -1564,8 +1564,8 @@ test('Stop reports a failed driver-queue flush instead of claiming reset succeed
     window.drumTest.access.outputs.get('ro').clear = () => { throw new Error('queue busy'); };
   });
   await mode(page, 0);
-  await expect(page.locator('#midi-status')).toContainText('MIDI reset failed');
-  await expect(page.locator('#midi-status')).toContainText('queue busy');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset failed');
+  await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('queue busy');
   await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
 });
 
@@ -1618,7 +1618,7 @@ for (const fixedRecording of [false, true]) {
         }
       }, { stop, jump: fixedRecording ? 20 : 400 });
       await expect(page.locator('#looper')).toHaveAttribute('aria-valuenow', '0');
-      await expect(page.locator('#midi-status')).toContainText('MIDI reset messages sent');
+      await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('MIDI reset messages sent');
       await page.clock.runFor(20);
       const sounding = await page.evaluate(() => {
         const active = new Set();
@@ -1739,12 +1739,12 @@ test('choose audio output is shown only when its required APIs are available', a
 test('output selection, device failure, and suspension are surfaced explicitly', async ({ page }) => {
   await page.locator('#drum-enable').click();
   await page.locator('#drum-output').selectOption('speakers');
-  await expect(page.locator('#drum-output-status')).toContainText('Studio speakers');
+  await expect(page.locator('.message-entry[data-source="drum-output-status"] .message-text').last()).toContainText('Studio speakers');
   await page.locator('#drum-output-choose').click();
   await expect(page.locator('#drum-output')).toHaveValue('headphones');
   await page.evaluate(() => { window.drumTest.audio.failOutput = true; });
   await page.locator('#drum-output').selectOption('speakers');
-  await expect(page.locator('#drum-output-status')).toContainText('device unavailable');
+  await expect(page.locator('.message-entry[data-source="drum-output-status"] .message-text').last()).toContainText('device unavailable');
   await expect(page.locator('#drum-output')).toHaveValue('headphones');
   await page.locator('#drum-play').click();
   await page.evaluate(() => {
@@ -1753,7 +1753,7 @@ test('output selection, device failure, and suspension are surfaced explicitly',
     context.dispatchEvent(new Event('statechange'));
   });
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#drum-status')).toContainText('suspended');
+  await expect(page.locator('.message-entry[data-source="drum-status"] .message-text').last()).toContainText('suspended');
 });
 
 test('compact square geometry, larger velocity text, accessible icons, and initially hidden sound controls', async ({ page }) => {
@@ -1950,7 +1950,7 @@ test('100 BPM calibration retains the latest reface Note On delay and applies it
   await page.clock.runFor(3000);
   expect(await page.evaluate(() => window.drumTest.audio.sources.length)).toBe(count);
   await mode(page, 2);
-  await expect(page.locator('#looper-status')).toContainText('playing');
+  await expect(page.locator('.message-entry[data-source="looper-status"] .message-text').last()).toContainText('playing');
 });
 
 test('calibration handles missing input, Cancel, Escape, and disconnection without changing the saved offset', async ({ page }) => {
@@ -1959,7 +1959,7 @@ test('calibration handles missing input, Cancel, Escape, and disconnection witho
   await page.locator('#midi-reface-input').selectOption('');
   await page.locator('#drum-calibrate').click();
   await expect(page.locator('#drum-calibration')).toBeVisible();
-  await expect(page.locator('#drum-calibration-status')).toContainText('available reface input');
+  await expect(page.locator('.message-entry[data-source="drum-calibration-status"] .message-text').last()).toContainText('available reface input');
   await expect(page.locator('#drum-calibration-done')).toBeDisabled();
   await page.locator('#drum-calibration-cancel').click();
   await page.locator('#midi-reface-input').selectOption('ri');
@@ -1976,7 +1976,7 @@ test('calibration handles missing input, Cancel, Escape, and disconnection witho
   await page.evaluate(() => { window.drumTest.access.inputs.get('ri').state = 'disconnected'; });
   await page.clock.runFor(20);
   await expect(page.locator('#drum-calibration')).toBeVisible();
-  await expect(page.locator('#drum-calibration-status')).toContainText('unavailable');
+  await expect(page.locator('.message-entry[data-source="drum-calibration-status"] .message-text').last()).toContainText('unavailable');
   await expect(page.locator('#drum-calibration-done')).toBeDisabled();
   expect((await stored(page)).offset).toBe(75);
   const count = await page.evaluate(() => window.drumTest.audio.sources.length);
@@ -1990,7 +1990,7 @@ test('calibration shows audio startup failure inside the dialog instead of silen
   });
   await page.locator('#drum-calibrate').click();
   await expect(page.locator('#drum-calibration')).toBeVisible();
-  await expect(page.locator('#drum-calibration-status')).toContainText('audio blocked');
+  await expect(page.locator('.message-entry[data-source="drum-calibration-status"] .message-text').last()).toContainText('audio blocked');
   await expect(page.locator('#drum-calibration-done')).toBeDisabled();
   await page.locator('#drum-calibration-cancel').click();
   await expect(page.locator('#drum-calibration')).toBeHidden();
@@ -2003,7 +2003,7 @@ test('dismissing calibration prerequisites does not interrupt an independent run
   await page.locator('#midi-reface-input').selectOption('');
   const stops = await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.stopAt));
   await page.locator('#drum-calibrate').click();
-  await expect(page.locator('#drum-calibration-status')).toContainText('available reface input');
+  await expect(page.locator('.message-entry[data-source="drum-calibration-status"] .message-text').last()).toContainText('available reface input');
   await page.locator('#drum-calibration-cancel').click();
   await expect(page.locator('#drum-play')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => window.drumTest.audio.sources.map((source) => source.stopAt))).toEqual(stops);
