@@ -2,3 +2,6 @@ node_modules/
 dist/
 playwright-report/
 test-results/
+/reface_en_dl_b0.pdf
+/reface_en_om_b0.pdf
+/v130_Manual_en.pdf
