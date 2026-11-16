@@ -36,6 +36,8 @@ export const helpContent = {
     wide: true,
     blocks: [
       paragraph('Dates follow the commits introducing each version. The v0.1 summary also includes improvements made before v0.2.'),
+      heading('v0.10 - 2026-11-16'),
+      paragraph('Settings for dark synth appearance, startup and MIDI behavior, Groove Studio defaults, patch loading and audio visibility, plus a reset that preserves saved data.'),
       heading('v0.8 - 2026-11-16'),
       paragraph('Contextual help, consolidated playing tips, centralized notifications, pinned top controls, and dated version history.'),
       heading('v0.7 - 2026-11-15'),
@@ -51,7 +53,7 @@ export const helpContent = {
       heading('v0.2 - 2026-11-15'),
       paragraph('Local ZIP and manual Google Drive backups for saved patches, loops, and Groove Studio data.'),
       heading('v0.1 - 2026-11-12'),
-      paragraph('Initial synth panel, MIDI and arpeggiator, browser looper, patch library with MP3 recording, and synthesized drums.'),
+      paragraph('Initial synth panel, MIDI and arpeggiator, browser looper, Patch Manager with MP3 recording, and synthesized drums.'),
     ],
   },
   about: {
@@ -64,7 +66,7 @@ export const helpContent = {
         'Open the app in a supported Chromium browser over HTTPS or localhost. Choose Connect MIDI and grant permission.',
         'Select the reface MIDI input and output. If you use a separate controller, select its input independently.',
         'Enable MIDI Control on the reface when using the panel faders. A successful MIDI send does not prove that the instrument applied it.',
-        'Play with the on-screen keys, a connected controller, or the reface keyboard. Save sounds to the Patch Library if you want to recall them later.',
+        'Play with the on-screen keys, a connected controller, or the reface keyboard. Save sounds to the Patch Manager if you want to recall them later.',
       ),
       heading('Playing and panel controls'),
       list(
@@ -97,10 +99,10 @@ export const helpContent = {
     ],
   },
   patches: {
-    title: 'Patch Library',
+    title: 'Patch Manager',
     wide: true,
     blocks: [
-      paragraph('The Patch Library saves and organizes sounds in this browser. Each patch stores the app’s known LFO, oscillator, Portamento, Filter, EG, and Effects values, with a name, description, main category, tags, favorites, and optional MP3 previews. It does not store patches in the reface or capture every hardware setting.'),
+      paragraph('The Patch Manager saves and organizes sounds in this browser. Each patch stores the app’s known LFO, oscillator, Portamento, Filter, EG, and Effects values, with a name, description, main category, tags, favorites, and optional MP3 previews. It does not store patches in the reface or capture every hardware setting.'),
       details('Saving and editing patches', [
         list(
           'Use Save current sound or the save icon beside the patch display to save the current on-screen sound.',
@@ -125,6 +127,7 @@ export const helpContent = {
           'Without an output, the patch loads only in the app. Partial sends are reported in Messages; a successful MIDI send does not confirm the synth applied the sound.',
           'Selecting a card or using Preview plays its first MP3 without loading the sound into the synth. Left/Right moves through the name-sorted filtered cards and previews them, stopping at the ends.',
           'Loading with unsaved sound edits offers Cancel, Discard and load, Overwrite and load when a saved patch is active, or Save as and load.',
+          'Settings can skip this warning for patch loads. INIT and synth capture still protect unsaved changes.',
           'Overwriting changed controls on a patch with audio asks whether to keep or delete its audio. Deleting the loaded patch retains its name as an unsaved sound.',
         ),
       ]),
@@ -139,6 +142,7 @@ export const helpContent = {
       details('MP3 previews and recording', [
         list(
           'Each patch supports up to three MP3 attachments. Add MP3 imports existing files; select another track to preview it. If autoplay is blocked, use the track’s Play preview button.',
+          'Settings can hide audio tracks on cards; use the arrow to reveal them until you close them or reload the page.',
           'Drag tracks or use their move buttons to reorder them. Remove unwanted attachments or export them individually.',
           'Record first loads the patch and sends all its sound-control CC values. Recording is blocked if MIDI is unavailable or any value could not be sent.',
           'Connect the synth’s audio output to an audio interface: USB MIDI does not carry audio. Choose an audio input and grant microphone permission over HTTPS or localhost.',
@@ -148,8 +152,8 @@ export const helpContent = {
       details('Files, backups, and browser storage', [
         list(
           'A card’s Export downloads a ZIP containing that patch and its audio. Exporting an edited active patch offers the current sound, the saved sound, or cancellation.',
-          'Use the top Import / Export button to export or merge a Patch Library ZIP, or to make optional manual Google Drive backups.',
-          'Importing a single patch also recalls it unless replacement of unsaved browser-known sound edits is declined.',
+          'Use the top Import / Export button to export or merge a Patch Manager ZIP, or to make optional manual Google Drive backups.',
+          'Importing a single patch also recalls it unless replacement of unsaved browser-known sound edits is declined; the optional setting can skip that warning.',
           'Patches and audio live in this browser profile and website address. Clearing site data, browser storage eviction, or private browsing can remove them; keep exported or cloud backups.',
           'Browser-only preferences and MIDI Learn assignments are not included in patches or backups. Cloud backup is manual, not automatic synchronization.',
         ),

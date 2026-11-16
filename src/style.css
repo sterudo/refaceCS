@@ -621,6 +621,21 @@ input[type="range"]:focus-visible,
 .arp-readout-value { fill: #252a26; font-size: 12px; font-weight: 600; }
 .arp-readout-value.chord-major { fill: #24803b; }
 .arp-readout-value.chord-minor { fill: #2464ad; }
+#yamaha-link { color: #1e2221; }
+.dark-synth-case #yamaha-link { color: #c4ccce; }
+.dark-synth-case #cs-logo { stroke: #c4ccce; }
+.dark-synth-case .arp-button .device-label { fill: #c4ccce; }
+.dark-synth-case .arp-bezel { fill: #343b3d; stroke: #101415; }
+.dark-synth-case .arp-button:not([aria-pressed="true"]) .arp-lens {
+  fill: #4a5355;
+  stroke: #737e80;
+}
+.dark-synth-case .arp-button:not([aria-pressed="true"]) > text { fill: #eef1ef; }
+.dark-synth-case #patch-save-display path { stroke: #eef1ef; }
+.dark-synth-case .arp-readout-label { fill: #aab4b7; }
+.dark-synth-case .arp-readout-value { fill: #eef1ef; }
+.dark-synth-case .arp-readout-value.chord-major { fill: #8ed89c; }
+.dark-synth-case .arp-readout-value.chord-minor { fill: #91c2f4; }
 .arp-menu-background { fill: #303633; stroke: #899187; stroke-width: 1; }
 .arp-menu-item { cursor: pointer; }
 .arp-menu-item rect { fill: transparent; }
@@ -1035,6 +1050,8 @@ input[type="range"]:focus-visible,
   stroke: none;
 }
 
+.patch-audio-toggle[aria-expanded="true"] .patch-icon { transform: rotate(180deg); }
+
 .patch-card .patch-favorite {
   background: transparent;
   border-color: transparent;
@@ -1326,6 +1343,24 @@ dialog { box-sizing: border-box; max-height: 90vh; overflow-y: auto; }
 .device-settings details { margin: 1rem 0; }
 .device-settings summary { cursor: pointer; }
 .device-settings a { color: #8bdce8; }
+
+.app-settings { width: min(58rem, calc(100vw - 2rem)); max-height: 90vh; }
+.app-settings fieldset { margin: 0.8rem 0; padding: 0.7rem 0.9rem; border: 1px solid #526873; border-radius: 0.4rem; }
+.app-settings legend { padding: 0 0.35rem; font-weight: 650; }
+.app-settings h3 { margin: 0.6rem 0 0.35rem; font-size: 0.95rem; }
+.app-settings label { display: flex; align-items: center; gap: 0.5rem; margin: 0.45rem 0; }
+.app-settings label[hidden] { display: none; }
+.app-settings label > select { min-width: 0; max-width: 100%; }
+.app-settings label > input[type="checkbox"] { width: auto; min-width: 0; flex: none; margin: 0; padding: 0; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 0 1rem; }
+.settings-tempo-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; }
+.app-settings #settings-tempo-value { width: 100px; max-width: 100px; min-width: 0; }
+#settings-section-order { margin: 0.25rem 0 0.75rem; padding: 0; list-style: none; }
+#settings-section-order li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.2rem 0; }
+#settings-section-order select { min-width: 0; }
+.settings-order-controls { display: flex; gap: 0.35rem; }
+.settings-order-controls button { min-width: 2rem; }
+.device-switch[data-mode="keys"] .arp-lens { fill: url(#arp-button-lit); stroke: #e6a438; filter: drop-shadow(0 0 3px #ffc253); }
 
 .cloud-setup {
   margin-bottom: 0.75rem;

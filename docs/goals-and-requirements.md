@@ -6,7 +6,7 @@ Build a local browser app for the Yamaha reface CS. The first release is a live 
 
 These are decisions made during requirements refinement:
 
-- The MVP centers on live visual control and a local patch library, not the sequencer.
+- The MVP centers on live visual control and a local Patch Manager, not the sequencer.
 - The app sends MIDI control changes to the reface CS as controls are changed.
 - The UI mirrors physical control changes when the synth sends MIDI feedback.
 - App-side patches save the current visible sound-control values; the reface CS itself does not store or recall patches.
@@ -23,7 +23,7 @@ These are decisions made during requirements refinement:
 - A compact patch display to the left of the CS logo shows the loaded name and a colored unsaved indicator. Long names pause for five seconds before scrolling, with the full name in a tooltip. Previous/next buttons load patches in filtered name order without wrapping; if the active patch is outside the filter, navigate from the corresponding end.
 - A new-patch button beside the display protects unsaved changes, then resets only patch sound controls to their initial values and shows INIT. Both display and library save buttons offer overwrite or Save as when a saved patch is active; INIT opens the new-patch editor with no previous patch to overwrite, though an existing name can be explicitly replaced.
 - Protect unsaved browser-known sound controls when loading or reloading a patch: offer cancel, discard, overwrite the saved active patch, or save as before loading. Without a saved active patch, omit overwrite. Save as prepopulates metadata but does not copy audio; when changed controls overwrite a patch with audio, offer keep or delete. Deleting the active patch keeps its name as an unsaved sound; reloading the page does not automatically recall a patch. Unreported hardware changes cannot be tracked.
-- Patch records and MP3 blobs use IndexedDB. The top Import / Export dialog handles versioned Patch Library ZIP backups containing metadata and audio; imports merge into the library, skip identical items, and offer overwrite, ignore, or a separately named copy for differing matches.
+- Patch records and MP3 blobs use IndexedDB. The top Import / Export dialog handles versioned Patch Manager ZIP backups containing metadata and audio; imports merge into the library, skip identical items, and offer overwrite, ignore, or a separately named copy for differing matches.
 - Manual Google Drive backups use a user-provided OAuth web client ID and a visible folder. Named snapshots keep audio in separate files, verify it on restore, and support merge or replace with a recovery snapshot first. Browser preferences and access tokens are not exported. Automatic cross-device sync and deletion propagation are not implemented.
 - A dismissible information box above the synth explains browser storage, data-loss risks, file import/export, and manual Drive backups. A question-mark button beside Import / Export reopens it; its visibility is a browser-only preference.
 - The app runs locally in a browser. Chrome or Edge is an acceptable first-release browser target.
@@ -97,7 +97,7 @@ The chord readout analyzes currently held on-screen notes and both selected MIDI
 
 ### Groove studio and MIDI shutdown
 
-A collapsible Groove studio between the synth and patch library provides an 808-inspired, sample-free Web Audio drum machine. New patterns have kick, snare, closed hi-hat, and open hi-hat lanes; additional voices include three toms, shaker, clap, crash and ride. Each pattern has 1–16 bars in a horizontally scrolling grid, with 16 sixteenth-note steps per bar in 4/4 or 12 in 3/4. Shortened bars and hidden 3/4 steps are preserved. Lanes provide solo/mute, five velocity levels, per-lane options, and Level, Tune, Decay and Tone. Reusable instrument-specific tone variations support save, load, preview, name filtering, favorites, sorting and individual JSON import/export. Protect modified tones before loading; patterns retain independent tone snapshots. Patterns and tone variations persist in browser storage and are included in Groove Studio backups, while older backups remain importable. Pure MIDI export includes active bars and all lanes on channel 10, but omits tone settings, mute/solo and hidden steps.
+A collapsible Groove studio between the synth and Patch Manager provides an 808-inspired, sample-free Web Audio drum machine. New patterns have kick, snare, closed hi-hat, and open hi-hat lanes; additional voices include three toms, shaker, clap, crash and ride. Each pattern has 1–16 bars in a horizontally scrolling grid, with 16 sixteenth-note steps per bar in 4/4 or 12 in 3/4. Shortened bars and hidden 3/4 steps are preserved. Lanes provide solo/mute, five velocity levels, per-lane options, and Level, Tune, Decay and Tone. Reusable instrument-specific tone variations support save, load, preview, name filtering, favorites, sorting and individual JSON import/export. Protect modified tones before loading; patterns retain independent tone snapshots. Patterns and tone variations persist in browser storage and are included in Groove Studio backups, while older backups remain importable. Pure MIDI export includes active bars and all lanes on channel 10, but omits tone settings, mute/solo and hidden steps.
 
 Each bar can copy or immediately clear the visible steps of soloed lanes, or all lanes when none are soloed. Paste immediately overwrites only copied instrument lanes in the target bar, adds missing lanes with default tone settings, and leaves steps outside the visible range of either meter unchanged. The in-page clipboard is not persisted.
 
@@ -202,7 +202,7 @@ Reset preserves normal/2x travel, releases active interactions, and refreshes th
 
 The user approved a visual-only **Focus Mode** toggle, off on page load:
 
-- Fade the entire Looper section (including Tempo, labels, and demo LEDs) to 20% opacity while retaining interaction.
+- Keep the Looper section (including Tempo, labels, and LEDs) fully visible and interactive.
 - Give LFO, Portamento, OSC, Filter, EG, and Effect subtle, distinct pastel backgrounds. Leave Pitch Bend, Volume, and Octave styling unchanged.
 - Color the Cutoff handle red and Resonance handle blue.
 - Show live mid-gray numeric readouts below every fader's labels: raw local values 0-127, 0-4 for selectors, or signed semitones for Transpose. These are demo position values, not verified MIDI encodings.

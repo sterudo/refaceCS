@@ -19,6 +19,34 @@ async function mockMidi(page, ports) {
   await page.goto('/static/reface/');
 }
 
+test('connecting without a reface leaves dismissed Messages closed', async ({ page }) => {
+  await mockMidi(page, { inputs: [{ id: 'keyboard', name: 'Controller' }], outputs: [] });
+  await page.locator('#app-settings-open').click();
+  await page.getByLabel('Enable audio', { exact: true }).uncheck();
+  await page.locator('#settings-close').click();
+  await page.locator('#messages-close').click();
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#midi-connect')).toBeHidden();
+  await expect(page.locator('.message-entry[data-source="midi-status"]').last()).toHaveAttribute('data-severity', 'warning');
+  await expect(page.locator('#message-center')).toBeHidden();
+});
+
+test('MIDI connection errors reopen dismissed Messages', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'requestMIDIAccess', {
+      value: async () => { throw new Error('Permission denied'); },
+    });
+  });
+  await page.goto('/static/reface/');
+  await page.locator('#app-settings-open').click();
+  await page.getByLabel('Enable audio', { exact: true }).uncheck();
+  await page.locator('#settings-close').click();
+  await page.locator('#messages-close').click();
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('#message-center')).toBeVisible();
+  await expect(page.locator('.message-entry[data-source="midi-status"]').last()).toContainText('Permission denied');
+});
+
 test('discovers reface ports, supports a separate controller and follows hot-plug', async ({ page }) => {
   await mockMidi(page, {
     inputs: [{ id: 'ri', name: 'Yamaha reface CS' }, { id: 'keyboard', name: 'Controller' }],

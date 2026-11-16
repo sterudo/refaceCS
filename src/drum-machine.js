@@ -92,10 +92,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   let calibrationRevision = 0;
   let startOnKeypress = getPreference('grooveStartOnKeypress', (value) => typeof value === 'boolean', false);
   element('start-on-keypress').checked = startOnKeypress;
-  element('start-on-keypress').addEventListener('change', () => {
-    startOnKeypress = element('start-on-keypress').checked;
+  function setStartOnKeypress(value) {
+    startOnKeypress = Boolean(value);
+    element('start-on-keypress').checked = startOnKeypress;
     setPreference('grooveStartOnKeypress', startOnKeypress);
-  });
+  }
+  element('start-on-keypress').addEventListener('change', () => setStartOnKeypress(element('start-on-keypress').checked));
   let store = {
     version: 1,
     patterns: [{ id: crypto.randomUUID(), name: 'Pattern 1', lanes: initialLanes() }],
@@ -734,7 +736,12 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
   element('routing').addEventListener('change', updateToneVisibility);
   playButton.addEventListener('click', () => { void start(); });
   element('stop').addEventListener('click', stopTogether);
-  element('linked').addEventListener('change', () => { store.linked = element('linked').checked; persist(); });
+  function setLinked(value) {
+    store.linked = Boolean(value);
+    element('linked').checked = store.linked;
+    persist();
+  }
+  element('linked').addEventListener('change', () => setLinked(element('linked').checked));
   function changeTempo() {
     const value = Number(element('tempo').value);
     if (!Number.isInteger(value) || value < 40 || value > 240) {
@@ -1026,6 +1033,10 @@ export function createDrumMachine(clock, { onTempo, onStartLooper, onStopLooper,
 
   return {
     enableAudio,
+    isLinked: () => store.linked,
+    setLinked,
+    isStartOnKeypress: () => startOnKeypress,
+    setStartOnKeypress,
     listTones: tones.list,
     importTones: tones.importTones,
     replaceTones: tones.replace,

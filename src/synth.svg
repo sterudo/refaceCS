@@ -8,13 +8,25 @@
     .scale-label { font-size: 7px; fill: #dedfdc; }
     .selection-led { fill: var(--led-off, #3b2020); stroke: #141414; stroke-width: 0.8; }
     .selection-led.is-on { fill: var(--led-color, #ff5b50); filter: drop-shadow(0 0 2px var(--led-color, #ef6351)); }
-    .focus-section, #looper-panel-wash, #fader-values { display: none; pointer-events: none; }
-    .focus-mode .focus-section, .focus-mode #looper-panel-wash, .focus-mode #fader-values { display: inline; }
+    .focus-section, #fader-values { display: none; pointer-events: none; }
+    .focus-mode .focus-section, .focus-mode #fader-values { display: inline; }
     .focus-section { opacity: 0.18; }
-    .focus-mode .focus-looper { opacity: 0.2; }
     .focus-mode #filter-cutoff { --cap-fill: url(#cutoff-cap-fill); }
     .focus-mode #filter-resonance { --cap-fill: url(#resonance-cap-fill); }
     #fader-values { font-size: 11px; fill: #808080; text-anchor: middle; font-variant-numeric: tabular-nums; }
+    .dark-synth-case #body { fill: #252a2c; stroke: none; }
+    .dark-synth-case #body-edge { display: none; }
+    .dark-synth-case #body-highlight { opacity: 0.08; }
+    .dark-synth-case #body-vents { stroke: #596164; }
+    .dark-synth-case #control-strip { stroke: #000; }
+    .dark-synth-case .section-label,
+    .dark-synth-case .control-label,
+    .dark-synth-case .device-label { fill: #c4ccce; }
+    .dark-synth-case #fader-values { fill: #aab4b7; }
+    .dark-synth-keys #white-fill stop { stop-color: #111719; }
+    .dark-synth-keys #white-key .key-surface { stroke: #596164; }
+    .dark-synth-keys #black-fill stop { stop-color: #343c40; }
+    .dark-synth-keys #black-key .key-surface { stroke: #5a6468; }
     .speakers-hidden .speaker { display: none; }
     .extra-key { display: none; }
     .five-octaves .extra-key { display: inline; }
@@ -121,6 +133,15 @@
   <path id="body-highlight" d="M36 28H1724L1734 44H26Z" fill="#fff" opacity="0.6"/>
   <path id="body-vents" d="M81 35H182 M201 35H264 M280 35H316" stroke="#d9dcda" stroke-width="3" stroke-linecap="round"/>
   <g id="device-panel" transform="translate(0 -12)">
+    <g id="dark-synth-mode" class="arp-button device-switch" role="button" tabindex="0"
+      aria-haspopup="menu" aria-expanded="false" aria-pressed="false" aria-label="Dark synth mode: Off"
+      transform="translate(955 43)">
+      <title>Dark synth mode: Off. Click to cycle; right-click for options.</title>
+      <rect x="0" y="4" width="125" height="25" fill="transparent"/>
+      <text class="device-label" x="0" y="20">DARK SYNTH</text>
+      <rect class="arp-bezel" x="83" y="4" width="25" height="25" rx="4"/>
+      <rect class="arp-lens" x="84" y="5" width="23" height="23" rx="3"/>
+    </g>
     <g id="device-midi-transmit" class="device-channel" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" transform="translate(1090 43)">
       <title>Transmit channel: click to increment, right-click for channels</title>
       <rect x="0" y="4" width="120" height="25" fill="transparent"/><text class="device-label" x="0" y="20">TRANSMIT CH</text><rect x="65" y="4" width="46" height="25" rx="3" fill="#252222"/><g class="device-digits" transform="translate(69 7)"/><text class="device-assumption" x="114" y="22">?</text>
@@ -140,7 +161,6 @@
   <rect class="speaker" x="79" y="104" width="100" height="92" rx="4" fill="url(#speaker-holes)"/>
   <rect class="speaker" x="1604" y="104" width="80" height="92" rx="4" fill="url(#speaker-holes)"/>
   <g aria-hidden="true">
-    <rect id="looper-panel-wash" x="436" y="97" width="150" height="106" fill="#f0f0ee" opacity="0.8"/>
     <rect id="focus-lfo" class="focus-section" x="590" y="70" width="168" height="178" rx="5" fill="#9ad7c1"/>
     <rect class="focus-section" x="760" y="70" width="75" height="178" rx="5" fill="#ead696"/>
     <rect class="focus-section" x="837" y="70" width="183" height="178" rx="5" fill="#bba7e8"/>
@@ -372,11 +392,11 @@
                id="g8"
                style="fill:black;fill-opacity:1">
               <path
-                 style="fill:black;fill-opacity:1"
+                 style="fill:currentColor;fill-opacity:1"
                  d="M 30.71,0 C 13.75,0 0,13.749 0,30.712 0,47.672 13.75,61.424 30.71,61.424 47.671,61.424 61.422,47.672 61.422,30.712 61.422,13.749 47.672,0 30.71,0 Z m 0,57.957 C 15.663,57.957 3.463,45.758 3.463,30.712 3.463,15.663 15.662,3.465 30.71,3.465 c 15.048,0 27.247,12.198 27.247,27.247 0,15.046 -12.199,27.245 -27.247,27.245 z"
                  id="path4" />
               <path
-                 style="fill:black;fill-opacity:1"
+                 style="fill:currentColor;fill-opacity:1"
                  d="m 53.032,43.08 -4.459,-5.207 c -0.055,-0.063 -0.12,-0.117 -0.195,-0.161 -0.228,-0.13 -0.496,-0.133 -0.717,-0.026 v 0 c -0.681,0.322 -1.504,0.316 -2.206,-0.089 -0.625,-0.358 -1.023,-0.962 -1.147,-1.618 h 10e-4 C 43.995,34.308 42.983,32.78 41.396,31.865 l -1.997,-1.152 11.353,-6.554 -1.405,-2.435 -12.758,7.365 -1.533,-0.884 v -1.771 l 12.757,-7.366 -1.405,-2.434 -11.352,6.555 v -2.305 c 0,-1.833 -0.818,-3.474 -2.107,-4.58 v 0 c -0.507,-0.434 -0.829,-1.08 -0.829,-1.801 0,-0.811 0.406,-1.529 1.027,-1.957 0.203,-0.138 0.334,-0.372 0.334,-0.635 0,-0.087 -0.014,-0.171 -0.04,-0.249 L 31.162,5.198 c -0.063,-0.189 -0.241,-0.324 -0.45,-0.324 -0.208,0 -0.386,0.135 -0.449,0.324 l -2.278,6.464 c -0.027,0.078 -0.041,0.162 -0.041,0.249 0,0.263 0.132,0.497 0.333,0.635 h 10e-4 c 0.62,0.428 1.027,1.146 1.027,1.957 0,0.721 -0.321,1.367 -0.83,1.801 -1.29,1.106 -2.106,2.748 -2.106,4.58 v 2.305 l -11.353,-6.555 -1.405,2.434 12.758,7.366 v 1.772 l -1.533,0.883 -12.758,-7.365 -1.404,2.435 11.353,6.554 -1.998,1.152 c -1.587,0.915 -2.599,2.443 -2.912,4.114 v 0 c -0.124,0.656 -0.521,1.26 -1.146,1.618 -0.703,0.405 -1.525,0.411 -2.207,0.089 v 0 c -0.222,-0.106 -0.489,-0.104 -0.716,0.026 -0.076,0.044 -0.142,0.099 -0.195,0.161 l -4.46,5.205 c -0.131,0.149 -0.159,0.369 -0.055,0.553 0.104,0.179 0.31,0.266 0.504,0.229 l 6.738,-1.262 c 0.081,-0.016 0.162,-0.045 0.236,-0.088 0.229,-0.133 0.363,-0.362 0.383,-0.608 0.061,-0.75 0.479,-1.462 1.181,-1.867 0.623,-0.358 1.344,-0.404 1.975,-0.183 1.603,0.564 3.432,0.451 5.019,-0.467 l 1.997,-1.15 v 13.108 h 2.81 V 36.611 l 1.534,-0.885 1.533,0.885 v 14.731 h 2.811 V 38.234 l 1.996,1.15 c 1.587,0.918 3.417,1.031 5.02,0.467 0.629,-0.222 1.351,-0.176 1.975,0.183 0.702,0.405 1.119,1.117 1.18,1.867 0.019,0.246 0.154,0.476 0.381,0.608 0.075,0.043 0.156,0.072 0.237,0.088 l 6.737,1.262 c 0.195,0.037 0.4,-0.05 0.505,-0.229 0.101,-0.183 0.072,-0.402 -0.058,-0.55 z m -26.664,-8.09 -3.747,2.162 c -0.734,0.424 -1.671,0.172 -2.094,-0.561 -0.423,-0.735 -0.172,-1.672 0.562,-2.096 l 3.747,-2.163 1.533,0.886 v 1.772 z m 2.81,-14.504 c 0,-0.848 0.686,-1.535 1.533,-1.535 0.847,0 1.534,0.687 1.534,1.535 v 4.325 l -1.533,0.884 -1.534,-0.884 z m 3.297,11.244 -1.763,1.017 -1.765,-1.018 v -2.037 l 1.765,-1.019 1.763,1.019 z m 8.421,4.862 c -0.424,0.732 -1.363,0.984 -2.096,0.561 l -3.746,-2.164 v -1.77 l 1.533,-0.886 3.746,2.163 c 0.734,0.424 0.985,1.36 0.563,2.096 z"
                  id="path6" />
             </g>            
@@ -385,7 +405,7 @@
       </g>
     </switch>
   </g>
-    <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="#1e2221" style="transform: scaleX(0.7) translateX(144px);">YAMAHA</text>
+    <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="currentColor" style="transform: scaleX(0.7) translateX(144px);">YAMAHA</text>
     </a>
     <text id="arp-label" class="section-label" data-help-target="arpeggiator" x="355" y="264">ARPEGGIATOR</text>
     <g id="arp-controls" aria-label="Arpeggiator controls" transform="translate(110 0)">
@@ -498,5 +518,6 @@
     <rect class="end-hit-area" x="1602" y="27" width="133" height="568" rx="4" fill="transparent"/>
     <path class="end-arrow" d="M-4 -7L4 0L-4 7" transform="translate(1668.5 448)" fill="none" stroke="#777d79" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
   </g>
+  <g id="app-menu-layer"/>
   <g id="device-menu-layer"/>
 </svg>

@@ -22,6 +22,15 @@ export function getPreference(name, valid, fallback) {
 
 export function setPreference(name, value) {
   preferences[name] = value;
+  savePreferences();
+}
+
+export function setPreferences(values) {
+  Object.assign(preferences, values);
+  savePreferences();
+}
+
+function savePreferences() {
   try {
     localStorage.setItem(key, JSON.stringify(preferences));
   } catch (error) {

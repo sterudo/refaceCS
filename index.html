@@ -9,7 +9,7 @@
     <main>
       <header class="toolbar">
         <div class="toolbar-brand">
-          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-16">v0.8</button>
+          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-16">v0.10</button>
             <button id="help-open" type="button" data-help-target="about">Help</button>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
@@ -20,6 +20,7 @@
           <div class="midi-actions">
            <span id="midi-badge" class="badge" role="status">MIDI not connected</span> 
           <button id="midi-connect" type="button" class="notconnectedmidi">Connect MIDI</button>
+           <button id="app-settings-open" type="button">Settings</button>
           <button id="device-settings-open" type="button">Device settings</button>
            <button id="midi-reset" type="button">MIDI Reset</button>
            <button id="backup-open" type="button">Import / Export</button>
@@ -79,6 +80,109 @@
           <button id="device-settings-apply" type="button">Apply changes</button>
           <button id="device-settings-close" type="button">Close</button>
         </div>
+      </dialog>
+
+      <dialog id="app-settings" class="patch-editor app-settings" aria-labelledby="app-settings-title">
+        <h2 id="app-settings-title">Settings</h2>
+        <p>These preferences are saved in this browser. Startup options also apply to the current view when changed.</p>
+        <fieldset>
+          <legend>Appearance and layout</legend>
+          <label>Synth dark mode
+            <select id="settings-dark-synth" data-setting="darkSynthMode">
+              <option value="off">Off</option>
+              <option value="case">Dark case only</option>
+              <option value="keys">Dark case and keys</option>
+            </select>
+          </label>
+          <h3>Section order and startup state</h3>
+          <ol id="settings-section-order" aria-label="Section order"></ol>
+          <h3>Other elements on startup</h3>
+          <div class="settings-grid">
+            <label>Messages <select data-startup-view="messagesVisible" data-setting="startupMessages">
+              <option value="last">Last state</option><option value="hide">Hide</option><option value="show">Show</option>
+            </select></label>
+            <label>Displays <select data-startup-view="hideDisplays" data-setting="startupDisplays">
+              <option value="last">Last state</option><option value="hide">Hide</option><option value="show">Show</option>
+            </select></label>
+            <label>Speakers <select data-startup-view="hideSpeakers" data-setting="startupSpeakers">
+              <option value="last">Last state</option><option value="hide">Hide</option><option value="show">Show</option>
+            </select></label>
+            <label>5 Octaves <select data-startup-view="fiveOctaves" data-setting="startupFiveOctaves">
+              <option value="last">Last state</option><option value="hide">Hide</option><option value="show">Show</option>
+            </select></label>
+            <label>Focus mode <select data-startup-view="focusMode" data-setting="startupFocusMode">
+              <option value="last">Last state</option><option value="hide">Hide</option><option value="show">Show</option>
+            </select></label>
+            <label>2x faders <select data-startup-view="faderTravel" data-setting="startupFaderTravel">
+              <option value="last">Last state</option><option value="hide">Normal</option><option value="show">2x</option>
+            </select></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Patch Manager</legend>
+          <label><input data-setting="ignoreUnsavedSynthOnLoad" type="checkbox"> Ignore unsaved Synth state when loading patch</label>
+          <label><input data-setting="hidePatchAudio" type="checkbox"> Hide audio samples on patches</label>
+        </fieldset>
+        <fieldset>
+          <legend>After MIDI connects</legend>
+          <label><input id="settings-enable-audio" data-setting="midiEnableAudio" type="checkbox"> Enable audio</label>
+          <label>Action
+            <select id="settings-midi-action" data-setting="midiConnectAction">
+              <option value="capture">Capture Synth</option>
+              <option value="init">INIT (reset faders)</option>
+              <option value="last-patch">Load last selected patch</option>
+              <option value="specific-patch">Load specific patch</option>
+            </select>
+          </label>
+          <label id="settings-specific-patch-row" hidden>Patch
+            <select id="settings-specific-patch" data-setting="midiSpecificPatchId">
+              <option value="">Select a saved patch</option>
+            </select>
+          </label>
+          <label><input id="settings-pitch-range" data-setting="midiOverridePitchRange" type="checkbox"> Override pitch bend range to 2 semitones</label>
+          <label><input id="settings-capture-warning" data-setting="midiCaptureWarning" type="checkbox"> Warn if the captured sound may be inaudible</label>
+        </fieldset>
+        <fieldset>
+          <legend>Groove Studio startup</legend>
+          <div class="settings-grid">
+            <label>Start and stop with looper
+              <select data-setting="grooveLinkedStartup">
+                <option value="last">Last state</option><option value="off">Off</option><option value="on">On</option>
+              </select>
+            </label>
+            <label>Start on keypress
+              <select data-setting="grooveStartOnKeypressStartup">
+                <option value="last">Last state</option><option value="off">Off</option><option value="on">On</option>
+              </select>
+            </label>
+            <div class="settings-tempo-row">
+              <label>Default tempo
+                <select id="settings-tempo-mode" data-setting="grooveTempoMode">
+                  <option value="last">Last state</option><option value="default">120 BPM</option><option value="specific">Specific</option>
+                </select>
+              </label>
+              <label id="settings-tempo-value-row" hidden>Specific tempo (40–240 BPM)
+                <input id="settings-tempo-value" data-setting="grooveTempoValue" type="number" min="40" max="240" step="1" value="120">
+              </label>
+            </div>
+            <label>Default time signature
+              <select data-setting="grooveMeterMode">
+                <option value="last">Last state</option><option value="3">3/4</option><option value="4">4/4</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+        <p id="app-settings-status" role="status" aria-live="polite"></p>
+        <div class="patch-editor-actions">
+          <button id="settings-reset" type="button">Reset settings to defaults</button>
+          <button id="settings-close" type="button">Close</button>
+        </div>
+      </dialog>
+
+      <dialog id="capture-warning" class="patch-editor" aria-labelledby="capture-warning-title">
+        <h2 id="capture-warning-title">The captured sound may be inaudible</h2>
+        <p id="capture-warning-message"></p>
+        <div class="patch-editor-actions"><button id="capture-warning-close" type="button">Close</button></div>
       </dialog>
 
       <section id="data-info" class="data-info" aria-labelledby="data-info-title">
@@ -171,7 +275,7 @@
           <option value="all">Everything</option>
           <option value="loops">Looper</option>
           <option value="patterns">Groove Studio</option>
-          <option value="patches">Patch Library</option>
+          <option value="patches">Patch Manager</option>
         </select></label>
         <p>Browser preferences are not included. Imports merge and ask before replacing saved items.</p>
         <input id="backup-file" type="file" accept=".zip,application/zip" hidden>
@@ -214,7 +318,8 @@
         </div>
       </dialog>
          
-      <details id="groove-panel" class="groove-panel">
+      <div id="settings-sections">
+      <details id="groove-panel" class="groove-panel" data-settings-section data-settings-label="Groove Studio">
         <summary>Groove studio <span>808-inspired drum machine</span><button id="groove-help-open" type="button" data-help-target="groove" title="Open Groove Studio help">Help</button></summary>
         <div class="groove-content">
           <div class="groove-toolbar">
@@ -267,9 +372,9 @@
             positive sends it later. Internal + MIDI also applies this offset to external drums. Use headphones or wired audio for tighter timing. Web Audio does not provide direct ASIO access.</p>
         </div>
       </details>
-<details  id="footer-panel" class="groove-panel">
-          <summary>Patch library  <button id="patch-save" type="button" style="margin-left:16px">Save current sound</button><button id="patch-help-open" type="button" data-help-target="patches" title="Open Patch Library help">Help</button></summary>
-      <section id="patch-library" class="patch-library" aria-labelledby="patch-library-title" style="padding:16px;margin-top:0px;">
+<details  id="footer-panel" class="groove-panel" data-settings-section data-settings-label="Patch Manager">
+          <summary>Patch Manager  <button id="patch-save" type="button" style="margin-left:16px">Save current sound</button><button id="patch-help-open" type="button" data-help-target="patches" title="Open Patch Manager help">Help</button></summary>
+      <section id="patch-library" class="patch-library" aria-label="Patch Manager" style="padding:16px;margin-top:0px;">
           <div class="patch-filters" aria-label="Filter patches">
           <label class="patch-favorite-filter"><input id="patch-favorites-only" type="checkbox"> Favorites</label>
           <input id="patch-name-filter" type="search" placeholder="Search patch names" aria-label="Search patch names">
@@ -286,6 +391,7 @@
         <div id="patch-cards" class="patch-cards"></div>
       </section>
       </details>
+      </div>
       <input id="looper-file" type="file" accept=".mid,.midi,.json,audio/midi,audio/x-midi,application/json" hidden>
       <input id="patch-audio-file" type="file" accept=".mp3,audio/mpeg" multiple hidden>
       <dialog id="drum-midi-settings" class="patch-editor drum-midi-dialog" aria-labelledby="drum-midi-title">

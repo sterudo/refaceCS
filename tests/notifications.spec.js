@@ -5,7 +5,7 @@ async function open(page) {
     Object.defineProperty(navigator, 'requestMIDIAccess', { value: undefined });
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch Manager ready.');
 }
 
 async function addMessages(page, count) {
@@ -45,7 +45,7 @@ test('appends feedback, filters categories without deleting history, glows and r
   await filters.getByRole('button', { name: 'All', exact: true }).click();
   await expect(rows.last()).toContainText('Focus Mode on');
   await page.reload();
-  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch Manager ready.');
   await expect(page.locator('.message-entry[data-source="midi-status"]')).toHaveCount(0);
   await expect(page.locator('#midi-status, #app-status, #midisettingslog')).toHaveCount(0);
 });
@@ -248,7 +248,7 @@ test('routes recorder errors to Messages and keeps elapsed recording time as a r
     };
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch library ready');
+  await expect(page.locator('.message-entry[data-source="patch-status"]').last()).toContainText('Patch Manager ready');
   await page.locator('#midi-connect').click();
   await expect(page.locator('.message-entry[data-source="capture-status"]').last()).toContainText('Automatic capture skipped');
   await page.locator('#patch-save').click();

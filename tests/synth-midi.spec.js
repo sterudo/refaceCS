@@ -74,6 +74,29 @@ test('automatically captures the connected synth without a capture button or wri
   await expect(page.locator('#midi-badge')).toHaveAttribute('title', /message log/);
 });
 
+test('successful synth connection does not reopen dismissed Messages', async ({ page }) => {
+  await page.reload();
+  await page.locator('#messages-close').click();
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last()).toContainText('Captured');
+  await expect(page.locator('#message-center')).toBeHidden();
+});
+
+test('runs the configured INIT action instead of capturing on connect', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('refaceCS.preferences.v1', JSON.stringify({
+    midiConnectAction: 'init',
+    midiOverridePitchRange: false,
+  })));
+  await page.reload();
+  await page.evaluate(() => { window.testSynth.values['48,0,9'] = [37]; });
+  await page.locator('#midi-connect').click();
+  await expect(page.locator('.message-entry[data-source="device-settings-status"] .message-text').last()).toContainText('Read complete');
+  await expect.poll(() => page.evaluate(() => window.testSynth.sent.some((message) => (message[0] & 0xf0) === 0xb0))).toBe(true);
+  await expect(page.locator('#filter-cutoff')).not.toHaveAttribute('aria-valuenow', '37');
+  await expect(page.locator('.message-entry[data-source="capture-status"] .message-text').last())
+    .toContainText('Waiting for the MIDI connection action');
+});
+
 test('asks before capture replaces unsaved edits and respects cancellation', async ({ page }) => {
   await page.reload();
   await page.locator('#filter-cutoff').press('End');

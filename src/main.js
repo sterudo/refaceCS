@@ -16,8 +16,9 @@ import { setupCloudBackup } from './cloud-ui.js';
 import { setupDeviceSettings } from './device-settings.js';
 import { choose } from './dialogs.js';
 import { setupHelp } from './help.js';
+import { getAppSetting, setupAppSettings } from './app-settings.js';
 
-setupNotifications();
+const notifications = setupNotifications();
 const reportAudio = createReporter('groove', 'audio-connect-status');
 const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
@@ -137,7 +138,9 @@ const midi = setupMidiDiscovery(() => {
   updateFader(looperFader, mode, false);
 }, {
   clock: grooveClock,
-  onConnect: () => { void drums.enableAudio(); },
+  onConnect: () => {
+    if (getAppSetting('midiEnableAudio')) void drums.enableAudio();
+  },
   onMidiAccess: (access) => drums.setMidiAccess(access),
   onControllerChanged: (port) => midiLearn.setController(port),
   onControllerCC: (port, data) => midiLearn.handleMessage(port, data),
@@ -154,7 +157,7 @@ const midi = setupMidiDiscovery(() => {
     deviceRevision++;
     pitchDirection = null;
     deviceSettings?.connectionChanged();
-    midi.setCaptureStatus(midi.hasDeviceConnection() ? 'Waiting to capture synth settings.' : '');
+    midi.setCaptureStatus(midi.hasDeviceConnection() ? 'Waiting for the MIDI connection action.' : '');
     queueMicrotask(() => { void syncDeviceConnection(); });
   },
 });
@@ -194,18 +197,63 @@ async function syncDeviceConnection() {
       const read = await deviceSettings.read();
       if (revision !== deviceRevision) continue;
       if (!read) {
-        midi.setCaptureStatus('Automatic capture skipped: device settings could not be read.', 'warning');
-        continue;
+        midi.setCaptureStatus('Could not read all device settings after connecting.', 'warning');
+      }
+      if (getAppSetting('midiOverridePitchRange')) {
+        await midi.whenSettingsIdle();
+        if (revision !== deviceRevision) continue;
+        let confirmed = false;
+        try {
+          await midi.applyDeviceSettings({ 'pitch-range': 2 }, (id, value, state) => {
+            if (id !== 'pitch-range' || revision !== deviceRevision) return;
+            if (state === 'sent') deviceSettings.pitchSent();
+            if (state === 'confirmed' && value !== null) {
+              observePitchRange(value);
+              deviceSettings.observePitch(value);
+              confirmed = true;
+            }
+          });
+          if (!confirmed && revision === deviceRevision) {
+            midi.setCaptureStatus('Pitch-bend range override was sent but could not be confirmed.', 'warning');
+          }
+        } catch (error) {
+          midi.setCaptureStatus(`Could not override pitch-bend range: ${error.message || error}.`, 'error');
+        }
       }
       await midi.whenSettingsIdle();
-      if (revision !== deviceRevision) continue;
-      const captured = await patchLibrary.captureWithProtection(() => {
-        if (revision === deviceRevision && midi.hasDeviceConnection()) return midi.captureSynth();
-      });
-      if (revision === deviceRevision && !captured) midi.setCaptureStatus('Automatic capture skipped; the current sound was kept.');
+      if (revision !== deviceRevision || !midi.hasDeviceConnection()) continue;
+      const action = getAppSetting('midiConnectAction');
+      if (action === 'capture') {
+        if (!read) {
+          midi.setCaptureStatus('Capture skipped because device settings could not be read.', 'warning');
+          continue;
+        }
+        const captured = await patchLibrary.captureWithProtection(() => {
+          if (revision === deviceRevision && midi.hasDeviceConnection()) return midi.captureSynth();
+        });
+        if (revision === deviceRevision && !captured) midi.setCaptureStatus('Capture skipped; the current sound was kept.');
+        else if (revision === deviceRevision) showCaptureWarning();
+      } else if (action === 'init') {
+        const initialized = await patchLibrary.initializePatch(() => revision === deviceRevision && midi.hasDeviceConnection());
+        if (!initialized && revision === deviceRevision) midi.setCaptureStatus('INIT could not be completed.', 'warning');
+      } else if (action === 'last-patch') {
+        const loaded = await patchLibrary.loadLastSelectedPatch(() => revision === deviceRevision && midi.hasDeviceConnection());
+        if (!loaded && revision === deviceRevision) midi.setCaptureStatus('The last selected patch could not be loaded.', 'warning');
+      } else if (action === 'specific-patch') {
+        const id = getAppSetting('midiSpecificPatchId');
+        const patches = await patchLibrary.list();
+        if (revision !== deviceRevision || !midi.hasDeviceConnection()) continue;
+        const patch = patches.find((item) => item.id === id);
+        if (!patch) {
+          midi.setCaptureStatus('The selected patch is unavailable. Choose a saved patch in Settings.', 'error');
+        } else {
+          const loaded = await patchLibrary.loadPatch(patch, () => revision === deviceRevision && midi.hasDeviceConnection());
+          if (!loaded && revision === deviceRevision) midi.setCaptureStatus('The selected patch could not be loaded.', 'warning');
+        }
+      }
     }
   } catch (error) {
-    midi.setCaptureStatus(`Automatic capture failed: ${error.message || error}.`, 'error');
+    midi.setCaptureStatus(`Automatic MIDI connection handling failed: ${error.message || error}.`, 'error');
   } finally {
     syncingDevice = false;
     if (processedDeviceRevision !== deviceRevision) queueMicrotask(() => { void syncDeviceConnection(); });
@@ -226,6 +274,32 @@ function valueText(fader) {
   if (fader === transposeFader) return `${signedValue(value)} semitones`;
   if (fader === tempoFader) return `${value} BPM`;
   return selections[fader.id]?.[value] ?? String(value);
+}
+
+function showCaptureWarning() {
+  if (!getAppSetting('midiCaptureWarning')) return;
+  const issues = [];
+  const cutoff = panel.querySelector('#filter-cutoff');
+  const expression = panel.querySelector('#expression');
+  const decay = panel.querySelector('#eg-decay');
+  const attack = panel.querySelector('#eg-attack');
+  if (readValue(cutoff) < 10) issues.push(`Filter Cutoff is ${readValue(cutoff)} (below 10)`);
+  if (readValue(expression) < 10) issues.push(`Expression is ${readValue(expression)} (below 10)`);
+  const decayMin = Number(decay.dataset.min ?? 0);
+  const decayMax = Number(decay.dataset.max);
+  if (readValue(decay) <= decayMin + (decayMax - decayMin) * 0.1) {
+    issues.push(`EG Decay is near its minimum (${readValue(decay)})`);
+  }
+  const attackMin = Number(attack.dataset.min ?? 0);
+  const attackMax = Number(attack.dataset.max);
+  if (readValue(attack) >= attackMax - (attackMax - attackMin) * 0.1) {
+    issues.push(`EG Attack is near its maximum (${readValue(attack)})`);
+  }
+  if (!issues.length) return;
+  document.querySelector('#capture-warning-message').textContent =
+    `${issues.join('; ')}. These settings may make the sound silent or difficult to hear. Check the synth faders.`;
+  const warning = document.querySelector('#capture-warning');
+  if (!warning.open) warning.showModal();
 }
 
 function signedValue(value) {
@@ -417,7 +491,6 @@ function layoutPanel() {
   panel.querySelectorAll('.focus-section').forEach((section) => {
     section.setAttribute('height', 178 + extra);
   });
-  panel.querySelector('#looper-panel-wash').setAttribute('height', 106 + extra);
 
   for (const fader of faders) {
     fader.querySelector('.track').setAttribute('transform', `scale(1 ${travel / baseTravel})`);
@@ -734,13 +807,41 @@ for (const button of octaveButtons) {
   });
 }
 
+function applyViewState(name, value, persist = true) {
+  if (name === 'messagesVisible') notifications.setVisible(value, false);
+  else if (name === 'focusMode') {
+    panel.classList.toggle('focus-mode', value);
+    displays.classList.toggle('focus-mode', value);
+    faders.forEach(updateFaderTooltip);
+    document.querySelector('#focus-mode').setAttribute('aria-pressed', String(value));
+  } else if (name === 'hideDisplays') {
+    displays.hidden = value;
+    document.querySelector('#hide-displays').setAttribute('aria-pressed', String(value));
+  } else if (name === 'hideSpeakers') {
+    releaseAll();
+    panel.classList.toggle('speakers-hidden', value);
+    document.querySelector('#hide-speakers').setAttribute('aria-pressed', String(value));
+    layoutPanel();
+  } else if (name === 'fiveOctaves') {
+    releaseAll();
+    panel.classList.toggle('five-octaves', value);
+    document.querySelector('#five-octaves').setAttribute('aria-pressed', String(value));
+    keyboardKeys.setAttribute('transform', `scale(${value ? 22 / 36 : 1} 1)`);
+    standardKeys.setAttribute('transform', `translate(${value ? 7 * 62 : 0} 0)`);
+    panel.querySelector('#panel-description').textContent =
+      `${value ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
+  } else if (name === 'faderTravel') {
+    releaseAll();
+    sizeButton.setAttribute('aria-pressed', String(value));
+    travel = baseTravel * (value ? 2 : 1);
+    layoutPanel();
+  }
+  if (persist) setPreference(name, value);
+}
+
 sizeButton.addEventListener('click', () => {
-  releaseAll();
   const doubled = sizeButton.getAttribute('aria-pressed') !== 'true';
-  sizeButton.setAttribute('aria-pressed', String(doubled));
-  travel = baseTravel * (doubled ? 2 : 1);
-  setPreference('faderTravel', doubled);
-  layoutPanel();
+  applyViewState('faderTravel', doubled);
   status(`${doubled ? 'Double' : 'Normal'} fader travel. Control values preserved.`);
 });
 
@@ -785,57 +886,39 @@ function toggleMute() {
 bindButton(muteButton, toggleMute);
 
 document.querySelector('#focus-mode').addEventListener('click', (event) => {
-  const enabled = panel.classList.toggle('focus-mode');
-  displays.classList.toggle('focus-mode', enabled);
-  faders.forEach(updateFaderTooltip);
-  event.currentTarget.setAttribute('aria-pressed', String(enabled));
-  setPreference('focusMode', enabled);
+  const enabled = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  applyViewState('focusMode', enabled);
   status(`Focus Mode ${enabled ? 'on' : 'off'}. Control values preserved.`);
 });
 
 document.querySelector('#hide-displays').addEventListener('click', (event) => {
-  displays.hidden = !displays.hidden;
-  event.currentTarget.setAttribute('aria-pressed', String(displays.hidden));
-  setPreference('hideDisplays', displays.hidden);
-  status(`Displays ${displays.hidden ? 'hidden' : 'shown'}. Control values preserved.`);
+  const hidden = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  applyViewState('hideDisplays', hidden);
+  status(`Displays ${hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
 
 document.querySelector('#hide-speakers').addEventListener('click', (event) => {
-  releaseAll();
-  const hidden = panel.classList.toggle('speakers-hidden');
-  event.currentTarget.setAttribute('aria-pressed', String(hidden));
-  setPreference('hideSpeakers', hidden);
-  layoutPanel();
+  const hidden = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  applyViewState('hideSpeakers', hidden);
   status(`Speakers ${hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
 
 document.querySelector('#five-octaves').addEventListener('click', (event) => {
-  releaseAll();
-  const expanded = panel.classList.toggle('five-octaves');
-  event.currentTarget.setAttribute('aria-pressed', String(expanded));
-  setPreference('fiveOctaves', expanded);
-  keyboardKeys.setAttribute('transform', `scale(${expanded ? 22 / 36 : 1} 1)`);
-  standardKeys.setAttribute('transform', `translate(${expanded ? 7 * 62 : 0} 0)`);
-  panel.querySelector('#panel-description').textContent =
-    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
+  const expanded = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  applyViewState('fiveOctaves', expanded);
   status(`${expanded ? 'Five' : 'Three'} octaves. Held keys released; control values preserved.`);
 });
 
 updatePitchRange(defaultPitchRange);
 updateKeyNotes();
 layoutPanel();
-for (const [name, id] of [
-  ['focusMode', 'focus-mode'], ['hideDisplays', 'hide-displays'],
-  ['hideSpeakers', 'hide-speakers'], ['fiveOctaves', 'five-octaves'], ['faderTravel', 'fader-size'],
-]) {
-  if (getPreference(name, (value) => typeof value === 'boolean', false)) document.querySelector(`#${id}`).click();
-}
 const positionExpression = document.querySelector('#position-expression');
 positionExpression.checked = getPreference('positionExpression', (value) => typeof value === 'boolean', false);
 positionExpression.addEventListener('change', () => setPreference('positionExpression', positionExpression.checked));
 patchLibrary = createPatchLibrary({
   root: document.querySelector('#patch-library'),
   panel,
+  getAppSetting,
   initialControls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => {
     const fader = panel.querySelector(`#${id}`);
     return [id, startingValues.get(fader)];
@@ -850,6 +933,18 @@ patchLibrary = createPatchLibrary({
     }
     return midi.sendPatchControls(controls);
   },
+});
+setupAppSettings({
+  panel,
+  sections: document.querySelector('#settings-sections'),
+  drums,
+  clock: grooveClock,
+  patchLibrary,
+  applyViewState,
+  applyTempo: (bpm) => updateFader(tempoFader, bpm, false),
+});
+document.querySelector('#capture-warning-close').addEventListener('click', () => {
+  document.querySelector('#capture-warning').close();
 });
 setupBackup({ patches: patchLibrary, drums, looper: midi });
 setupCloudBackup({ patches: patchLibrary, drums, looper: midi });

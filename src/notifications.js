@@ -1,3 +1,5 @@
+import { setPreference } from './preferences.js';
+
 const categories = {
   midi: 'MIDI', reface: 'reface', groove: 'Groove Studio', looper: 'Looper',
   arp: 'Arpeggiator', patches: 'Patches', backups: 'Backups', app: 'App',
@@ -58,12 +60,13 @@ export function setupNotifications() {
     log.scrollTop = log.scrollHeight;
   }
 
-  function setVisible(visible) {
+  function setVisible(visible, save = true) {
     if (!visible) savedScrollTop = log.scrollTop;
     center.hidden = slot.hidden = !visible;
     header.classList.toggle('messages-dismissed', !visible);
     open.hidden = visible;
     open.setAttribute('aria-expanded', String(visible));
+    if (save) setPreference('messagesVisible', visible);
     syncModalHost();
     if (visible) {
       measure();
@@ -215,4 +218,8 @@ export function setupNotifications() {
   modalObserver.observe(document.body, { subtree: true, childList: true,
     attributes: true, attributeFilter: ['open'] });
   pending.splice(0).forEach(append);
+  return {
+    setVisible,
+    isVisible: () => !center.hidden,
+  };
 }

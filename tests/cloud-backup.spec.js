@@ -69,7 +69,7 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
     throw new Error(`Unexpected Drive request: ${request.method()} ${url}`);
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#footer-panel').first().locator('summary').click();
   await page.locator('#patch-save').click();
   await page.locator('#patch-name').fill('Cloud pad');

@@ -950,9 +950,8 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   expect(await values()).toEqual(starting);
   await expect(page.locator('.focus-section:visible')).toHaveCount(6);
-  await expect(page.locator('#looper-panel-wash')).toHaveCSS('opacity', '0.8');
   for (const element of await page.locator('.focus-looper').all()) {
-    await expect(element).toHaveCSS('opacity', '0.2');
+    await expect(element).toHaveCSS('opacity', '1');
   }
   for (const id of ['pitch-bend', 'expression', 'octave']) {
     await expect(page.locator(`#${id}`)).toHaveCSS('opacity', '1');
@@ -1006,7 +1005,6 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
     await expect(page.locator('#fader-value-looper')).toHaveText('0');
     await expect(page.locator('#fader-size')).toHaveAttribute('aria-pressed', String(travel === 160));
     await expect(page.locator('.focus-section').first()).toHaveAttribute('height', String(travel + 98));
-    await expect(page.locator('#looper-panel-wash')).toHaveAttribute('height', String(travel + 26));
   }
 
   await page.locator('#osc-texture').focus();
@@ -1017,7 +1015,6 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#fader-values')).toBeHidden();
   await expect(page.locator('.focus-section:visible')).toHaveCount(0);
-  await expect(page.locator('#looper-panel-wash')).toBeHidden();
   await expect(page.locator('#looper')).toHaveCSS('opacity', '1');
   expect(await page.locator('#filter-cutoff').evaluate((fader) =>
     getComputedStyle(fader).getPropertyValue('--cap-fill'))).toBe('');

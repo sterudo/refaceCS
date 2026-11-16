@@ -8,6 +8,7 @@ import {
 import { createAudioRecorder } from './audio-recording.js';
 import { choose, confirmAction, exportDialog } from './dialogs.js';
 import { resolveImport } from './import-conflicts.js';
+import { getPreference, setPreference } from './preferences.js';
 
 const CONTROL_GROUPS = [
   ['LFO', ['lfo-assign', 'lfo-depth', 'lfo-speed']],
@@ -81,7 +82,7 @@ function makeTag(text) {
   return tag;
 }
 
-export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls }) {
+export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls, getAppSetting }) {
   const store = new PatchStore();
   const status = createReporter('patches', 'patch-status');
   const cards = root.querySelector('#patch-cards');
@@ -126,6 +127,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   let categories = [];
   const selectedCategories = new Set();
   const selectedTags = new Set();
+  const expandedAudio = new Set();
   let editingPatch = null;
   let editorCompletion = null;
   let editorSaved = false;
@@ -135,6 +137,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   let selectedPatchId = null;
   let activePreviewUrl = null;
   let activePreviewAttachment = null;
+  let ready = Promise.resolve();
   let draggingAudio = null;
   let savedControls = getControls();
   let activePatchId = null;
@@ -510,8 +513,31 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       addButton,
       recordButton,
     );
-    card.append(actions);
-    if (patch.audio.length) card.append(makeAudioList(patch));
+    if (patch.audio.length) {
+      const audioSection = makeAudioList(patch);
+      if (getAppSetting('hidePatchAudio')) {
+        audioSection.id = `patch-audio-${patch.id}`;
+        const toggle = iconButton('', 'down', 'patch-audio-toggle', () => {
+          if (expandedAudio.has(patch.id)) expandedAudio.delete(patch.id);
+          else expandedAudio.add(patch.id);
+          updateToggle();
+        });
+        toggle.setAttribute('aria-controls', audioSection.id);
+        function updateToggle() {
+          const expanded = expandedAudio.has(patch.id);
+          const label = `${expanded ? 'Hide' : 'Show'} audio for ${patch.name}`;
+          audioSection.hidden = !expanded;
+          toggle.setAttribute('aria-expanded', String(expanded));
+          toggle.setAttribute('aria-label', label);
+          toggle.title = label;
+        }
+        updateToggle();
+        actions.append(toggle);
+      }
+      card.append(actions, audioSection);
+    } else {
+      card.append(actions);
+    }
     return card;
   }
 
@@ -822,11 +848,12 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     }
   }
 
-  async function initializePatch() {
-    if (loadingPatch) return;
+  async function initializePatch(canContinue = () => true) {
+    if (loadingPatch) return false;
     loadingPatch = true;
     try {
-      if (!await preserveUnsavedControls('initialize')) return;
+      if (!await preserveUnsavedControls('initialize')) return false;
+      if (!canContinue()) return false;
       const result = await applyControls(initialControls);
       savedControls = { ...initialControls };
       activePatchId = null;
@@ -835,27 +862,33 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       updateDisplay();
       if (result.unavailable) {
         setStatus('INIT loaded in the app; MIDI output unavailable, so no values were sent to the synth.', 'error');
+        return false;
       } else if (result.failed || result.sent !== result.total) {
         setStatus(`INIT loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`, 'error');
+        return false;
       } else {
         setStatus(`INIT loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
+        return true;
       }
     } catch (error) {
       setStatus(`Could not initialize patch: ${error.message || error}`, 'error');
+      return false;
     } finally {
       loadingPatch = false;
     }
   }
 
-  async function loadPatch(patch) {
+  async function loadPatch(patch, canContinue = () => true) {
     if (loadingPatch) return false;
     loadingPatch = true;
     try {
-      if (!await preserveUnsavedControls('load')) return false;
+      if (!getAppSetting('ignoreUnsavedSynthOnLoad') && !await preserveUnsavedControls('load')) return false;
+      if (!canContinue()) return false;
       patch = patches.find((item) => item.id === patch.id) ?? patch;
       const result = await applyControls(patch.controls);
       savedControls = { ...patch.controls };
       activePatchId = patch.id;
+      setPreference('lastLoadedPatchId', patch.id);
       detachedPatch = null;
       initialized = false;
       updateDisplay();
@@ -1100,10 +1133,26 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   }
   window.addEventListener('pagehide', stopPreview);
 
-  reload().then(() => setStatus('Patch library ready.'))
-    .catch((error) => setStatus(`Patch library unavailable: ${error.message || error}`, 'error'));
+  ready = reload().then(() => setStatus('Patch Manager ready.'))
+    .catch((error) => setStatus(`Patch Manager unavailable: ${error.message || error}`, 'error'));
   return {
-    list: () => store.list(),
+    async list() {
+      await ready;
+      return store.list();
+    },
+    initializePatch,
+    loadPatch,
+    refreshAudioVisibility: render,
+    async loadLastSelectedPatch(canContinue = () => true) {
+      await ready;
+      const id = getPreference('lastLoadedPatchId', (value) => typeof value === 'string', '');
+      const patch = id ? patches.find((item) => item.id === id) : null;
+      if (!patch) {
+        setStatus(id ? 'The last selected patch is no longer available.' : 'No previously selected patch is available to load.', 'error');
+        return false;
+      }
+      return loadPatch(patch, canContinue);
+    },
     listCategories: () => store.listCategories(),
     async replaceAll(records, values) {
       await store.replaceAll(records, values);

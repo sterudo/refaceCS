@@ -30,7 +30,7 @@ test('saving information can be closed and reopened across reloads', async ({ pa
 
 test('exports and imports all sections without browser preferences or recalling a patch', async ({ page, browser }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#data-info-close').click();
   await page.locator('#focus-mode').click();
   await page.locator('#lfo-depth').press('Home');
@@ -73,7 +73,7 @@ test('exports and imports all sections without browser preferences or recalling 
   const context = await browser.newContext();
   const target = await context.newPage();
   await target.goto('http://localhost:5174/static/reface/');
-  await expect(target.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(target.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await target.locator('#backup-open').click();
   await target.locator('#backup-file').setInputFiles({ name: 'all.zip', mimeType: 'application/zip', buffer: bytes });
   await target.getByRole('dialog', { name: 'Import pattern' }).getByRole('button', { name: 'Overwrite' }).click();
@@ -127,7 +127,7 @@ test('global import accepts an existing patch ZIP', async ({ page }) => {
     controls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [id, 0])),
   }]);
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#backup-open').click();
   await page.locator('#backup-file').setInputFiles({
     name: 'legacy.zip', mimeType: 'application/zip', buffer: Buffer.from(await blob.arrayBuffer()),
@@ -139,7 +139,7 @@ test('global import accepts an existing patch ZIP', async ({ page }) => {
 
 test('identical imports are silent; different items offer ignore, create new and overwrite', async ({ page }) => {
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await page.locator('#footer-panel').first().locator('summary').click();
   await page.locator('#patch-save').click();
   await page.locator('#patch-name').fill('Pad');
@@ -200,7 +200,7 @@ test('patch equality ignores IDs and timestamps but compares attachment bytes', 
     ...patch, audio: [{ ...patch.audio[0], data: new Blob(['diff bytes']) }],
   });
   await page.goto('/static/reface/');
-  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch library ready.');
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   async function importFile(buffer) {
     await page.locator('#backup-open').click();
     await page.locator('#backup-file').setInputFiles({ name: 'patch.zip', mimeType: 'application/zip', buffer });

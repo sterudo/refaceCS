@@ -526,7 +526,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     }
     badge.dataset.state = connected ? 'connected' : 'disconnected';
     badge.textContent = connected ? 'reface MIDI ports available' : 'reface MIDI ports unavailable';
-    setStatus(`reface input ${inputAvailable ? 'available' : 'unavailable'}; output ${outputAvailable ? 'available' : 'unavailable'}; controller input ${controllerAvailable ? 'available' : 'unavailable'}. MIDI Control: ${midiControlStatus}; it must be enabled on the synth for panel CCs. Port names do not verify hardware identity.${lastError ? ` ${lastError}` : ''}`, lastError || !connected ? 'error' : 'normal');
+    setStatus(`reface input ${inputAvailable ? 'available' : 'unavailable'}; output ${outputAvailable ? 'available' : 'unavailable'}; controller input ${controllerAvailable ? 'available' : 'unavailable'}. MIDI Control: ${midiControlStatus}; it must be enabled on the synth for panel CCs. Port names do not verify hardware identity.${lastError ? ` ${lastError}` : ''}`, lastError ? 'error' : connected ? 'normal' : 'warning');
   }
 
   function bindSysexInput() {

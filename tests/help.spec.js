@@ -185,7 +185,7 @@ test('hover highlights the originating help target and clears on leave, close, a
   await expect(page.locator('#help-open')).toHaveClass(/help-target-active/);
 });
 
-test('About, Looper, Groove Studio, and Patch Library default to 900px width within the viewport', async ({ page }) => {
+test('About, Looper, Groove Studio, and Patch Manager default to 900px width within the viewport', async ({ page }) => {
   const dialog = page.locator('.help-window');
   for (const selector of ['#help-open', '[data-help-target="looper"]', '#groove-help-open', '#patch-help-open']) {
     await page.locator(selector).click();
@@ -212,7 +212,7 @@ test('top Help includes the playing tips instead of a separate bottom panel', as
 
 test('version opens dated history in newest-first order and supports keyboard reopening', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Open Version History help', exact: true });
-  await expect(trigger).toHaveText('v0.8');
+  await expect(trigger).toHaveText('v0.10');
   await expect(trigger).toHaveAttribute('title', /released 2026-11-16/);
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Version History', exact: true });
@@ -220,7 +220,7 @@ test('version opens dated history in newest-first order and supports keyboard re
   expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(false);
   expect((await dialog.boundingBox()).width).toBeCloseTo(900, 0);
   await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
-    'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
+    'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
     'v0.4 - 2026-11-15', 'v0.3 - 2026-11-15', 'v0.2 - 2026-11-15', 'v0.1 - 2026-11-12',
   ]);
   await expect(dialog).toContainText('Contextual help');
@@ -232,16 +232,16 @@ test('version opens dated history in newest-first order and supports keyboard re
   await expect(dialog).toBeVisible();
 });
 
-test('Patch Library help has collapsed feature sections and does not toggle the library or save a patch', async ({ page }) => {
+test('Patch Manager help has collapsed feature sections and does not toggle the library or save a patch', async ({ page }) => {
   const panel = page.locator('#footer-panel');
-  const trigger = page.getByRole('button', { name: 'Open Patch Library help', exact: true });
-  const dialog = page.getByRole('dialog', { name: 'Patch Library', exact: true });
+  const trigger = page.getByRole('button', { name: 'Open Patch Manager help', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Patch Manager', exact: true });
   await expect(panel).not.toHaveAttribute('open', '');
   await trigger.click();
   await expect(dialog).toBeVisible();
   await expect(panel).not.toHaveAttribute('open', '');
   await expect(page.locator('#patch-editor')).not.toBeVisible();
-  await expect(dialog.getByText('The Patch Library saves and organizes sounds', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('The Patch Manager saves and organizes sounds', { exact: false })).toBeVisible();
   await expect(dialog.locator('details[open]')).toHaveCount(0);
   await dialog.getByText('Loading sounds and protecting unsaved changes', { exact: true }).click();
   await expect(dialog.getByText('Without an output, the patch loads only in the app.', { exact: false })).toBeVisible();
