@@ -64,6 +64,9 @@ const status = createReporter('app', 'app-status');
 const softSynth = createSoftSynth((message) => reportAudio(message, 'error'));
 const sizeButton = document.querySelector('#fader-size');
 const glissandoButton = document.querySelector('#glissando');
+const fullscreenButton = document.querySelector('#mobile-fullscreen');
+const hideTopRowButton = document.querySelector('#mobile-hide-top-row');
+const restoreTopRowButton = panel.querySelector('#mobile-top-row-restore');
 const faders = [...panel.querySelectorAll('.fader')];
 const readouts = new Map();
 const startingValues = new Map(faders.map((fader) => [fader, Number(fader.dataset.value)]));
@@ -93,6 +96,7 @@ const baseTravel = 80;
 const panelTopTrim = 27 * 0.75;
 const instrumentGap = 18;
 const mobileLandscapeQuery = window.matchMedia('(orientation: landscape) and (max-width: 900px)');
+const landscapeQuery = window.matchMedia('(orientation: landscape)');
 const mobilePanelScale = 0.8;
 const mobileFaderScale = 0.975;
 const mobileHousingEdge = 16.5;
@@ -106,6 +110,9 @@ const pressedKeys = new Set();
 const computerKeys = new Map();
 let travel = baseTravel;
 let mobileLandscape = mobileLandscapeQuery.matches;
+let mobileTopRowHidden = false;
+let mobileFullscreen = false;
+let fullscreenBusy = false;
 let desktopFiveOctaves = false;
 let desktopFaderTravel = false;
 let keyboardOffset = mobileLandscape ? keyboardOctaveWidth : 0;
@@ -656,6 +663,14 @@ function resetFader(fader) {
 }
 
 function layoutPanel() {
+  const topRowHidden = mobileLandscape && mobileTopRowHidden;
+  const topRowReduction = topRowHidden ? 36 : 0;
+  const topTrim = panelTopTrim + topRowReduction;
+  const rowOffset = mobileLandscape ? -35.5 + (topRowHidden ? 44 : 0) : 0;
+  container.classList.toggle('mobile-top-row-hidden', topRowHidden);
+  hideTopRowButton.hidden = !mobileLandscape;
+  hideTopRowButton.setAttribute('aria-expanded', String(!topRowHidden));
+  restoreTopRowButton.setAttribute('aria-expanded', String(!topRowHidden));
   const compact = mobileLandscape || panel.classList.contains('speakers-hidden');
   const leftTrim = compact ? 96 : 0;
   const desktopWidth = 1760 - leftTrim - (compact ? 100 : 0);
@@ -669,14 +684,14 @@ function layoutPanel() {
   faderViewportLeft = mobileLandscape ? bodyLeft + mobileHousingEdge : faderPanelLeft;
   faderVisibleWidth = mobileLandscape ? bodyWidth - mobileHousingEdge * 2 : faderPanelWidth;
   keyboardVisibleWidth = mobileLandscape ? faderVisibleWidth : keyboardViewportWidth;
-  const wrapMacro = mobileLandscape && bodyRight - mobileHousingEdge < 900;
+  const wrapMacro = mobileLandscape && bodyRight - mobileHousingEdge < 900 + rowOffset;
   const rowExtra = wrapMacro ? 44 : 0;
   travel = baseTravel * (!mobileLandscape && desktopFaderTravel ? 2 : 1);
   const extra = travel - baseTravel;
   const scale = mobileLandscape ? mobileFaderScale : 1;
   const faderPanelExtra = (185 + extra) * (scale - 1);
   const lowerOffset = extra + faderPanelExtra;
-  const fullHeight = 600 + instrumentGap + lowerOffset + rowExtra - panelTopTrim;
+  const fullHeight = 600 + instrumentGap + lowerOffset + rowExtra - topTrim;
   let keyboardHeight = keyboardBaseHeight;
   if (mobileLandscape) {
     const availableHeight = window.innerHeight - (container.getBoundingClientRect().top + window.scrollY) - 8;
@@ -684,7 +699,7 @@ function layoutPanel() {
     keyboardHeight = Math.max(100, Math.min(180, availableHeight / mobilePanelScale - (fullHeight - keyboardBaseHeight)));
   }
   const keyHeightReduction = keyboardBaseHeight - keyboardHeight;
-  panel.setAttribute('viewBox', `${leftTrim} ${panelTopTrim} ${width} ${fullHeight - keyHeightReduction}`);
+  panel.setAttribute('viewBox', `${leftTrim} ${topTrim} ${width} ${fullHeight - keyHeightReduction}`);
   panel.querySelector('#keyboard').setAttribute('transform',
     `translate(${mobileLandscape ? faderViewportLeft + 3 : 196} ${296 + rowExtra})`);
   const keyboardFrame = panel.querySelector('#keyboard > rect');
@@ -702,13 +717,15 @@ function layoutPanel() {
   }
   updateKeyboardOffset(keyboardOffset);
   panel.querySelector('#body').setAttribute('x', bodyLeft);
+  panel.querySelector('#body').setAttribute('y', 25 + topRowReduction);
   panel.querySelector('#body').setAttribute('width', bodyWidth);
   panel.querySelector('#body-edge').setAttribute('x', bodyLeft + 2);
+  panel.querySelector('#body-edge').setAttribute('y', 27 + topRowReduction);
   panel.querySelector('#body-edge').setAttribute('width', bodyWidth - 4);
   panel.querySelector('#body-highlight').setAttribute('d',
-    `M${bodyLeft + 11} 28H${bodyRight - 11}L${bodyRight - 1} 44H${bodyLeft + 1}Z`);
-  panel.querySelector('#body').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction);
-  panel.querySelector('#body-edge').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction);
+    `M${bodyLeft + 11} ${28 + topRowReduction}H${bodyRight - 11}L${bodyRight - 1} ${44 + topRowReduction}H${bodyLeft + 1}Z`);
+  panel.querySelector('#body').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction - topRowReduction);
+  panel.querySelector('#body-edge').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction - topRowReduction);
   panel.querySelector('#control-strip').setAttribute('x', mobileLandscape ? faderViewportLeft : compact ? 190 : 72);
   panel.querySelector('#control-strip').setAttribute('y', 65 + (96 - 65) * scale);
   panel.querySelector('#control-strip').setAttribute('width', mobileLandscape ? faderVisibleWidth : compact ? 1412 : 1620);
@@ -736,10 +753,11 @@ function layoutPanel() {
     }
     if (text !== undefined) element.textContent = mobileLandscape ? text : desktopText;
   }
+  panel.querySelector('#mobile-control-row').setAttribute('transform', `translate(${rowOffset} 0)`);
   for (const [id, desktop, mobile] of [
-    ['super-knob', '920 52', wrapMacro ? '134.5 304' : '800 260'],
-    ['super-knob-cycle', '820 42', wrapMacro ? '158.5 288' : '824 244'],
-    ['super-knob-configure', '858 42', wrapMacro ? '196.5 288' : '862 244'],
+    ['super-knob', '920 52', wrapMacro ? '134.5 304' : `${800 + rowOffset} 260`],
+    ['super-knob-cycle', '820 42', wrapMacro ? '158.5 288' : `${824 + rowOffset} 244`],
+    ['super-knob-configure', '858 42', wrapMacro ? '196.5 288' : `${862 + rowOffset} 244`],
   ]) {
     const control = panel.querySelector(`#${id}`);
     const parent = mobileLandscape ? panel.querySelector('#lower-instrument') : panel;
@@ -1227,9 +1245,11 @@ function applyViewState(name, value, persist = true) {
 
 function syncResponsiveLayout() {
   const wasMobile = mobileLandscape;
-  mobileLandscape = mobileLandscapeQuery.matches;
+  mobileLandscape = mobileLandscapeQuery.matches
+    || Boolean(mobileFullscreen && document.fullscreenElement && landscapeQuery.matches);
   if (wasMobile !== mobileLandscape) releaseAll();
   panel.classList.toggle('mobile-landscape', mobileLandscape);
+  document.body.classList.toggle('mobile-landscape', mobileLandscape);
   displays.classList.toggle('mobile-landscape', mobileLandscape);
   document.querySelector('#hide-displays').setAttribute('aria-pressed', String(!mobileLandscape && !displays.hidden));
   document.querySelector('#hide-speakers').setAttribute('aria-pressed',
@@ -1238,9 +1258,8 @@ function syncResponsiveLayout() {
   if (mobileLandscape && !wasMobile && !desktopFiveOctaves) keyboardOffset = keyboardOctaveWidth;
   if (!mobileLandscape && wasMobile && !desktopFiveOctaves) keyboardOffset = 0;
 
-  const narrow = mobileLandscape && window.innerWidth <= 900;
-  panel.classList.toggle('mobile-hide-yamaha', narrow);
-  panel.classList.toggle('mobile-hide-cs-logo', narrow);
+  panel.classList.toggle('mobile-hide-yamaha', mobileLandscape);
+  panel.classList.toggle('mobile-hide-cs-logo', mobileLandscape);
   if (mobileLandscape) {
     if (visualToggles.parentElement !== appMenu) menuClose.after(visualToggles);
     if (menuOpen.parentElement !== container) container.append(menuOpen);
@@ -1252,6 +1271,8 @@ function syncResponsiveLayout() {
   sizeButton.setAttribute('aria-pressed', String(!mobileLandscape && desktopFaderTravel));
   travel = baseTravel * (desktopFaderTravel ? 2 : 1);
   updateKeyboardLayout();
+  syncAppMenu();
+  syncFullscreenControls();
   layoutPanel();
   updateHeldDisplay();
 }
@@ -1261,8 +1282,10 @@ function closeAppMenu() {
 }
 
 function syncAppMenu() {
+  const mobile = mobileMenuQuery.matches || mobileLandscape;
+  if (appMenu.hasAttribute('popover') === mobile) return;
   closeAppMenu();
-  if (mobileMenuQuery.matches) {
+  if (mobile) {
     appMenu.append(dataInfo);
     appMenu.setAttribute('popover', 'auto');
     appMenu.setAttribute('role', 'dialog');
@@ -1274,6 +1297,51 @@ function syncAppMenu() {
     appMenu.removeAttribute('aria-label');
   }
 }
+
+function syncFullscreenControls() {
+  const active = Boolean(document.fullscreenElement);
+  const supported = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+  fullscreenButton.hidden = !mobileLandscape && !active;
+  fullscreenButton.disabled = fullscreenBusy || (!active && !supported);
+  fullscreenButton.setAttribute('aria-pressed', String(active));
+  fullscreenButton.textContent = active ? 'Exit fullscreen' : supported ? 'Fullscreen' : 'Fullscreen unavailable';
+  fullscreenButton.title = active ? 'Leave fullscreen' : supported
+    ? 'Use the full screen for the app' : 'Fullscreen is not supported by this browser or page';
+}
+
+fullscreenButton.addEventListener('click', async () => {
+  const entering = !document.fullscreenElement;
+  fullscreenBusy = true;
+  if (entering) mobileFullscreen = mobileLandscape;
+  syncFullscreenControls();
+  closeAppMenu();
+  try {
+    if (entering) {
+      await document.documentElement.requestFullscreen();
+      container.scrollIntoView({ block: 'start' });
+    } else await document.exitFullscreen();
+  } catch (error) {
+    if (entering && !document.fullscreenElement) mobileFullscreen = false;
+    status(`Could not ${entering ? 'enter' : 'exit'} fullscreen: ${error.message || error}`, 'error');
+  } finally {
+    fullscreenBusy = false;
+    syncResponsiveLayout();
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) mobileFullscreen = false;
+  syncResponsiveLayout();
+});
+
+function setTopRowHidden(hidden) {
+  releaseAll();
+  mobileTopRowHidden = hidden;
+  closeAppMenu();
+  layoutPanel();
+  (hidden ? restoreTopRowButton : menuOpen).focus({ preventScroll: true });
+}
+hideTopRowButton.addEventListener('click', () => setTopRowHidden(true));
+bindButton(restoreTopRowButton, () => setTopRowHidden(false));
 
 menuOpen.addEventListener('click', () => appMenu.showPopover({ source: menuOpen }));
 menuClose.addEventListener('click', () => {

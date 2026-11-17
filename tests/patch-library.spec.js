@@ -294,6 +294,7 @@ for (const input of ['mouse', 'touch']) {
     if (client) await client.send('Emulation.setTouchEmulationEnabled', { enabled: true });
     const activate = async (control) => {
       if (!client) return control.click();
+      await control.scrollIntoViewIfNeeded();
       const bounds = await control.boundingBox();
       await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{
         x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, id: 1, radiusX: 1, radiusY: 1,

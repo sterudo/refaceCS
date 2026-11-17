@@ -79,7 +79,7 @@ test('mobile landscape uses a touch-sized five-octave keyboard and compact layou
   await expect(page.locator('.speaker').first()).toBeHidden();
   await expect(page.locator('#device-panel')).toBeVisible();
   await expect(page.locator('#keyboard-keys')).toHaveAttribute('transform', 'translate(-434 0)');
-  await expect(page.locator('#arp-label')).toHaveText('ARP');
+  await expect(page.locator('#arp-label')).toBeHidden();
   await expect(page.locator('#yamaha-link')).toBeHidden();
 
   const key = await page.locator('#key-c-2').boundingBox();
@@ -87,7 +87,7 @@ test('mobile landscape uses a touch-sized five-octave keyboard and compact layou
   expect(key.height).toBeGreaterThanOrEqual(72);
 
   await page.setViewportSize({ width: 800, height: 390 });
-  await expect(page.locator('#arp-label')).toHaveText('ARP');
+  await expect(page.locator('#arp-label')).toBeHidden();
   await expect(page.locator('#cs-logo')).toBeHidden();
 });
 
@@ -130,7 +130,7 @@ test('SuperKnob switches between the desktop top and mobile arpeggiator row', as
   await expect(knob).toHaveAttribute('transform', 'translate(920 52)');
   expect(await centerY(knob)).toBeLessThan(await centerY(page.locator('#arp-mode')));
   await page.setViewportSize({ width: 844, height: 390 });
-  await expect(knob).toHaveAttribute('transform', 'translate(800 260)');
+  await expect(knob).toHaveAttribute('transform', 'translate(764.5 260)');
   const bounds = await knob.boundingBox();
   const arp = await page.locator('#arp-mode').boundingBox();
   const patch = await page.locator('#patch-display').boundingBox();
@@ -152,9 +152,9 @@ test('mobile controls pack left, keep their menus aligned, and restore the deskt
   const desktop = await snapshot();
   for (const width of [844, 568]) {
     await page.setViewportSize({ width, height: 390 });
-    await expect(page.locator('#arp-label')).toHaveText('ARP');
+    await expect(page.locator('#arp-label')).toBeHidden();
     await expect(page.locator('#super-knob')).toHaveAttribute('transform',
-      width === 568 ? 'translate(134.5 304)' : 'translate(800 260)');
+      width === 568 ? 'translate(134.5 304)' : 'translate(764.5 260)');
     const top = ['#soft-synth-mode', '#dark-synth-mode', '#device-midi-transmit',
       '#device-midi-receive', '#device-local-control', '#device-speaker-output'];
     let right = (await page.locator('#mobile-menu-open').boundingBox()).x + 32;
@@ -167,6 +167,9 @@ test('mobile controls pack left, keep their menus aligned, and restore the deskt
       right = bounds.x + bounds.width;
     }
     const mode = await page.locator('#arp-mode').boundingBox();
+    const enabled = await page.locator('#arp-enabled').boundingBox();
+    const faderArea = await page.locator('#fader-pan-area').boundingBox();
+    expect(Math.abs(enabled.x - faderArea.x)).toBeLessThan(1);
     const patch = await page.locator('#patch-display').boundingBox();
     expect(patch.x - mode.x - mode.width).toBeGreaterThan(0);
     expect(patch.x - mode.x - mode.width).toBeLessThan(8);
@@ -366,7 +369,155 @@ test('mobile menu retains header actions and restores the desktop header on resi
   await expect(page.locator('#glissando')).toBeVisible();
 });
 
+test('mobile fullscreen keeps its layout beyond 900px and follows native fullscreen state', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  const fullscreen = page.locator('#mobile-fullscreen');
+  const panel = page.locator('#synth svg');
+  await page.locator('#mobile-menu-open').click();
+  await fullscreen.click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement === document.documentElement)).toBe(true);
+  await expect(fullscreen).toHaveText('Exit fullscreen');
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#app-menu')).toBeHidden();
+  const client = await page.context().newCDPSession(page);
+  await client.send('Emulation.setDeviceMetricsOverride', {
+    width: 915, height: 412, deviceScaleFactor: 1, mobile: false,
+  });
+  await expect.poll(async () => (await panel.boundingBox()).width).toBe(915);
+  await expect(panel).toHaveClass(/mobile-landscape/);
+  await expect(page.locator('#arp-readouts')).toBeHidden();
+  await expect(page.locator('#yamaha-link')).toBeHidden();
+  await expect(page.locator('#arp-label')).toBeHidden();
+  expect((await page.locator('#synth').boundingBox()).x).toBe(0);
+  await page.locator('#mobile-menu-open').click();
+  await expect(page.locator('#mobile-menu-close')).toBeVisible();
+  await fullscreen.click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(panel).not.toHaveClass(/mobile-landscape/);
+  await expect(page.locator('#arp-readouts')).toBeVisible();
+  await expect(fullscreen).toBeHidden();
+  await expect(page.locator('#mobile-hide-top-row')).toBeHidden();
+  await expect(page.locator('#mobile-top-row-restore')).toBeHidden();
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.locator('#mobile-menu-open').click();
+  await fullscreen.click();
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
+  await expect(fullscreen).toHaveText('Fullscreen');
+  await expect(fullscreen).toBeEnabled();
+});
+
+test('mobile fullscreen explains unavailable browser support', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { value: false }));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.reload();
+  await page.locator('#mobile-menu-open').click();
+  const fullscreen = page.locator('#mobile-fullscreen');
+  await expect(fullscreen).toBeDisabled();
+  await expect(fullscreen).toHaveText('Fullscreen unavailable');
+  await expect(fullscreen).toHaveAttribute('title', /not supported/);
+  await expect(page.locator('#mobile-hide-top-row')).toBeEnabled();
+});
+
+test('mobile fullscreen reports rejected requests without leaving a false fullscreen state', async ({ page }) => {
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () => Promise.reject(new Error('Fullscreen request denied'));
+  });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.reload();
+  await page.locator('#mobile-menu-open').click();
+  const fullscreen = page.locator('#mobile-fullscreen');
+  await fullscreen.click();
+  await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last())
+    .toHaveText('Could not enter fullscreen: Fullscreen request denied');
+  await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
+  await expect(fullscreen).toHaveText('Fullscreen');
+  await expect(fullscreen).toBeEnabled();
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  await page.setViewportSize({ width: 915, height: 412 });
+  await expect(page.locator('#synth svg')).not.toHaveClass(/mobile-landscape/);
+});
+
 for (const input of ['mouse', 'touch']) {
+  test(`mobile top row hides and restores with ${input} without shrinking controls or changing values`, async ({ page, context }) => {
+    await page.setViewportSize({ width: 844, height: 514 });
+    await expect(page.locator('#synth svg')).toHaveClass(/mobile-landscape/);
+    await page.locator('#lfo-depth').press('Home');
+    const client = input === 'touch' ? await context.newCDPSession(page) : null;
+    if (client) await client.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const activate = async (selector) => {
+      const control = page.locator(selector);
+      if (!client) return control.click();
+      const bounds = await control.boundingBox();
+      await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{
+        x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, id: 1, radiusX: 1, radiusY: 1,
+      }] });
+      await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    const geometry = () => page.evaluate(() => {
+      const size = (selector) => {
+        const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
+        return { x, y, width, height };
+      };
+      return {
+        synth: size('#synth'), fader: size('#expression .track'),
+        key: size('#key-c-2 use'), arp: size('#arp-enabled'),
+        values: [...document.querySelectorAll('.fader')].map((fader) => fader.getAttribute('aria-valuenow')),
+      };
+    });
+    const before = await geometry();
+    await activate('#mobile-menu-open');
+    await activate('#mobile-hide-top-row');
+    await expect(page.locator('#device-panel')).toBeHidden();
+    await expect(page.locator('#mobile-menu-open')).toBeHidden();
+    const restore = page.locator('#mobile-top-row-restore');
+    await expect(restore).toBeVisible();
+    await expect(restore).toBeFocused();
+    const hidden = await geometry();
+    expect(before.synth.height - hidden.synth.height).toBeCloseTo(28.8, 1);
+    expect(before.fader.y - hidden.fader.y).toBeCloseTo(28.8, 1);
+    expect(hidden.fader.width).toBeCloseTo(before.fader.width, 1);
+    expect(hidden.fader.height).toBeCloseTo(before.fader.height, 1);
+    expect(hidden.key.width).toBeCloseTo(before.key.width, 1);
+    expect(hidden.values).toEqual(before.values);
+    const restoreBounds = await restore.boundingBox();
+    expect(restoreBounds.x).toBeGreaterThan(0);
+    expect(restoreBounds.x + restoreBounds.width).toBeLessThan(hidden.arp.x);
+    const key = await page.locator('#key-c-2 use').boundingBox();
+    const point = { x: key.x + key.width / 2, y: key.y + key.height - 15 };
+    await drag(page, client, point, point, async () => {
+      await expect(page.locator('#key-c-2')).toHaveAttribute('aria-pressed', 'true');
+    });
+    await activate('#mobile-top-row-restore');
+    await expect(page.locator('#device-panel')).toBeVisible();
+    await expect(page.locator('#mobile-menu-open')).toBeFocused();
+    await expect(restore).toBeHidden();
+    const restored = await geometry();
+    expect(restored.synth.height).toBeCloseTo(before.synth.height, 1);
+    expect(restored.arp.x).toBeCloseTo(before.arp.x, 1);
+    expect(restored.arp.y).toBeCloseTo(before.arp.y, 1);
+    expect(restored.values).toEqual(before.values);
+
+    await activate('#mobile-menu-open');
+    await activate('#mobile-hide-top-row');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator('#device-panel')).toBeVisible();
+    await expect(page.locator('#arp-label')).toBeVisible();
+    await expect(restore).toBeHidden();
+    await expect(page.locator('#mobile-hide-top-row')).toBeHidden();
+    await page.setViewportSize({ width: 568, height: 320 });
+    await expect(restore).toBeVisible();
+    await expect(page.locator('#mobile-menu-open')).toBeHidden();
+    const patch = await page.locator('#patch-display').boundingBox();
+    expect(patch.x + patch.width).toBeLessThan(568);
+    await activate('#mobile-top-row-restore');
+    await expect(page.locator('#mobile-menu-open')).toBeVisible();
+  });
+
   test(`mobile fader background pans independently with ${input}, while faders still adjust`, async ({ page, context }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     const client = input === 'touch' ? await context.newCDPSession(page) : null;
