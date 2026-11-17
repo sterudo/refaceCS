@@ -86,12 +86,21 @@ test('follows new messages at the bottom but leaves a reader at their scroll pos
   await expect.poll(() => log.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(4);
 });
 
-test('pins branding, top controls and the log without overflow on wide and narrow screens', async ({ page }) => {
+test('pins desktop header content and keeps it accessible in the mobile menu without overflow', async ({ page }) => {
   await open(page);
   await addMessages(page, 20);
   for (const width of [1920, 2400, 800, 480, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.evaluate(() => window.scrollTo(0, 0));
+    if (width <= 900) {
+      await expect(page.locator('#app-menu')).toBeHidden();
+      await page.getByRole('button', { name: 'Open app menu' }).click();
+      await expect(page.locator('#message-center')).toBeVisible();
+      await expect(page.locator('#midi-connect')).toBeVisible();
+      expect(await page.locator('#app-menu').evaluate((menu) => menu.scrollWidth - menu.clientWidth)).toBeLessThanOrEqual(1);
+      await page.keyboard.press('Escape');
+      continue;
+    }
     await expect(page.locator('#message-slot')).toHaveCSS('height', '100px');
     await expect.poll(() => page.locator('#message-log').evaluate((log) =>
       log.scrollHeight - log.clientHeight - log.scrollTop,

@@ -218,7 +218,7 @@ test('About sits between Connect MIDI and Settings and includes the playing tips
 
 test('version opens dated history in newest-first order and supports keyboard reopening', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Open Version History help', exact: true });
-  await expect(trigger).toHaveText('v0.12');
+  await expect(trigger).toHaveText('v0.13');
   await expect(trigger).toHaveAttribute('title', /released 2026-11-17/);
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Version History', exact: true });
@@ -226,7 +226,7 @@ test('version opens dated history in newest-first order and supports keyboard re
   expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(false);
   expect((await dialog.boundingBox()).width).toBeCloseTo(900, 0);
   await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
-    'v0.12 - 2026-11-17', 'v0.11 - 2026-11-16', 'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
+    'v0.13 - 2026-11-17', 'v0.12 - 2026-11-17', 'v0.11 - 2026-11-16', 'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
     'v0.4 - 2026-11-15', 'v0.3 - 2026-11-15', 'v0.2 - 2026-11-15', 'v0.1 - 2026-11-12',
   ]);
   await expect(dialog).toContainText('Contextual help');

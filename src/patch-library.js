@@ -1275,8 +1275,14 @@ export function createPatchLibrary({
   }
 
   display.addEventListener('contextmenu', openDisplayMenu);
+  display.addEventListener('click', (event) => {
+    if (panel.classList.contains('mobile-landscape')) openDisplayMenu(event);
+  });
   display.addEventListener('keydown', (event) => {
-    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openDisplayMenu(event);
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')
+      || (panel.classList.contains('mobile-landscape') && ['Enter', ' '].includes(event.key) && !event.repeat)) {
+      openDisplayMenu(event);
+    }
   });
   displayMenu.addEventListener('toggle', () => {
     display.setAttribute('aria-expanded', String(displayMenu.matches(':popover-open')));

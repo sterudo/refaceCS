@@ -106,7 +106,9 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     const menu = document.createElementNS(svgNS, 'g');
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', button === rateButton ? 'Arpeggiator rates' : 'Arpeggiator modes');
-    menu.setAttribute('transform', `translate(${button === rateButton ? 648 : 721} 279)`);
+    const origin = new DOMPoint(0, 35).matrixTransform(button.getScreenCTM())
+      .matrixTransform(menuLayer.getScreenCTM().inverse());
+    menu.setAttribute('transform', `translate(${origin.x} ${origin.y})`);
     const background = document.createElementNS(svgNS, 'rect');
     background.setAttribute('class', 'arp-menu-background');
     background.setAttribute('width', '150');

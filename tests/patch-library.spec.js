@@ -279,6 +279,47 @@ test('patch display menu loads protect unsaved changes and support keyboard navi
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
 });
 
+for (const input of ['mouse', 'touch']) {
+  test(`mobile patch display opens its selector with ${input} and preserves desktop activation`, async ({ page, context }) => {
+    await savePatch(page, { name: 'Alpha' });
+    await expect(page.locator('#patch-editor')).toBeHidden();
+    await page.locator('#lfo-depth').press('Home');
+    await savePatch(page, { name: 'Beta' });
+    await expect(page.locator('#patch-editor')).toBeHidden();
+    await page.setViewportSize({ width: 844, height: 390 });
+    const display = page.locator('#patch-display-screen');
+    const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
+    await expect(display).toHaveAttribute('role', 'button');
+    const client = input === 'touch' ? await context.newCDPSession(page) : null;
+    if (client) await client.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const activate = async (control) => {
+      if (!client) return control.click();
+      const bounds = await control.boundingBox();
+      await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{
+        x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, id: 1, radiusX: 1, radiusY: 1,
+      }] });
+      await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await activate(display.locator(':scope > rect'));
+    await expect(menu.getByRole('menuitemradio')).toHaveText(['Alpha', 'Beta']);
+    await activate(menu.getByRole('menuitemradio', { name: 'Alpha', exact: true }));
+    await expect(menu).toBeHidden();
+    await expect(display).toHaveAttribute('aria-label', 'Alpha');
+    await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
+    for (const key of ['Enter', 'Space']) {
+      await display.press(key);
+      await expect(menu).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(display).toHaveAttribute('role', 'img');
+    await display.click();
+    await expect(menu).toBeHidden();
+    await display.click({ button: 'right' });
+    await expect(menu).toBeVisible();
+  });
+}
+
 test('empty patch display menus explain missing results, fit the viewport, and dismiss on outside click', async ({ page }) => {
   const display = page.locator('#patch-display-screen');
   const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });

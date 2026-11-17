@@ -200,7 +200,8 @@ export function setupNotifications() {
     const modals = [...document.querySelectorAll('dialog:modal')];
     modalStack = modalStack.filter((dialog) => modals.includes(dialog));
     for (const dialog of modals) if (!modalStack.includes(dialog)) modalStack.push(dialog);
-    const host = (!center.hidden && modalStack.at(-1)) || slot;
+    const menuHidden = header.hasAttribute('popover') && !header.matches(':popover-open');
+    const host = (!center.hidden && !menuHidden && modalStack.at(-1)) || slot;
     if (center.parentElement === host) return;
     const scrollTop = log.scrollTop;
     center.parentElement.classList.remove('message-dialog-host');
@@ -222,6 +223,10 @@ export function setupNotifications() {
   });
   modalObserver.observe(document.body, { subtree: true, childList: true,
     attributes: true, attributeFilter: ['open'] });
+  header.addEventListener('toggle', () => {
+    syncModalHost();
+    measure();
+  });
   pending.splice(0).forEach(append);
   return {
     setVisible,

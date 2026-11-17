@@ -35,6 +35,11 @@ main {
   background: #10161b;
 }
 
+#mobile-menu-open,
+#mobile-menu-close {
+  display: none;
+}
+
 .toolbar.messages-dismissed {
   grid-template-areas: "brand controls";
 }
@@ -606,6 +611,7 @@ input[type="range"]:focus-visible,
 .patch-navigation[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 .patch-navigation[aria-disabled="true"]:hover .arp-lens { filter: none; }
 #patch-display-screen { outline: none; cursor: context-menu; }
+.mobile-landscape #patch-display-screen { cursor: pointer; }
 #patch-display-screen:focus-visible > rect { stroke: #21a8bc; stroke-width: 2; }
 .patch-display-menu {
   position: fixed; inset: auto; margin: 0; box-sizing: border-box;
@@ -804,6 +810,33 @@ input[type="range"]:focus-visible,
 
 #synth {
   min-width: 1000px;
+}
+
+#synth svg.mobile-landscape .speaker,
+#synth svg.mobile-landscape #arp-readouts,
+#synth svg.mobile-landscape .octave-step {
+  display: none;
+}
+
+#synth svg.mobile-landscape.mobile-hide-yamaha #yamaha-link,
+#synth svg.mobile-landscape.mobile-hide-cs-logo #cs-logo,
+#synth svg.mobile-landscape #soft-synth-name,
+#synth svg.mobile-landscape #soft-synth-logo {
+  display: none;
+}
+
+#visualizations.mobile-landscape { display: none; }
+
+#synth svg.mobile-landscape {
+  touch-action: none;
+}
+
+#synth svg.mobile-landscape #fader-viewport {
+  cursor: grab;
+}
+
+#synth svg.mobile-landscape #fader-viewport.is-dragging {
+  cursor: grabbing;
 }
 
 #synth svg {
@@ -1561,12 +1594,6 @@ footer {
   fill: #c1ced3;
 }
 
-.five-octaves .key-letter {
-  transform-box: fill-box;
-  transform-origin: center;
-  scale: calc(36 / 22) 1;
-}
-
 .key.is-pressed .key-labels {
   transform: translateY(5px);
 }
@@ -1674,6 +1701,73 @@ button:disabled {
     display: block;
     margin-left: 0;
   }
+}
+
+@media (900px < width < 1100px) {
+  .midi-actions button { font-size: 8px; }
+}
+
+@media (width < 1100px) {
+  #visual-toggles > button:not(:where(#mobile-menu-open)) { font-size: 8px; }
+}
+
+@media (max-width: 900px) {
+  #visual-toggles > #mobile-menu-open,
+  #mobile-menu-close { display: inline-flex; }
+  #mobile-menu-open { align-items: center; justify-content: center; min-width: 36px; min-height: 36px; font-size: 20px; }
+  #mobile-menu-close { align-self: flex-end; }
+  #app-menu[popover] {
+    box-sizing: border-box;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(24rem, 90vw);
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 1rem;
+    border: 0;
+    border-right: 1px solid #526873;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: #dce4e8;
+  }
+  #app-menu:popover-open { display: flex; flex-direction: column; gap: 1rem; }
+  #app-menu[popover]:not(:popover-open) { display: none; }
+  #app-menu > * { box-sizing: border-box; flex-shrink: 0; width: 100%; min-width: 0; }
+  #app-menu > #mobile-menu-close { width: auto; }
+  #app-menu .midi-ports { width: 100%; }
+  #app-menu::backdrop { background: #0008; }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  body { padding: 0; }
+  main { max-width: none; margin: 0; }
+  .instrument-scroll { overflow-x: hidden; padding: 0; }
+  #synth { position: relative; }
+  #synth > #mobile-menu-open {
+    display: inline-flex;
+    position: absolute;
+    top: 6px;
+    left: 2px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--instrument-accent, darkcyan);
+  }
+  #app-menu #visual-toggles {
+    position: static;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0;
+  }
+  #app-menu #visual-toggles > button { min-height: 36px; padding: 4px 8px; font-size: 12px; }
+  #hide-speakers,
+  #hide-displays,
+  #five-octaves,
+  #fader-size { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

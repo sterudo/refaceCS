@@ -36,6 +36,8 @@ export const helpContent = {
     wide: true,
     blocks: [
       paragraph('Dates follow the commits introducing each version. The v0.1 summary also includes improvements made before v0.2.'),
+      heading('v0.13 - 2026-11-17'),
+      paragraph('Mobile header actions move into a hamburger side menu. In landscape the menu opens from the housing itself, with Focus, Glissando, and Reset inside; the synth fills the viewport width with equal slim housing edges. Compact fader controls and touch-sized key widths stay fixed as the viewport narrows, while black keys are 20% shorter than their standard proportions. Shortened top controls and the compact arpeggiator align left, with patch controls immediately beside the arpeggiator and SuperKnob following or wrapping below on narrow screens. Tap the patch display to open the existing patch selector. Independently pannable faders and the five-octave keyboard remain available. Overall key height adapts to vertical space; very short screens scroll vertically rather than shrinking the controls further. Optional touch and mouse glissando remains available. Note/chord readouts, original controls, and the top-mounted SuperKnob remain on desktop. Compact view actions include tooltips; Speakers and Displays highlight when visible.'),
       heading('v0.12 - 2026-11-17'),
       paragraph('Simple Soft Synth browser instrument with saw/sub-oscillator and pulse-width controls, filter, ADSR, AMP LFO, adjustable pitch-bend range, exclusive instrument routing, and audio-scheduled arpeggios. Includes SSS help, blue theme-aware branding and mode button, protected System starter patches, and shared hardware/soft-synth patch management with instrument-aware backups.'),
       heading('v0.11 - 2026-11-16'),
@@ -246,7 +248,7 @@ export const helpContent = {
         list(
           'The display beside the CS logo names the loaded patch. Its colored dot indicates that browser-known sound controls differ from the saved patch.',
           'The display arrows load the previous or next patch in the current filters without wrapping. Unlike card selection, these arrows recall the sound.',
-          'Right-click the patch display, or focus it and press Shift+F10 or the Menu key, to open the current filtered, name-sorted patch list. The loaded patch is highlighted if it matches the filters.',
+          'Right-click the patch display, or focus it and press Shift+F10 or the Menu key, to open the current filtered, name-sorted patch list. In mobile landscape, tap or click the display, or press Enter or Space when focused. The loaded patch is highlighted if it matches the filters.',
           'Choose a name to load it with the usual unsaved-change protection. Use Up/Down, Home/End, and Enter to choose by keyboard; Escape or clicking outside dismisses the menu. Long lists scroll; empty libraries or filters show an explanation.',
           'The * button starts an INIT sound by resetting only patch controls, after protecting unsaved edits. Save it as a new patch if you want to keep it.',
           'Reloading the page does not automatically load a patch into the panel or synth.',

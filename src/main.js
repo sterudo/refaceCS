@@ -3,9 +3,9 @@ import './style.css';
 import panelMarkup from './synth.svg?raw';
 import { createVisualizations } from './visualizations.js';
 import { setupMidiDiscovery } from './midi.js';
+import { detectChord, noteNames } from './chord-detection.js';
 import { createMidiLearn } from './midi-learn.js';
 import { controlNumber } from './synth-midi.js';
-import { detectChord, noteNames } from './chord-detection.js';
 import { createPatchLibrary } from './patch-library.js';
 import { PATCH_CONTROL_IDS } from './patches.js';
 import { createGrooveClock } from './groove-clock.js';
@@ -25,6 +25,8 @@ const reportAudio = createReporter('groove', 'audio-connect-status');
 const dataInfo = document.querySelector('#data-info');
 const dataInfoOpen = document.querySelector('#data-info-open');
 const dataInfoClose = document.querySelector('#data-info-close');
+const dataInfoAnchor = document.createComment('Data information desktop position');
+dataInfo.before(dataInfoAnchor);
 let patchLibrary;
 let superKnob;
 function setDataInfoVisible(visible, save = true) {
@@ -48,15 +50,30 @@ container.innerHTML = panelMarkup;
 
 const panel = container.querySelector('svg');
 setupHelp(panel);
+const appMenu = document.querySelector('#app-menu');
+const menuOpen = document.querySelector('#mobile-menu-open');
+const menuClose = document.querySelector('#mobile-menu-close');
+const mobileMenuQuery = window.matchMedia('(max-width: 900px)');
+const visualToggles = document.querySelector('#visual-toggles');
+const visualTogglesAnchor = document.createComment('Desktop view actions');
+const menuOpenAnchor = document.createComment('Mobile menu opener');
+visualToggles.before(visualTogglesAnchor);
+menuOpen.before(menuOpenAnchor);
 const displays = document.querySelector('#visualizations');
 const status = createReporter('app', 'app-status');
 const softSynth = createSoftSynth((message) => reportAudio(message, 'error'));
 const sizeButton = document.querySelector('#fader-size');
+const glissandoButton = document.querySelector('#glissando');
 const faders = [...panel.querySelectorAll('.fader')];
 const readouts = new Map();
 const startingValues = new Map(faders.map((fader) => [fader, Number(fader.dataset.value)]));
 const keyboardKeys = panel.querySelector('#keyboard-keys');
+const keyboardViewport = panel.querySelector('#keyboard-viewport');
 const standardKeys = panel.querySelector('#standard-keys');
+const faderViewport = panel.querySelector('#fader-viewport');
+const faderPanel = panel.querySelector('#fader-panel');
+const faderPanelLeft = 185;
+const faderPanelWidth = 1417;
 const transposeFader = panel.querySelector('#transpose');
 const transposeValue = panel.querySelector('#transpose-value');
 const octaveFader = panel.querySelector('#octave');
@@ -75,10 +92,28 @@ const defaultPitchRange = Number(pitchRangeValue.textContent);
 const baseTravel = 80;
 const panelTopTrim = 27 * 0.75;
 const instrumentGap = 18;
+const mobileLandscapeQuery = window.matchMedia('(orientation: landscape) and (max-width: 900px)');
+const mobilePanelScale = 0.8;
+const mobileFaderScale = 0.975;
+const mobileHousingEdge = 16.5;
+const keyboardOctaveWidth = 7 * 62;
+const keyboardViewportWidth = 1370;
+const keyboardBaseHeight = 288;
+const fiveOctaveKeyboardWidth = 36 * 62;
+const keyboardDragThreshold = 12;
 const activePointers = new Map();
 const pressedKeys = new Set();
 const computerKeys = new Map();
 let travel = baseTravel;
+let mobileLandscape = mobileLandscapeQuery.matches;
+let desktopFiveOctaves = false;
+let desktopFaderTravel = false;
+let keyboardOffset = mobileLandscape ? keyboardOctaveWidth : 0;
+let faderPanelOffset = 0;
+let keyboardVisibleWidth = keyboardViewportWidth;
+let faderVisibleWidth = faderPanelWidth;
+let faderViewportLeft = faderPanelLeft;
+let glissandoEnabled = getPreference('glissando', (value) => typeof value === 'boolean', false);
 let volumeMuted = false;
 let pitchRange = defaultPitchRange;
 let pitchDirection = null;
@@ -89,6 +124,74 @@ let pitchRangeChanging = false;
 let deviceSettings;
 let synthType = 'hardware';
 let savedHardwareModeControls = null;
+const compactControlAttributes = [
+  ['#soft-synth-mode', { transform: 'translate(152 43)' }],
+  ['#soft-synth-mode .device-label', { x: 0 }, 'SYN'],
+  ['#soft-synth-mode > rect:first-of-type', { width: 86, height: 31 }],
+  ['#soft-synth-mode .arp-bezel', { x: 24, width: 60 }],
+  ['#soft-synth-mode .arp-lens', { x: 25, width: 58 }],
+  ['#soft-synth-mode-label', { x: 54 }],
+  ['#dark-synth-mode', { transform: 'translate(244 43)' }],
+  ['#dark-synth-mode .device-label', { x: 0 }, 'DARK'],
+  ['#dark-synth-mode > rect:first-of-type', { width: 72, height: 31 }],
+  ['#dark-synth-mode .arp-bezel', { x: 32 }],
+  ['#dark-synth-mode .arp-lens', { x: 33 }],
+  ['#arp-enabled', { transform: 'translate(148 244)' }],
+  ['#arp-latch', { transform: 'translate(192 244)' }],
+  ['#arp-chord', { transform: 'translate(240 244)' }],
+  ['#arp-tempo', { transform: 'translate(288 244)' }],
+  ['#arp-rate', { transform: 'translate(400 244)' }],
+  ['#arp-mode', { transform: 'translate(456 244)' }],
+  ['#arp-controls', { transform: 'translate(0 0)' }],
+  ['#arp-label', { x: 112.5 }, 'ARP'],
+  ['#patch-display', { transform: 'translate(584 244)' }],
+  ['#patch-display-screen', { role: 'button' }],
+  ['#patch-display-screen > rect', { width: 100 }],
+  ['#patch-name-clip rect', { width: 77 }],
+  ['#patch-next', { transform: 'translate(132 0)' }],
+  ['#patch-save-display', { transform: 'translate(160 0)' }],
+];
+for (const [id, x, label] of [['midi-transmit', 320, 'TX'], ['midi-receive', 398, 'RX']]) {
+  compactControlAttributes.push(
+    [`#device-${id}`, { transform: `translate(${x} 43)` }],
+    [`#device-${id} .device-label`, { x: 0 }, label],
+    [`#device-${id} > rect:first-of-type`, { width: 76, height: 31 }],
+    [`#device-${id} > rect:nth-of-type(2)`, { x: 20 }],
+    [`#device-${id} .device-digits`, { transform: 'translate(24 7)' }],
+    [`#device-${id} .device-assumption`, { x: 69 }],
+  );
+}
+for (const [id, x, label] of [['local-control', 476, 'LOC'], ['speaker-output', 544, 'SPK']]) {
+  compactControlAttributes.push(
+    [`#device-${id}`, { transform: `translate(${x} 43)` }],
+    [`#device-${id} .device-label`, { x: 0 }, label],
+    [`#device-${id} > rect:first-of-type`, { width: 62, height: 31 }],
+    [`#device-${id} .arp-bezel`, { x: 24 }],
+    [`#device-${id} .arp-lens`, { x: 25 }],
+    [`#device-${id} .device-assumption`, { x: 53 }],
+  );
+}
+for (const [id, width] of [['enabled', 40], ['latch', 44], ['chord', 44], ['rate', 52], ['mode', 94]]) {
+  compactControlAttributes.push(
+    [`#arp-${id} .arp-bezel`, { width }],
+    [`#arp-${id} .arp-lens`, { width: width - 2 }],
+    [`#arp-${id} > text`, { x: width / 2 }],
+  );
+  if (['enabled', 'latch', 'chord'].includes(id)) {
+    compactControlAttributes.push([`#arp-${id} .arp-shine`, { d: `M5 5H${width - 5}` }]);
+  }
+}
+const responsiveControls = compactControlAttributes.map(([selector, attributes, text]) => {
+  const element = panel.querySelector(selector);
+  return {
+    element, attributes, text,
+    desktopAttributes: Object.fromEntries(Object.keys(attributes).map((name) => [name, element.getAttribute(name)])),
+    desktopText: text === undefined ? undefined : element.textContent,
+  };
+});
+glissandoButton.setAttribute('aria-pressed', String(glissandoEnabled));
+panel.classList.toggle('mobile-landscape', mobileLandscape);
+if (mobileLandscape) displays.classList.add('mobile-landscape');
 
 const selections = {
   octave: ['-2', '-1', '0', '+1', '+2'],
@@ -514,6 +617,37 @@ function updateFaderFromInput(fader, value, announce = true, channel = 0) {
   midi.setControl(fader.id, readValue(fader), channel);
 }
 
+function keyboardExpanded() {
+  return mobileLandscape || desktopFiveOctaves;
+}
+
+function updateKeyboardOffset(value) {
+  const maxOffset = keyboardExpanded() ? fiveOctaveKeyboardWidth - keyboardVisibleWidth : 0;
+  keyboardOffset = Math.max(0, Math.min(maxOffset, value));
+  keyboardKeys.setAttribute('transform', `translate(${-keyboardOffset} 0)`);
+}
+
+function updateKeyboardLayout() {
+  const expanded = keyboardExpanded();
+  panel.classList.toggle('five-octaves', expanded);
+  standardKeys.setAttribute('transform', `translate(${expanded ? keyboardOctaveWidth : 0} 0)`);
+  if (!expanded) keyboardOffset = 0;
+  updateKeyboardOffset(keyboardOffset);
+  document.querySelector('#five-octaves').setAttribute('aria-pressed', String(expanded));
+  panel.querySelector('#panel-description').textContent =
+    `${expanded ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
+}
+
+function updateFaderPanelOffset(value) {
+  const scale = mobileLandscape ? mobileFaderScale : 1;
+  const maxOffset = Math.max(0, faderPanelWidth * scale - faderVisibleWidth);
+  faderPanelOffset = Math.max(0, Math.min(maxOffset, value));
+  faderPanel.setAttribute('transform',
+    `translate(${faderViewportLeft - faderPanelLeft * scale - faderPanelOffset} ${65 * (1 - scale)}) scale(${scale})`);
+  panel.querySelector('#fader-pan-area').setAttribute('aria-valuenow', String(Math.round(faderPanelOffset)));
+  panel.querySelector('#fader-pan-area').setAttribute('aria-valuemax', String(Math.round(maxOffset)));
+}
+
 function resetFader(fader) {
   for (const [pointerId, item] of activePointers) {
     if (item.element === fader) releasePointer({ pointerId });
@@ -522,26 +656,63 @@ function resetFader(fader) {
 }
 
 function layoutPanel() {
-  const extra = travel - baseTravel;
-  const compact = panel.classList.contains('speakers-hidden');
+  const compact = mobileLandscape || panel.classList.contains('speakers-hidden');
   const leftTrim = compact ? 96 : 0;
-  const rightTrim = compact ? 100 : 0;
-  const width = 1760 - leftTrim - rightTrim;
-  panel.setAttribute('viewBox', `${leftTrim} ${panelTopTrim} ${width} ${600 + instrumentGap + extra - panelTopTrim}`);
-  container.style.width = `${width / 1760 * 100}%`;
-  container.style.minWidth = `${1000 * width / 1760}px`;
-  panel.querySelector('#body').setAttribute('x', 25 + leftTrim);
-  panel.querySelector('#body').setAttribute('width', 1710 - leftTrim - rightTrim);
-  panel.querySelector('#body-edge').setAttribute('x', 27 + leftTrim);
-  panel.querySelector('#body-edge').setAttribute('width', 1706 - leftTrim - rightTrim);
+  const desktopWidth = 1760 - leftTrim - (compact ? 100 : 0);
+  container.style.width = mobileLandscape ? '100%' : `${desktopWidth / 1760 * 100}%`;
+  container.style.minWidth = mobileLandscape ? '0' : `min(100%, ${1000 * desktopWidth / 1760}px)`;
+  const width = mobileLandscape ? container.clientWidth / mobilePanelScale : desktopWidth;
+  const rightTrim = 1760 - leftTrim - width;
+  const bodyLeft = mobileLandscape ? leftTrim : 25 + leftTrim;
+  const bodyWidth = mobileLandscape ? width : 1710 - leftTrim - rightTrim;
+  const bodyRight = bodyLeft + bodyWidth;
+  faderViewportLeft = mobileLandscape ? bodyLeft + mobileHousingEdge : faderPanelLeft;
+  faderVisibleWidth = mobileLandscape ? bodyWidth - mobileHousingEdge * 2 : faderPanelWidth;
+  keyboardVisibleWidth = mobileLandscape ? faderVisibleWidth : keyboardViewportWidth;
+  const wrapMacro = mobileLandscape && bodyRight - mobileHousingEdge < 900;
+  const rowExtra = wrapMacro ? 44 : 0;
+  travel = baseTravel * (!mobileLandscape && desktopFaderTravel ? 2 : 1);
+  const extra = travel - baseTravel;
+  const scale = mobileLandscape ? mobileFaderScale : 1;
+  const faderPanelExtra = (185 + extra) * (scale - 1);
+  const lowerOffset = extra + faderPanelExtra;
+  const fullHeight = 600 + instrumentGap + lowerOffset + rowExtra - panelTopTrim;
+  let keyboardHeight = keyboardBaseHeight;
+  if (mobileLandscape) {
+    const availableHeight = window.innerHeight - (container.getBoundingClientRect().top + window.scrollY) - 8;
+    // Keep an 80px-tall keyboard on short screens rather than shrinking the controls.
+    keyboardHeight = Math.max(100, Math.min(180, availableHeight / mobilePanelScale - (fullHeight - keyboardBaseHeight)));
+  }
+  const keyHeightReduction = keyboardBaseHeight - keyboardHeight;
+  panel.setAttribute('viewBox', `${leftTrim} ${panelTopTrim} ${width} ${fullHeight - keyHeightReduction}`);
+  panel.querySelector('#keyboard').setAttribute('transform',
+    `translate(${mobileLandscape ? faderViewportLeft + 3 : 196} ${296 + rowExtra})`);
+  const keyboardFrame = panel.querySelector('#keyboard > rect');
+  const keyboardClip = panel.querySelector('#keyboard-clip rect');
+  for (const rect of [keyboardFrame, keyboardClip]) {
+    rect.setAttribute('width', keyboardVisibleWidth);
+    rect.setAttribute('height', keyboardHeight);
+  }
+  const keyScale = keyboardHeight / keyboardBaseHeight;
+  for (const key of keys) {
+    const black = key.classList.contains('key-black');
+    const shapeScale = keyScale * (mobileLandscape && black ? 0.8 : 1);
+    key.querySelector('.key-shape').setAttribute('transform', `scale(1 ${shapeScale})`);
+    key.querySelector('.key-letter')?.setAttribute('y', (black ? 155 : 248) * shapeScale);
+  }
+  updateKeyboardOffset(keyboardOffset);
+  panel.querySelector('#body').setAttribute('x', bodyLeft);
+  panel.querySelector('#body').setAttribute('width', bodyWidth);
+  panel.querySelector('#body-edge').setAttribute('x', bodyLeft + 2);
+  panel.querySelector('#body-edge').setAttribute('width', bodyWidth - 4);
   panel.querySelector('#body-highlight').setAttribute('d',
-    `M${36 + leftTrim} 28H${1724 - rightTrim}L${1734 - rightTrim} 44H${26 + leftTrim}Z`);
-  panel.querySelector('#body-vents').setAttribute('transform', `translate(${leftTrim} 0)`);
-  panel.querySelector('#body').setAttribute('height', 550 + instrumentGap + extra);
-  panel.querySelector('#body-edge').setAttribute('height', 550 + instrumentGap + extra);
-  panel.querySelector('#control-strip').setAttribute('x', compact ? 190 : 72);
-  panel.querySelector('#control-strip').setAttribute('width', compact ? 1412 : 1620);
-  panel.querySelector('#control-strip').setAttribute('height', 108 + extra);
+    `M${bodyLeft + 11} 28H${bodyRight - 11}L${bodyRight - 1} 44H${bodyLeft + 1}Z`);
+  panel.querySelector('#body').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction);
+  panel.querySelector('#body-edge').setAttribute('height', 550 + instrumentGap + lowerOffset + rowExtra - keyHeightReduction);
+  panel.querySelector('#control-strip').setAttribute('x', mobileLandscape ? faderViewportLeft : compact ? 190 : 72);
+  panel.querySelector('#control-strip').setAttribute('y', 65 + (96 - 65) * scale);
+  panel.querySelector('#control-strip').setAttribute('width', mobileLandscape ? faderVisibleWidth : compact ? 1412 : 1620);
+  panel.querySelector('#control-strip').setAttribute('height', (108 + extra) * scale);
   for (const button of octaveButtons) {
     const left = button.dataset.step === '-1';
     const x = left ? 25 + leftTrim : 1602;
@@ -557,6 +728,35 @@ function layoutPanel() {
     speaker.setAttribute('height', 92 + extra);
   });
   panel.querySelector('#lower-panel').setAttribute('transform', `translate(0 ${extra})`);
+  panel.querySelector('#lower-housing').setAttribute('transform', `translate(0 ${lowerOffset})`);
+  for (const { element, attributes, desktopAttributes, text, desktopText } of responsiveControls) {
+    for (const [name, value] of Object.entries(mobileLandscape ? attributes : desktopAttributes)) {
+      if (value === null) element.removeAttribute(name);
+      else element.setAttribute(name, value);
+    }
+    if (text !== undefined) element.textContent = mobileLandscape ? text : desktopText;
+  }
+  for (const [id, desktop, mobile] of [
+    ['super-knob', '920 52', wrapMacro ? '134.5 304' : '800 260'],
+    ['super-knob-cycle', '820 42', wrapMacro ? '158.5 288' : '824 244'],
+    ['super-knob-configure', '858 42', wrapMacro ? '196.5 288' : '862 244'],
+  ]) {
+    const control = panel.querySelector(`#${id}`);
+    const parent = mobileLandscape ? panel.querySelector('#lower-instrument') : panel;
+    if (control.parentElement !== parent) {
+      if (mobileLandscape) parent.append(control);
+      else parent.insertBefore(control, panel.querySelector('#device-panel'));
+    }
+    control.setAttribute('transform', `translate(${mobileLandscape ? mobile : desktop})`);
+  }
+  faderViewport.setAttribute('clip-path', mobileLandscape ? 'url(#fader-clip)' : 'none');
+  for (const id of ['fader-clip-area', 'fader-pan-area']) {
+    panel.querySelector(`#${id}`).setAttribute('x', faderViewportLeft);
+    panel.querySelector(`#${id}`).setAttribute('width', faderVisibleWidth);
+    panel.querySelector(`#${id}`).setAttribute('height', 185 + lowerOffset);
+  }
+  panel.querySelector('#fader-pan-area').setAttribute('display', mobileLandscape ? 'inline' : 'none');
+  updateFaderPanelOffset(faderPanelOffset);
   panel.querySelectorAll('.focus-section').forEach((section) => {
     section.setAttribute('height', 178 + extra);
   });
@@ -703,7 +903,7 @@ function updateHeldDisplay() {
     ...midi.getHeldNotes().map((note) => note + readValue(transposeFader)).filter((note) => note >= 0 && note <= 127),
   ])].sort((a, b) => a - b);
   const chord = detectChord(notes);
-  const chordReadout = document.querySelector('#arp-detected-chord');
+  const chordReadout = panel.querySelector('#arp-detected-chord');
   chordReadout.classList.toggle('chord-major', chord?.quality === 'major');
   chordReadout.classList.toggle('chord-minor', chord?.quality === 'minor');
   const values = [
@@ -712,7 +912,7 @@ function updateHeldDisplay() {
     ['#arp-detected-chord', chord?.name || 'None', 72],
   ];
   for (const [selector, value, width] of values) {
-    const readout = document.querySelector(selector);
+    const readout = panel.querySelector(selector);
     readout.textContent = value;
     readout.removeAttribute('textLength');
     if (readout.getComputedTextLength() > width) {
@@ -720,6 +920,51 @@ function updateHeldDisplay() {
       readout.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     }
   }
+}
+
+function activeKeyboardPointers() {
+  return [...activePointers.values()].filter((item) => item.kind === 'key');
+}
+
+function setPointerKey(item, key) {
+  if (item.element === key) return;
+  const previous = item.element;
+  item.element = key;
+  if (previous) updateKey(previous);
+  if (key) updateKey(key);
+}
+
+function keyAtPoint(x, y) {
+  return document.elementFromPoint(x, y)?.closest('.key') ?? null;
+}
+
+function moveKeyboardPointer(event) {
+  const item = activePointers.get(event.pointerId);
+  if (item?.kind !== 'key') return;
+
+  if (item.mode === 'glissando') {
+    setPointerKey(item, keyAtPoint(event.clientX, event.clientY));
+    return;
+  }
+
+  if (item.mode === 'pan') {
+    if (activeKeyboardPointers().length > 1) return;
+    const scale = keyboardViewport.getScreenCTM()?.a || 1;
+    updateKeyboardOffset(item.startOffset + (item.startX - event.clientX) / scale);
+    return;
+  }
+
+  const dx = item.startX - event.clientX;
+  const dy = item.startY - event.clientY;
+  if (activeKeyboardPointers().length !== 1
+    || !keyboardExpanded()
+    || Math.abs(dx) < keyboardDragThreshold
+    || Math.abs(dx) <= Math.abs(dy) * 1.25) return;
+
+  item.mode = 'pan';
+  setPointerKey(item, null);
+  const scale = keyboardViewport.getScreenCTM()?.a || 1;
+  updateKeyboardOffset(item.startOffset + dx / scale);
 }
 
 for (const key of keys) {
@@ -734,6 +979,10 @@ for (const key of keys) {
   key.dataset.baseNote = String(60 + (Number(relativeOctave) - 2) * 12
     + noteNames.indexOf(note.replace('s', '#').toUpperCase()));
   const shape = key.querySelector('use');
+  const keyShape = document.createElementNS(svgNS, 'g');
+  keyShape.setAttribute('class', 'key-shape');
+  shape.before(keyShape);
+  keyShape.append(shape);
   const black = shape.getAttribute('href') === '#black-key';
   key.classList.toggle('key-black', black);
   const labels = document.createElementNS(svgNS, 'g');
@@ -767,7 +1016,15 @@ for (const key of keys) {
       const position = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
       updateFaderFromInput(expressionFader, Math.min(127, Math.round(position / 0.8 * 127)));
     }
-    activePointers.set(event.pointerId, { element: key });
+    activePointers.set(event.pointerId, {
+      kind: 'key',
+      element: key,
+      captureElement: key,
+      mode: glissandoEnabled ? 'glissando' : 'pending',
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffset: keyboardOffset,
+    });
     updateKey(key);
     status(`${key.getAttribute('aria-label')} pressed`);
   });
@@ -789,6 +1046,58 @@ for (const key of keys) {
     updateKey(key);
   });
 }
+
+panel.addEventListener('pointermove', moveKeyboardPointer);
+
+faderViewport.addEventListener('pointerdown', (event) => {
+  if (!mobileLandscape || event.button !== 0
+    || event.target.closest('.fader, [role="button"], [data-help-target], a')
+    || [...activePointers.values()].some((item) => item.kind === 'fader-pan')) return;
+  event.preventDefault();
+  faderViewport.setPointerCapture(event.pointerId);
+  activePointers.set(event.pointerId, {
+    kind: 'fader-pan',
+    element: faderViewport,
+    startX: event.clientX,
+    startY: event.clientY,
+    startOffset: faderPanelOffset,
+    panning: false,
+  });
+});
+
+faderViewport.addEventListener('pointermove', (event) => {
+  const item = activePointers.get(event.pointerId);
+  if (item?.kind !== 'fader-pan') return;
+  const dx = item.startX - event.clientX;
+  if (!item.panning) {
+    if (Math.abs(dx) < keyboardDragThreshold
+      || Math.abs(dx) <= Math.abs(item.startY - event.clientY) * 1.25) return;
+    item.panning = true;
+    faderViewport.classList.add('is-dragging');
+  }
+  updateFaderPanelOffset(item.startOffset + dx / faderViewport.getScreenCTM().a);
+});
+
+faderViewport.addEventListener('focusin', (event) => {
+  if (!mobileLandscape) return;
+  const bounds = event.target.getBoundingClientRect();
+  const viewport = panel.querySelector('#fader-pan-area').getBoundingClientRect();
+  const dx = bounds.left < viewport.left ? bounds.left - viewport.left
+    : bounds.right > viewport.right ? bounds.right - viewport.right : 0;
+  if (dx) updateFaderPanelOffset(faderPanelOffset + dx / faderViewport.getScreenCTM().a);
+});
+
+panel.querySelector('#fader-pan-area').addEventListener('keydown', (event) => {
+  const offset = {
+    ArrowLeft: faderPanelOffset - 80,
+    ArrowRight: faderPanelOffset + 80,
+    Home: 0,
+    End: faderPanelWidth * (mobileLandscape ? mobileFaderScale : 1),
+  }[event.key];
+  if (offset === undefined) return;
+  event.preventDefault();
+  updateFaderPanelOffset(offset);
+});
 
 document.addEventListener('keydown', (event) => {
   const key = computerKeyBindings.get(event.code);
@@ -815,14 +1124,15 @@ function releasePointer(event) {
   const item = activePointers.get(event.pointerId);
   if (!item) return;
   activePointers.delete(event.pointerId);
-  if (item.element.classList.contains('key')) {
-    updateKey(item.element);
+  if (item.kind === 'key') {
+    if (item.element) updateKey(item.element);
   } else {
     item.element.classList.remove('is-dragging');
     if (item.element.id === 'pitch-bend') updateFaderFromInput(item.element, 64);
   }
-  if (item.element.hasPointerCapture(event.pointerId)) {
-    item.element.releasePointerCapture(event.pointerId);
+  const captureElement = item.captureElement ?? item.element;
+  if (captureElement?.hasPointerCapture(event.pointerId)) {
+    captureElement.releasePointerCapture(event.pointerId);
   }
 }
 
@@ -834,7 +1144,7 @@ function releaseNotes() {
   pressedKeys.clear();
   computerKeys.clear();
   for (const [pointerId, item] of activePointers) {
-    if (item.element.classList.contains('key')) releasePointer({ pointerId });
+    if (item.kind === 'key') releasePointer({ pointerId });
   }
   keys.forEach(updateKey);
 }
@@ -892,33 +1202,110 @@ function applyViewState(name, value, persist = true) {
     document.querySelector('#focus-mode').setAttribute('aria-pressed', String(value));
   } else if (name === 'hideDisplays') {
     displays.hidden = value;
-    document.querySelector('#hide-displays').setAttribute('aria-pressed', String(value));
+    document.querySelector('#hide-displays').setAttribute('aria-pressed', String(!value && !mobileLandscape));
   } else if (name === 'hideSpeakers') {
     releaseAll();
     panel.classList.toggle('speakers-hidden', value);
-    document.querySelector('#hide-speakers').setAttribute('aria-pressed', String(value));
+    document.querySelector('#hide-speakers').setAttribute('aria-pressed', String(!value && !mobileLandscape));
     layoutPanel();
   } else if (name === 'fiveOctaves') {
     releaseAll();
-    panel.classList.toggle('five-octaves', value);
-    document.querySelector('#five-octaves').setAttribute('aria-pressed', String(value));
-    keyboardKeys.setAttribute('transform', `scale(${value ? 22 / 36 : 1} 1)`);
-    standardKeys.setAttribute('transform', `translate(${value ? 7 * 62 : 0} 0)`);
-    panel.querySelector('#panel-description').textContent =
-      `${value ? 61 : 37} keys, pitch bend, transpose, faders, and selection LEDs.`;
+    const wasExpanded = keyboardExpanded();
+    desktopFiveOctaves = value;
+    if (value && !wasExpanded) keyboardOffset = keyboardOctaveWidth;
+    if (!value && !mobileLandscape) keyboardOffset = 0;
+    updateKeyboardLayout();
   } else if (name === 'faderTravel') {
     releaseAll();
-    sizeButton.setAttribute('aria-pressed', String(value));
+    desktopFaderTravel = value;
+    sizeButton.setAttribute('aria-pressed', String(!mobileLandscape && value));
     travel = baseTravel * (value ? 2 : 1);
     layoutPanel();
   }
   if (persist) setPreference(name, value);
 }
 
+function syncResponsiveLayout() {
+  const wasMobile = mobileLandscape;
+  mobileLandscape = mobileLandscapeQuery.matches;
+  if (wasMobile !== mobileLandscape) releaseAll();
+  panel.classList.toggle('mobile-landscape', mobileLandscape);
+  displays.classList.toggle('mobile-landscape', mobileLandscape);
+  document.querySelector('#hide-displays').setAttribute('aria-pressed', String(!mobileLandscape && !displays.hidden));
+  document.querySelector('#hide-speakers').setAttribute('aria-pressed',
+    String(!mobileLandscape && !panel.classList.contains('speakers-hidden')));
+
+  if (mobileLandscape && !wasMobile && !desktopFiveOctaves) keyboardOffset = keyboardOctaveWidth;
+  if (!mobileLandscape && wasMobile && !desktopFiveOctaves) keyboardOffset = 0;
+
+  const narrow = mobileLandscape && window.innerWidth <= 900;
+  panel.classList.toggle('mobile-hide-yamaha', narrow);
+  panel.classList.toggle('mobile-hide-cs-logo', narrow);
+  if (mobileLandscape) {
+    if (visualToggles.parentElement !== appMenu) menuClose.after(visualToggles);
+    if (menuOpen.parentElement !== container) container.append(menuOpen);
+  } else {
+    if (visualToggles.parentElement === appMenu) visualTogglesAnchor.after(visualToggles);
+    if (menuOpen.parentElement === container) menuOpenAnchor.after(menuOpen);
+  }
+
+  sizeButton.setAttribute('aria-pressed', String(!mobileLandscape && desktopFaderTravel));
+  travel = baseTravel * (desktopFaderTravel ? 2 : 1);
+  updateKeyboardLayout();
+  layoutPanel();
+  updateHeldDisplay();
+}
+
+function closeAppMenu() {
+  if (appMenu.matches(':popover-open')) appMenu.hidePopover();
+}
+
+function syncAppMenu() {
+  closeAppMenu();
+  if (mobileMenuQuery.matches) {
+    appMenu.append(dataInfo);
+    appMenu.setAttribute('popover', 'auto');
+    appMenu.setAttribute('role', 'dialog');
+    appMenu.setAttribute('aria-label', 'App menu');
+  } else {
+    dataInfoAnchor.after(dataInfo);
+    appMenu.removeAttribute('popover');
+    appMenu.removeAttribute('role');
+    appMenu.removeAttribute('aria-label');
+  }
+}
+
+menuOpen.addEventListener('click', () => appMenu.showPopover({ source: menuOpen }));
+menuClose.addEventListener('click', () => {
+  closeAppMenu();
+  menuOpen.focus({ preventScroll: true });
+});
+appMenu.addEventListener('toggle', () => {
+  menuOpen.setAttribute('aria-expanded', String(appMenu.matches(':popover-open')));
+});
+appMenu.addEventListener('click', (event) => {
+  if (event.target.closest('#app-settings-open, #device-settings-open, #backup-open, #help-open, #version-open, #glissando, #reset-faders')) {
+    closeAppMenu();
+  }
+});
+mobileMenuQuery.addEventListener('change', syncAppMenu);
+syncAppMenu();
+
+mobileLandscapeQuery.addEventListener('change', syncResponsiveLayout);
+window.addEventListener('resize', syncResponsiveLayout);
+
 sizeButton.addEventListener('click', () => {
   const doubled = sizeButton.getAttribute('aria-pressed') !== 'true';
   applyViewState('faderTravel', doubled);
   status(`${doubled ? 'Double' : 'Normal'} fader travel. Control values preserved.`);
+});
+
+glissandoButton.addEventListener('click', () => {
+  releaseNotes();
+  glissandoEnabled = glissandoButton.getAttribute('aria-pressed') !== 'true';
+  glissandoButton.setAttribute('aria-pressed', String(glissandoEnabled));
+  setPreference('glissando', glissandoEnabled);
+  status(`Glissando ${glissandoEnabled ? 'on' : 'off'}.`);
 });
 
 function resetSection(section) {
@@ -969,13 +1356,13 @@ document.querySelector('#focus-mode').addEventListener('click', (event) => {
 });
 
 document.querySelector('#hide-displays').addEventListener('click', (event) => {
-  const hidden = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  const hidden = event.currentTarget.getAttribute('aria-pressed') === 'true';
   applyViewState('hideDisplays', hidden);
   status(`Displays ${hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
 
 document.querySelector('#hide-speakers').addEventListener('click', (event) => {
-  const hidden = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+  const hidden = event.currentTarget.getAttribute('aria-pressed') === 'true';
   applyViewState('hideSpeakers', hidden);
   status(`Speakers ${hidden ? 'hidden' : 'shown'}. Control values preserved.`);
 });
@@ -1038,6 +1425,7 @@ setupAppSettings({
   applyViewState,
   applyTempo: (bpm) => updateFader(tempoFader, bpm, false),
 });
+syncResponsiveLayout();
 document.querySelector('#capture-warning-close').addEventListener('click', () => {
   document.querySelector('#capture-warning').close();
 });

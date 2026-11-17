@@ -281,6 +281,30 @@ test('panel controls cycle, offer keyboard menus, and preserve dialog drafts', a
   await expect(receive).toHaveAttribute('data-value', '0');
 });
 
+test('mobile channel menus follow the compact controls and remain usable', async ({ page }) => {
+  for (const width of [844, 568]) {
+    await page.setViewportSize({ width, height: 390 });
+    await expect(page.locator('#arp-label')).toHaveText('ARP');
+    for (const [id, name, channel] of [
+      ['midi-transmit', 'Transmit channel choices', '4'],
+      ['midi-receive', 'Receive channel choices', '5'],
+    ]) {
+      const control = page.locator(`#device-${id}`);
+      await control.click({ button: 'right' });
+      const menu = page.getByRole('menu', { name });
+      await expect(menu).toBeVisible();
+      const display = await control.locator('rect:nth-of-type(2)').boundingBox();
+      const bounds = await menu.boundingBox();
+      expect(Math.abs(bounds.x - display.x)).toBeLessThanOrEqual(0.5);
+      expect(bounds.y).toBeGreaterThan(display.y + display.height);
+      expect(bounds.x + bounds.width).toBeLessThan(width);
+      await menu.getByRole('menuitemradio', { name: channel, exact: true }).click();
+      await expect(control).toHaveAttribute('data-value', String(Number(channel) - 1));
+      await expect(menu).toBeHidden();
+    }
+  }
+});
+
 test('receive changes release old notes and immediately route all outgoing channel messages', async ({ page }) => {
   await page.locator('#midi-controller-input').selectOption('ci');
   await page.evaluate(() => {
@@ -416,6 +440,7 @@ test('arpeggiator output follows a specific receive channel', async ({ page }) =
 
 test('device dialog fits a small viewport and keeps its bottom actions reachable', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 500 });
+  await page.locator('#mobile-menu-open').click();
   await page.locator('#device-settings-open').click();
   const settings = dialog(page);
   expect(await settings.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(450);

@@ -7,9 +7,10 @@
   </head>
   <body>
     <main>
-      <header class="toolbar">
+      <header id="app-menu" class="toolbar">
+        <button id="mobile-menu-close" type="button" aria-label="Close app menu" title="Close app menu">Close</button>
         <div class="toolbar-brand">
-          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-17">v0.12</button>
+          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-17">v0.13</button>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
@@ -212,23 +213,30 @@
       <section id="visualizations" class="visualizations" aria-label="Live schematic parameter previews"></section>
       <div class="instrument-scroll" tabindex="0" role="region" aria-label="Synthesizer panel; scroll horizontally on smaller screens">
         <div id="visual-toggles">
-        <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth">
-            Focus Mode
+          <button id="mobile-menu-open" type="button" aria-label="Open app menu" aria-controls="app-menu" aria-expanded="false" title="Open MIDI connections, settings, messages, and app actions">
+            &#9776;
           </button>
-          <button id="hide-speakers" type="button" aria-pressed="false" aria-controls="synth">
-            Hide Speakers
+        <button id="focus-mode" type="button" aria-pressed="false" aria-controls="synth" title="Show section colors, fader values, and keyboard note labels">
+            Focus
           </button>
-          <button id="hide-displays" type="button" aria-pressed="false" aria-controls="visualizations">
-            Hide Displays
+          <button id="hide-speakers" type="button" aria-pressed="true" aria-controls="synth" title="Show or hide the synth speakers; highlighted when visible">
+            Speakers
           </button>
-          <button id="five-octaves" type="button" aria-pressed="false" aria-controls="synth">
+          <button id="hide-displays" type="button" aria-pressed="true" aria-controls="visualizations" title="Show or hide the live parameter displays; highlighted when visible">
+            Displays
+          </button>
+          <button id="five-octaves" type="button" aria-pressed="false" aria-controls="synth" title="Expand the keyboard to five octaves; drag horizontally to pan">
             5 Octaves
           </button>
-          <button id="reset-faders" type="button" aria-controls="synth">
-            Reset <span>faders</span>
+          <button id="glissando" type="button" aria-pressed="false" aria-controls="synth"
+            title="When off, horizontal drags pan the keyboard; when on, they play through notes.">
+            Glissando
           </button>
-          <button id="fader-size" type="button" aria-pressed="false" aria-controls="synth">
-            2x <span>fader travel</span>
+          <button id="reset-faders" type="button" aria-controls="synth" title="Reset faders, mute, and pitch bend range to their starting values">
+            Reset
+          </button>
+          <button id="fader-size" type="button" aria-pressed="false" aria-controls="synth" title="Double the fader travel without changing control values">
+            2x Fader
           </button>
       </div>  
         <div id="synth"></div>

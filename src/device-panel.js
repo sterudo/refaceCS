@@ -64,7 +64,10 @@ export function createDevicePanel(change) {
     const menu = document.createElementNS(svgNS, 'g');
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', `${labels[id]} choices`);
-    menu.setAttribute('transform', `translate(${id === 'midi-transmit' ? 1155 : 1295} 63)`);
+    const display = button.querySelector('rect:nth-of-type(2)');
+    const origin = new DOMPoint(Number(display.getAttribute('x')), 32).matrixTransform(button.getScreenCTM())
+      .matrixTransform(layer.getScreenCTM().inverse());
+    menu.setAttribute('transform', `translate(${origin.x} ${origin.y})`);
     const background = document.createElementNS(svgNS, 'rect');
     background.setAttribute('class', 'arp-menu-background');
     background.setAttribute('width', '132');

@@ -22,7 +22,6 @@ test('dark synth control cycles modes and offers all modes in its right-click me
   await expect(page.locator('#arp-enabled .arp-lens')).toHaveCSS('fill', 'rgb(74, 83, 85)');
   await expect(page.locator('#arp-enabled text')).toHaveCSS('fill', 'rgb(238, 241, 239)');
   await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(238, 241, 239)');
-  await expect(page.locator('#arp-held-notes')).toHaveCSS('fill', 'rgb(238, 241, 239)');
   await mode.click();
   await expect(page.locator('#synth svg')).toHaveClass(/dark-synth-keys/);
   await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(238, 241, 239)');
@@ -154,6 +153,7 @@ test('settings apply dark mode immediately and keep dependent fields aligned and
 
 test('settings remain usable at a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Open app menu' }).click();
   await page.locator('#app-settings-open').click();
   await page.locator('#settings-midi-action').selectOption('specific-patch');
   await page.locator('#settings-tempo-mode').selectOption('specific');

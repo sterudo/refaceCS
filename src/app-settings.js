@@ -285,8 +285,10 @@ export function setupAppSettings({ panel, sections, drums, clock, patchLibrary, 
     darkModeButton.setAttribute('aria-expanded', 'true');
     darkMenuOpen = true;
     const current = getAppSetting('darkSynthMode');
+    const origin = new DOMPoint(-5, 46).matrixTransform(darkModeButton.getScreenCTM())
+      .matrixTransform(darkMenuLayer.getScreenCTM().inverse());
     const menu = createSvgElement('g', {
-      role: 'menu', 'aria-label': 'Dark synth mode choices', transform: 'translate(950 77)',
+      role: 'menu', 'aria-label': 'Dark synth mode choices', transform: `translate(${origin.x} ${origin.y})`,
     });
     const background = createSvgElement('rect', {
       class: 'arp-menu-background', width: '166', height: '72', rx: '4',

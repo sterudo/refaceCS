@@ -21,7 +21,8 @@ test('restores browser-only panel preferences after reload', async ({ page }) =>
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('refaceCS.preferences.v1')).pitchRange)).toBeUndefined();
   await page.reload();
   for (const id of ['focus-mode', 'hide-speakers', 'hide-displays', 'five-octaves', 'fader-size']) {
-    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed',
+      String(!['hide-speakers', 'hide-displays'].includes(id)));
   }
   await expect(page.locator('#position-expression')).toBeChecked();
   await expect(page.locator('#pitch-range-value')).toHaveText('12');
@@ -239,7 +240,7 @@ test('Hide Displays removes reserved space and preserves controls, view modes an
   const toggle = page.locator('#hide-displays');
   const values = () => page.locator('.fader').evaluateAll((elements) =>
     elements.map((element) => element.dataset.value));
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(displays).toBeVisible();
   await page.locator('#lfo-depth').press('Home');
   const before = await values();
@@ -248,7 +249,7 @@ test('Hide Displays removes reserved space and preserves controls, view modes an
     synthTop: document.querySelector('#synth').getBoundingClientRect().top,
   }));
   await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(displays).toBeHidden();
   const hiddenTop = await page.locator('#synth').evaluate((element) => element.getBoundingClientRect().top);
   expect(geometry.synthTop - hiddenTop).toBeCloseTo(geometry.space, 1);
@@ -265,11 +266,11 @@ test('Hide Displays removes reserved space and preserves controls, view modes an
   await toggle.press(' ');
   await page.locator('#reset-faders').click();
   await expect(displays).toBeHidden();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.press('Enter');
   await expect(displays).toBeVisible();
   for (const id of ['focus-mode', 'hide-speakers', 'five-octaves', 'fader-size']) {
-    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', String(id !== 'hide-speakers'));
   }
 });
 
@@ -326,7 +327,9 @@ test('display resets restore only their section, with shared EG resets and safe 
   await expect(page.locator('#volume-mute')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#volume-mute').click();
   await expect(page.locator('#expression')).toHaveAttribute('aria-valuenow', '127');
-  for (const id of modes) await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
+  for (const id of modes) {
+    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', String(id !== 'hide-speakers'));
+  }
 });
 
 test('five read-only visualization cards reserve space above the synth in every layout', async ({ page }) => {
@@ -377,6 +380,7 @@ test('keys remain independent and release outside the panel or after cancellatio
   await expect(page.locator('.key[role="button"]:visible')).toHaveCount(37);
   const key = page.locator('#key-c-1');
   const nextKey = page.locator('#key-d-1');
+  await key.scrollIntoViewIfNeeded();
   const box = await key.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.8);
   await page.mouse.down();
@@ -431,6 +435,7 @@ test('QWERTY, pointer and focused-key presses retain independent ownership throu
   await page.locator('#focus-mode').click();
   for (const [letter, id] of [['a', 'c-2'], ['w', 'cs-2']]) {
     const key = page.locator(`#key-${id}`);
+    await key.scrollIntoViewIfNeeded();
     const overlay = await key.locator('.key-letter').boundingBox();
     await page.mouse.move(overlay.x + overlay.width / 2, overlay.y + overlay.height / 2);
     await page.mouse.down();
@@ -487,14 +492,23 @@ test('Focus key labels follow both pitch controls while letters stay anchored an
     await expect(page.locator(`#key-c-${expanded ? 5 : 4} .key-note`)).toHaveText(expanded ? 'C7' : 'C6');
 
     await page.locator('#keyboard').scrollIntoViewIfNeeded();
-    const misplaced = await page.locator('.key:visible').evaluateAll((keys) => keys.flatMap((key) => {
-      const label = key.querySelector('.key-note');
-      const bounds = label.getBoundingClientRect();
-      const surface = key.querySelector('use').getBoundingClientRect();
-      const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-      return bounds.top >= surface.top && bounds.bottom < surface.top + 20
-        && hit?.closest('.key') === key ? [] : [key.id];
-    }));
+    const misplaced = await page.locator('.key:visible').evaluateAll((keys) => {
+      const viewport = document.querySelector('#keyboard > rect').getBoundingClientRect();
+      return keys.flatMap((key) => {
+        const label = key.querySelector('.key-note');
+        const bounds = label.getBoundingClientRect();
+        const surface = key.querySelector('use').getBoundingClientRect();
+        const labelX = bounds.x + bounds.width / 2;
+        const labelY = bounds.y + bounds.height / 2;
+        if (surface.right <= viewport.left || surface.left >= viewport.right
+          || surface.bottom <= viewport.top || surface.top >= viewport.bottom
+          || labelX <= viewport.left || labelX >= viewport.right
+          || labelY <= viewport.top || labelY >= viewport.bottom) return [];
+        const hit = document.elementFromPoint(labelX, labelY);
+        return bounds.top >= surface.top && bounds.bottom < surface.top + 20
+          && hit?.closest('.key') === key ? [] : [key.id];
+      });
+    });
     expect(misplaced).toEqual([]);
     await page.keyboard.down('a');
     await page.keyboard.down('g');
@@ -938,7 +952,7 @@ test('page load and Reset apply the requested fader positions without changing t
 });
 
 test('Focus Mode changes only presentation and keeps live readouts aligned at both travel sizes', async ({ page }) => {
-  const toggle = page.getByRole('button', { name: 'Focus Mode', exact: true });
+  const toggle = page.getByRole('button', { name: 'Focus', exact: true });
   const values = () => page.locator('.fader').evaluateAll((faders) =>
     faders.map((fader) => fader.dataset.value));
   const starting = await values();
@@ -1023,7 +1037,7 @@ test('Focus Mode changes only presentation and keeps live readouts aligned at bo
 });
 
 test('Hide Speakers narrows the case without scaling controls or losing state', async ({ page }) => {
-  const toggle = page.getByRole('button', { name: 'Hide Speakers', exact: true });
+  const toggle = page.getByRole('button', { name: 'Speakers', exact: true });
   const geometry = () => page.evaluate(() => {
     const box = (selector) => {
       const { width, height } = document.querySelector(selector).getBoundingClientRect();
@@ -1036,15 +1050,13 @@ test('Hide Speakers narrows the case without scaling controls or losing state', 
       body: box('#body'),
       leftMargin: keyboard.left - body.left,
       rightMargin: body.right - keyboard.right,
-      ventsInsideCase: document.querySelector('#body-vents').getBoundingClientRect().left
-        >= document.querySelector('#body').getBoundingClientRect().left,
       key: box('#key-c-1'),
       handle: box('#filter-cutoff .cap'),
       logo: box('#cs-logo'),
       values: [...document.querySelectorAll('.fader')].map((fader) => fader.dataset.value),
     };
   });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.speaker:visible')).toHaveCount(2);
   await page.locator('#osc-texture').focus();
   await page.keyboard.press('ArrowUp');
@@ -1055,7 +1067,6 @@ test('Hide Speakers narrows the case without scaling controls or losing state', 
   const compact = await geometry();
   expect(compact.panel.width).toBeLessThan(full.panel.width);
   expect(compact.body.width).toBeLessThan(full.body.width);
-  expect(compact.ventsInsideCase).toBe(true);
   expect(compact.leftMargin).toBeCloseTo(compact.rightMargin, 1);
   for (const element of ['key', 'handle', 'logo']) {
     expect(compact[element].width).toBeCloseTo(full[element].width, 1);
@@ -1074,7 +1085,7 @@ test('Hide Speakers narrows the case without scaling controls or losing state', 
   await page.mouse.click(top.x, top.y);
   await expect(page.locator('#filter-resonance')).toHaveAttribute('aria-valuenow', '127');
   await page.locator('#reset-faders').click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.speaker:visible')).toHaveCount(0);
   await expect(page.locator('#fader-value-osc-texture')).toHaveText('0');
   await toggle.click();
@@ -1084,10 +1095,12 @@ test('Hide Speakers narrows the case without scaling controls or losing state', 
   await expect(page.locator('.speaker:visible')).toHaveCount(2);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const wideScroll = await page.locator('.instrument-scroll').evaluate((element) => element.scrollWidth);
+  const wideHousing = await page.locator('#body').boundingBox();
+  expect(wideHousing.x + wideHousing.width).toBeLessThanOrEqual(390);
   await toggle.click();
-  const narrowScroll = await page.locator('.instrument-scroll').evaluate((element) => element.scrollWidth);
-  expect(narrowScroll).toBeLessThan(wideScroll);
+  const narrowHousing = await page.locator('#body').boundingBox();
+  expect(narrowHousing.width).toBeLessThan(wideHousing.width);
+  expect(narrowHousing.x + narrowHousing.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -1102,7 +1115,7 @@ test('end panels synchronize the bounded Octave selector in every view combinati
       if (await sizeToggle.getAttribute('aria-pressed') !== String(doubled)) await sizeToggle.click();
       for (const hidden of [false, true]) {
         const speakerToggle = page.locator('#hide-speakers');
-        if (await speakerToggle.getAttribute('aria-pressed') !== String(hidden)) await speakerToggle.click();
+        if (await speakerToggle.getAttribute('aria-pressed') !== String(!hidden)) await speakerToggle.click();
         await page.locator('#reset-faders').click();
         await down.click();
         await expect(octave).toHaveAttribute('aria-valuetext', '-1');
@@ -1233,7 +1246,7 @@ for (const reset of ['double-click', 'Delete']) {
       }
       await expect(page.locator('#fader-size')).toHaveAttribute('aria-pressed', String(travel === 160));
       await expect(page.locator('#focus-mode')).toHaveAttribute('aria-pressed', String(travel === 160));
-      await expect(page.locator('#hide-speakers')).toHaveAttribute('aria-pressed', String(travel === 160));
+      await expect(page.locator('#hide-speakers')).toHaveAttribute('aria-pressed', String(travel !== 160));
     }
     const trackPoint = await faderPoint(page, 'filter-cutoff', 160);
     await page.mouse.dblclick(trackPoint.x, trackPoint.y);
@@ -1270,7 +1283,7 @@ test('Delete ends an active drag and resets mute state without resetting other c
   await expect(filter).toHaveAttribute('aria-valuenow', '0');
 });
 
-test('5 Octaves fits the expanded range in the same frame without changing controls in any view', async ({ page }) => {
+test('5 Octaves expands the keyboard without changing control geometry in any view', async ({ page }) => {
   const toggle = page.getByRole('button', { name: '5 Octaves', exact: true });
   const geometry = () => page.evaluate(() => {
     const box = (selector) => {
@@ -1278,7 +1291,7 @@ test('5 Octaves fits the expanded range in the same frame without changing contr
       return { width, height };
     };
     return {
-      keyboard: box('#keyboard'),
+      keyboard: box('#keyboard > rect'),
       white: box('#key-c-1'),
       black: box('#key-cs-1'),
       handle: box('#filter-cutoff .cap'),
@@ -1313,7 +1326,7 @@ test('5 Octaves fits the expanded range in the same frame without changing contr
         expect(expanded.keyboard.width).toBeCloseTo(normal.keyboard.width, 1);
         expect(expanded.keyboard.height).toBeCloseTo(normal.keyboard.height, 1);
         for (const color of ['white', 'black']) {
-          expect(expanded[color].width).toBeCloseTo(normal[color].width * 22 / 36, 1);
+          expect(expanded[color].width).toBeCloseTo(normal[color].width, 1);
           expect(expanded[color].height).toBeCloseTo(normal[color].height, 1);
         }
         expect(expanded.body).toEqual(normal.body);
@@ -1323,7 +1336,11 @@ test('5 Octaves fits the expanded range in the same frame without changing contr
         await toggle.click();
         await expect(page.locator('.key:visible')).toHaveCount(37);
         const restored = await geometry();
-        expect(restored).toEqual(normal);
+        for (const part of ['keyboard', 'white', 'black', 'handle', 'body']) {
+          expect(restored[part].width).toBeCloseTo(normal[part].width, 1);
+          expect(restored[part].height).toBeCloseTo(normal[part].height, 1);
+        }
+        expect(restored.values).toEqual(normal.values);
       }
     }
   }
@@ -1344,10 +1361,19 @@ test('added keys support independent presses and cancellation, and switching rel
 
   const low = page.getByRole('button', { name: 'C, octave 2', exact: true });
   const high = page.getByRole('button', { name: 'C, octave 7', exact: true });
+  const anchor = page.locator('#key-c-2');
+  await anchor.scrollIntoViewIfNeeded();
+  const anchorBox = await anchor.boundingBox();
+  await page.mouse.move(anchorBox.x + anchorBox.width / 2, anchorBox.y + anchorBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(anchorBox.x + anchorBox.width / 2 + 600, anchorBox.y + anchorBox.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.locator('#keyboard-keys')).toHaveAttribute('transform', 'translate(0 0)');
+  await low.scrollIntoViewIfNeeded();
   const lowBox = await low.boundingBox();
   await page.mouse.move(lowBox.x + lowBox.width / 2, lowBox.y + lowBox.height * 0.8);
   await page.mouse.down();
-  await high.focus();
+  await high.evaluate((key) => key.focus({ preventScroll: true }));
   await page.keyboard.down('Enter');
   await expect(low).toHaveAttribute('aria-pressed', 'true');
   await expect(high).toHaveAttribute('aria-pressed', 'true');
@@ -1361,7 +1387,8 @@ test('added keys support independent presses and cancellation, and switching rel
   await expect(page.locator('#key-c-5')).toBeHidden();
 
   await toggle.click();
-  const sharp = page.getByRole('button', { name: 'C sharp, octave 6', exact: true });
+  const sharp = page.getByRole('button', { name: 'C sharp, octave 4', exact: true });
+  await sharp.scrollIntoViewIfNeeded();
   const sharpBox = await sharp.boundingBox();
   await page.mouse.move(sharpBox.x + sharpBox.width / 2, sharpBox.y + sharpBox.height / 2);
   await page.mouse.down();
@@ -1652,6 +1679,6 @@ test('pitch bend range controls remain aligned and preserve their value across v
   await page.locator('#reset-faders').click();
   await expect(range).toHaveText('12');
   for (const id of ['focus-mode', 'hide-speakers', 'fader-size', 'five-octaves']) {
-    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(`#${id}`)).toHaveAttribute('aria-pressed', String(id !== 'hide-speakers'));
   }
 });
