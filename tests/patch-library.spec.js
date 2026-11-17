@@ -3,12 +3,30 @@ import { readFile } from 'node:fs/promises';
 import { readPatchBackup } from '../src/patches.js';
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        const filter = document.querySelector('#patch-author-filter');
+        if (filter) {
+          filter.value = 'User';
+          filter.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, 0);
+    }, { once: true });
+  });
   await page.goto('/static/reface/');
   await expect(page.locator('.message-entry[data-source="app-status"] .message-text').last()).toContainText('Panel ready.');
   await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
+  await page.evaluate(() => {
+    const filter = document.querySelector('#patch-author-filter');
+    filter.value = 'User';
+    filter.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 });
 
 async function savePatch(page, { name, description = '', category = 'synth', tags = '' }) {
+  const panel = page.locator('#footer-panel');
+  if (!await panel.evaluate((element) => element.open)) await panel.locator(':scope > summary').click();
   await page.locator('#patch-save').click();
   const choice = page.getByRole('dialog', { name: 'Save patch' });
   if (await choice.isVisible()) await choice.getByRole('button', { name: 'Save as' }).click();
@@ -17,7 +35,7 @@ async function savePatch(page, { name, description = '', category = 'synth', tag
   await page.locator('#patch-category').fill(category);
   await page.locator('#patch-tags').fill(tags);
   await page.locator('#patch-editor-form button[type="submit"]').click();
-  return page.locator('.patch-card').filter({ has: page.getByRole('heading', { name }) });
+  return page.locator('.patch-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
 }
 
 test('new patch protects changes and resets only patch controls to INIT', async ({ page }) => {
@@ -52,14 +70,14 @@ test('optional ignore setting skips patch-load protection but not INIT protectio
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Saved sound');
   await page.locator('#lfo-depth').press('Home');
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Saved sound (unsaved changes)');
-  await card.getByRole('button', { name: 'Load', exact: true }).click();
+  await card.getByRole('button', { name: 'Load', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: 'Unsaved sound' })).toBeVisible();
   await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Cancel' }).click();
 
   await page.locator('#app-settings-open').click();
   await page.getByLabel('Ignore unsaved Synth state when loading patch').check();
   await page.locator('#settings-close').click();
-  await card.getByRole('button', { name: 'Load', exact: true }).click();
+  await card.getByRole('button', { name: 'Load', exact: true }).first().click();
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
   await expect(page.getByRole('dialog', { name: 'Unsaved sound' })).toBeHidden();
   await page.locator('#lfo-depth').press('Home');
@@ -147,7 +165,7 @@ test('initializing can save changed controls as a separate patch', async ({ page
   await page.locator('#patch-editor-form button[type="submit"]').click();
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'INIT');
   const copy = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Original (copy)', exact: true }) });
-  await copy.getByRole('button', { name: 'Load', exact: true }).click();
+  await copy.getByRole('button', { name: 'Load', exact: true }).first().click();
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
 });
 
@@ -265,7 +283,7 @@ test('empty patch display menus explain missing results, fit the viewport, and d
   const display = page.locator('#patch-display-screen');
   const menu = page.getByRole('menu', { name: 'Load filtered patch', exact: true });
   await display.click({ button: 'right' });
-  await expect(menu).toHaveText('No patches saved yet.');
+  await expect(menu).toHaveText('No patches match these filters.');
   await expect(menu.getByRole('menuitemradio')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
@@ -309,7 +327,7 @@ test('patch display menu scrolls large libraries within a narrow viewport and lo
       const store = transaction.objectStore('patches');
       const request = store.getAll();
       request.onsuccess = () => {
-        const template = request.result[0];
+        const template = request.result.find((patch) => patch.author === 'User');
         for (let i = 0; i < 50; i++) store.put({
           ...template, id: i ? `menu-${i}` : template.id, name: `Patch ${String(i).padStart(3, '0')}`,
         });
@@ -340,6 +358,78 @@ test('patch display menu scrolls large libraries within a narrow viewport and lo
   await expect(menu).toBeHidden();
 });
 
+test('factory patches are protected, hideable, type-filtered, and load in Soft Synth mode', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    class FakeAudioParam {
+      value = 0;
+      setTargetAtTime(value) { this.value = value; }
+    }
+    class FakeAudioNode {
+      gain = new FakeAudioParam();
+      connect() { return this; }
+    }
+    window.AudioContext = class {
+      currentTime = 0;
+      state = 'running';
+      destination = new FakeAudioNode();
+      createGain() { return new FakeAudioNode(); }
+    };
+  });
+  await page.reload();
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
+  await page.locator('#footer-panel > summary').click();
+  await page.locator('#patch-author-filter').selectOption('System');
+  await expect(page.locator('.patch-card')).toHaveCount(3);
+  const bass = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'First Bass', exact: true }) });
+  await expect(bass).toContainText('Author: System');
+  await expect(bass.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  await expect(bass.locator('.patch-delete')).toHaveCount(0);
+  await bass.getByRole('button', { name: 'Hide', exact: true }).click();
+  await expect(page.locator('.patch-card')).toHaveCount(2);
+  await page.locator('#patch-show-hidden').check();
+  await expect(page.locator('.patch-card')).toHaveCount(3);
+  await expect(bass.getByRole('button', { name: 'Show', exact: true })).toBeVisible();
+  await bass.getByRole('button', { name: 'Show', exact: true }).click();
+  await page.locator('#patch-show-hidden').uncheck();
+
+  await page.locator('#effect-type .position-label[data-step="2"]').click();
+  await page.locator('#effect-depth').press('Home');
+  await page.locator('#effect-rate').press('Home');
+  await page.locator('#lfo-assign .position-label[data-step="4"]').click();
+  const savedEffectType = await page.locator('#effect-type').getAttribute('aria-valuenow');
+  const savedEffectDepth = await page.locator('#effect-depth').getAttribute('aria-valuenow');
+  const savedEffectRate = await page.locator('#effect-rate').getAttribute('aria-valuenow');
+  const savedLfoAssign = await page.locator('#lfo-assign').getAttribute('aria-valuenow');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator('#soft-synth-mode').click({ timeout: 3000 });
+  expect(pageErrors).toEqual([]);
+  await expect(page.locator('#soft-synth-mode')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#synth svg')).toHaveClass(/soft-synth-mode/);
+  await expect(page.locator('#effect-type')).toBeHidden();
+  await expect(page.locator('#patch-type-filter')).toHaveValue('soft-synth');
+  await expect(page.locator('#lfo-assign')).toBeVisible();
+  await expect(page.locator('#lfo-assign')).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('#lfo-assign .scale-label[data-step="2"]')).toBeHidden();
+  await expect(page.locator('#preview-lfo .graph-values')).toContainText('Depth 0 / Speed 0');
+  await expect(page.locator('#preview-effect .graph-context')).toHaveText('Off');
+  await expect(page.locator('#preview-effect .graph-curve')).toHaveAttribute('d', 'M12 68H288');
+  await expect(page.locator('#soft-synth-name')).toBeVisible();
+  await expect(page.locator('#soft-synth-logo')).toHaveAttribute('aria-label', 'Open Simple Soft Synth help');
+  await bass.getByRole('button', { name: 'Load', exact: true }).first().click();
+  const unsavedSound = page.getByRole('dialog', { name: 'Unsaved sound' });
+  if (await unsavedSound.isVisible()) await unsavedSound.getByRole('button', { name: 'Discard and load' }).click();
+  await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'First Bass');
+  await expect(page.locator('#osc-type')).toHaveAttribute('aria-valuenow', '0');
+  await page.locator('#soft-synth-mode').click();
+  await expect(page.locator('#patch-type-filter')).toHaveValue('hardware');
+  await expect(page.locator('#effect-type')).toHaveAttribute('aria-valuenow', savedEffectType);
+  await expect(page.locator('#effect-depth')).toHaveAttribute('aria-valuenow', savedEffectDepth);
+  await expect(page.locator('#effect-rate')).toHaveAttribute('aria-valuenow', savedEffectRate);
+  await expect(page.locator('#lfo-assign')).toHaveAttribute('aria-valuenow', savedLfoAssign);
+});
+
 test('unsaved changes can be saved as a new patch without copying audio', async ({ page }) => {
   await page.locator('#footer-panel').first().locator('summary').click();
   const source = await savePatch(page, { name: 'Original', description: 'Warm', category: 'pads', tags: 'soft' });
@@ -351,7 +441,7 @@ test('unsaved changes can be saved as a new patch without copying audio', async 
   await expect(source.locator('.patch-audio-item')).toHaveCount(1);
   await savePatch(page, { name: 'Target' });
   await expect(page.locator('#patch-editor')).not.toBeVisible();
-  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await source.getByRole('button', { name: 'Load', exact: true }).first().click();
   await page.locator('#lfo-depth').press('Home');
   await page.locator('#patch-next').click();
   await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Save as and load' }).click();
@@ -364,7 +454,7 @@ test('unsaved changes can be saved as a new patch without copying audio', async 
   const copy = page.locator('.patch-card').filter({ has: page.getByRole('heading', { name: 'Original (copy)', exact: true }) });
   await expect(copy.locator('.patch-audio-item')).toHaveCount(0);
   await expect(source.locator('.patch-audio-item')).toHaveCount(1);
-  await copy.getByRole('button', { name: 'Load', exact: true }).click();
+  await copy.getByRole('button', { name: 'Load', exact: true }).first().click();
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '127');
 });
 
@@ -378,25 +468,28 @@ test('overwriting changed controls asks whether to keep attached audio', async (
   });
   await expect(source.locator('.patch-audio-item')).toHaveCount(1);
   await page.locator('#lfo-depth').press('Home');
-  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await source.getByRole('button', { name: 'Load', exact: true }).first().click();
   await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
   await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Cancel' }).click();
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original (unsaved changes)');
   await expect(source.locator('.patch-audio-item')).toHaveCount(1);
-  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await source.getByRole('button', { name: 'Load', exact: true }).first().click();
   await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
   await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Keep audio' }).click();
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original');
   await expect(source.locator('.patch-audio-item')).toHaveCount(1);
   await page.locator('#lfo-depth').press('End');
-  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await source.getByRole('button', { name: 'Load', exact: true }).first().click();
   await page.getByRole('dialog', { name: 'Unsaved sound' }).getByRole('button', { name: 'Overwrite and load' }).click();
   await page.getByRole('dialog', { name: 'Patch audio' }).getByRole('button', { name: 'Delete audio' }).click();
   await expect(page.locator('#patch-display-screen')).toHaveAttribute('aria-label', 'Original');
   await expect(source.locator('.patch-audio-item')).toHaveCount(0);
   await page.reload();
-  await page.locator('#footer-panel').first().locator('summary').click();
-  await source.getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
+  const patchPanel = page.locator('#footer-panel');
+  if (!await patchPanel.evaluate((element) => element.open)) await patchPanel.locator(':scope > summary').click();
+  await expect(source).toBeVisible();
+  await source.getByRole('button', { name: 'Load', exact: true }).first().click();
   await expect(page.locator('#lfo-depth')).toHaveAttribute('aria-valuenow', '0');
 });
 
@@ -875,6 +968,8 @@ test('filters by favorites, category, and tag and recalls locally without MIDI',
 
   await page.locator('#filter-cutoff').press('End');
   await page.locator('.patch-card').getByRole('button', { name: 'Load' }).click();
+  const unsaved = page.getByRole('dialog', { name: 'Unsaved sound' });
+  if (await unsaved.isVisible()) await unsaved.getByRole('button', { name: 'Discard and load' }).click();
   await expect(page.locator('#filter-cutoff')).toHaveAttribute('aria-valuenow', '127');
   await expect(page.locator('.message-entry[data-source="patch-status"] .message-text').last()).toContainText('MIDI output unavailable');
   await expect(page.locator('.message-entry[data-source="midi-status"] .message-text').last()).toContainText('patch values were not sent');
@@ -897,12 +992,14 @@ test('multi-select filters use OR within each group and AND with name and favori
   await page.locator('#patch-favorites-only').check();
   await expect(page.locator('.patch-card h3')).toHaveText(['Air Pad']);
   await page.locator('#patch-clear-filters').click();
-  await expect(page.locator('.patch-card')).toHaveCount(4);
+  await expect(page.locator('.patch-card')).toHaveCount(7);
   await expect(categories.locator('[aria-pressed="true"]')).toHaveCount(0);
   await expect(tags.locator('[aria-pressed="true"]')).toHaveCount(0);
 });
 
 test('highlights saving and aligns filter actions with matching button heights', async ({ page }) => {
+  const patchPanel = page.locator('#footer-panel');
+  if (!await patchPanel.evaluate((element) => element.open)) await patchPanel.locator(':scope > summary').click();
   const saveStyle = await page.locator('#patch-save').evaluate((button) => {
     const style = getComputedStyle(button);
     return { background: style.backgroundColor, weight: Number(style.fontWeight) };
@@ -928,7 +1025,7 @@ test('compact snapshot reflects positions and detailed view remains available wi
   const card = await savePatch(page, { name: 'Snapshot', description: 'Detailed description' });
   await expect(card.locator('.patch-select')).toHaveText('Preview');
   await expect(card.locator('.patch-actions button')).toHaveText([
-    'Preview', 'Edit', '', 'Add MP3', 'Record',
+    'Preview', 'Edit', 'Export', '', 'Add MP3', 'Record',
   ]);
   await expect(card.locator('.patch-description')).toHaveCount(0);
   await expect(card.locator('.patch-delete svg')).toHaveClass(/patch-icon-trash/);

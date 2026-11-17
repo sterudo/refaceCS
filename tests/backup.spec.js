@@ -5,6 +5,18 @@ import { writeMidi } from '../src/midi-file.js';
 import { createPatchBackup, PATCH_CONTROL_IDS } from '../src/patches.js';
 import { defaultSuperKnob } from '../src/superknob.js';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const filter = document.querySelector('#patch-author-filter');
+      if (filter) {
+        filter.value = 'User';
+        filter.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { once: true });
+  });
+});
+
 function macroBackup(presets, sections = { superknob: 1 }) {
   return Buffer.from(zipSync({
     'manifest.json': strToU8(JSON.stringify({ format: 'refaceCS-backup', version: 1, sections })),
@@ -94,6 +106,15 @@ test('exports and imports all sections without browser preferences or recalling 
 
   const context = await browser.newContext();
   const target = await context.newPage();
+  await target.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const filter = document.querySelector('#patch-author-filter');
+      if (filter) {
+        filter.value = 'User';
+        filter.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { once: true });
+  });
   await target.goto('http://localhost:5174/static/reface/');
   await expect(target.locator('.message-entry[data-source="patch-status"] .message-text').last()).toHaveText('Patch Manager ready.');
   await target.locator('#backup-open').click();

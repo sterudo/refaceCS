@@ -9,7 +9,7 @@
     <main>
       <header class="toolbar">
         <div class="toolbar-brand">
-          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-16">v0.11</button>
+          <h1>reface<span>CS</span> <button id="version-open" type="button" data-help-target="versions" title="Version history - released 2026-11-17">v0.12</button>
           <div style="font-weight: normal;font-size: 14px;position: relative;top: -20px;"><br>Editor, Patchmanager, Playground<br>
             <a href="https://sterudo.github.io/refaceCS" target="_blank" style="letter-spacing: -0.3px;">sterudo.github.io/<b>refaceCS</b></a>
           </div>
@@ -377,6 +377,21 @@
           <summary>Patch Manager  <button id="patch-save" type="button" style="margin-left:16px">Save current sound</button><button id="patch-help-open" type="button" data-help-target="patches" title="Open Patch Manager help">Help</button></summary>
       <section id="patch-library" class="patch-library" aria-label="Patch Manager" style="padding:16px;margin-top:0px;">
           <div class="patch-filters" aria-label="Filter patches">
+            <label>Instrument
+              <select id="patch-type-filter" aria-label="Filter by instrument">
+                <option value="all">All instruments</option>
+                <option value="hardware">Reface CS</option>
+                <option value="soft-synth">Simple Soft Synth</option>
+              </select>
+            </label>
+            <label>Author
+              <select id="patch-author-filter" aria-label="Filter by author">
+                <option value="all">All authors</option>
+                <option value="System">System</option>
+                <option value="User">User</option>
+              </select>
+            </label>
+            <label class="patch-favorite-filter"><input id="patch-show-hidden" type="checkbox"> Show hidden factory patches</label>
           <label class="patch-favorite-filter"><input id="patch-favorites-only" type="checkbox"> Favorites</label>
           <input id="patch-name-filter" type="search" placeholder="Search patch names" aria-label="Search patch names">
           <button id="patch-clear-filters" type="button">Clear filters</button>
@@ -471,6 +486,9 @@
           </label>
           <label> Tags, separated by commas
             <input id="patch-tags" name="tags" autocomplete="off">
+          </label>
+          <label> Author
+            <output id="patch-author">User</output>
           </label>
           <label class="patch-superknob-option"><input id="patch-include-superknob" type="checkbox"> Include an independent SuperKnob definition</label>
           <p id="patch-editor-status" role="status"></p>

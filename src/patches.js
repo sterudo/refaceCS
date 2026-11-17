@@ -21,6 +21,8 @@ export const PATCH_CONTROL_IDS = [
   'effect-rate',
 ];
 
+export const PATCH_TYPES = ['hardware', 'soft-synth'];
+
 export const STARTER_CATEGORIES = [
   'pads',
   'bass',
@@ -37,13 +39,85 @@ const PATCH_STORE_NAME = 'patches';
 const PATCH_DATABASE_NAME = 'refaceCS-library';
 const BACKUP_FILE_NAME = 'patches.json';
 const BACKUP_FORMAT = 'refaceCS-patch-backup';
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 const patchIdPattern = /^[A-Za-z0-9_-]{1,100}$/;
-
 const controlMaximums = Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [
   id,
   ['lfo-assign', 'osc-type', 'effect-type'].includes(id) ? 4 : 127,
 ]));
+
+function factoryControls(overrides) {
+  return {
+    'lfo-assign': 0,
+    'lfo-depth': 0,
+    'lfo-speed': 0,
+    portamento: 0,
+    'osc-type': 0,
+    'osc-texture': 64,
+    'osc-mod': 0,
+    'filter-cutoff': 127,
+    'filter-resonance': 0,
+    'eg-balance': 0,
+    'eg-attack': 0,
+    'eg-decay': 127,
+    'eg-sustain': 127,
+    'eg-release': 0,
+    'effect-type': 0,
+    'effect-depth': 0,
+    'effect-rate': 0,
+    ...overrides,
+  };
+}
+
+export const SYSTEM_PATCHES = [
+  {
+    id: 'system-soft-bass',
+    name: 'First Bass',
+    description: 'A focused saw bass with a short envelope and a warm low-pass filter.',
+    category: 'bass',
+    tags: ['factory', 'soft synth'],
+    type: 'soft-synth',
+    author: 'System',
+    controls: factoryControls({
+      'osc-texture': 64, 'filter-cutoff': 43, 'filter-resonance': 24,
+      'eg-attack': 0, 'eg-decay': 42, 'eg-sustain': 62, 'eg-release': 20,
+    }),
+    audio: [],
+    favorite: false,
+  },
+  {
+    id: 'system-soft-lead',
+    name: 'Bright Pulse Lead',
+    description: 'A bright pulse lead with gentle volume movement.',
+    category: 'leads',
+    tags: ['factory', 'soft synth'],
+    type: 'soft-synth',
+    author: 'System',
+    controls: factoryControls({
+      'lfo-assign': 1, 'lfo-speed': 36, 'lfo-depth': 24, 'osc-type': 1, 'osc-texture': 42,
+      'filter-cutoff': 92, 'filter-resonance': 28,
+      'eg-attack': 3, 'eg-decay': 35, 'eg-sustain': 82, 'eg-release': 24,
+    }),
+    audio: [],
+    favorite: false,
+  },
+  {
+    id: 'system-soft-pad',
+    name: 'Slow Saw Pad',
+    description: 'A soft saw pad with a slow attack, gentle volume movement, and a long release.',
+    category: 'pads',
+    tags: ['factory', 'soft synth'],
+    type: 'soft-synth',
+    author: 'System',
+    controls: factoryControls({
+      'lfo-assign': 1, 'lfo-speed': 25, 'lfo-depth': 18, 'osc-texture': 64,
+      'filter-cutoff': 78, 'filter-resonance': 10,
+      'eg-attack': 47, 'eg-decay': 74, 'eg-sustain': 89, 'eg-release': 76,
+    }),
+    audio: [],
+    favorite: false,
+  },
+].map((patch) => validatePatch({ ...patch, hidden: false }));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -63,6 +137,11 @@ export function validatePatch(source) {
   const name = normalizeText(source.name, 'Patch name');
   const description = normalizeText(source.description ?? '', 'Description', { optional: true });
   const category = normalizeText(source.category, 'Category');
+  const type = source.type ?? 'hardware';
+  const author = source.author ?? 'User';
+  assert(PATCH_TYPES.includes(type), 'Patch type is invalid.');
+  assert(author === 'System' || author === 'User', 'Patch author is invalid.');
+  assert(source.hidden === undefined || typeof source.hidden === 'boolean', 'Patch visibility is invalid.');
   assert(source.favorite === undefined || typeof source.favorite === 'boolean', 'Favorite state is invalid.');
   assert(Array.isArray(source.tags), 'Patch tags are invalid.');
   const tags = [];
@@ -111,6 +190,9 @@ export function validatePatch(source) {
     name,
     description,
     category,
+    type,
+    author,
+    hidden: author === 'System' && Boolean(source.hidden),
     tags,
     controls,
     ...(source.superKnob === undefined ? {} : { superKnob: validateSuperKnob(source.superKnob) }),
@@ -145,7 +227,7 @@ export class PatchStore {
     if (!globalThis.indexedDB) return Promise.reject(new Error('IndexedDB is unavailable in this browser.'));
     if (!this.databasePromise) {
       this.databasePromise = new Promise((resolve, reject) => {
-        const request = indexedDB.open(PATCH_DATABASE_NAME, 2);
+        const request = indexedDB.open(PATCH_DATABASE_NAME, 3);
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains(PATCH_STORE_NAME)) {
             request.result.createObjectStore(PATCH_STORE_NAME, { keyPath: 'id' });
@@ -162,12 +244,36 @@ export class PatchStore {
         };
         request.onerror = () => reject(request.error || new Error('Could not open patch storage.'));
         request.onblocked = () => reject(new Error('Patch storage is blocked by another open tab.'));
+      }).then(async (database) => {
+        await this.seedSystemPatches(database);
+        return database;
       }).catch((error) => {
         this.databasePromise = null;
         throw error;
       });
     }
     return this.databasePromise;
+  }
+
+  async seedSystemPatches(database) {
+    const transaction = database.transaction([PATCH_STORE_NAME, 'library-settings'], 'readwrite');
+    const done = transactionComplete(transaction);
+    const patchStore = transaction.objectStore(PATCH_STORE_NAME);
+    const settingsStore = transaction.objectStore('library-settings');
+    const [existing, categoryRecord] = await Promise.all([
+      requestResult(patchStore.getAll()),
+      requestResult(settingsStore.get('categories')),
+    ]);
+    const ids = new Set(existing.map((patch) => patch.id));
+    for (const patch of SYSTEM_PATCHES) {
+      if (!ids.has(patch.id)) patchStore.put(patch);
+    }
+    const categories = categoryRecord?.values ?? [...STARTER_CATEGORIES];
+    settingsStore.put({
+      id: 'categories',
+      values: [...new Set([...categories, ...SYSTEM_PATCHES.map((patch) => patch.category)])],
+    });
+    await done;
   }
 
   async list() {
@@ -180,28 +286,36 @@ export class PatchStore {
   }
 
   async replaceAll(patches, categories) {
-    const records = patches.map(validatePatch);
-    assert(new Set(records.map((record) => record.id)).size === records.length, 'Patch IDs must be unique.');
+    const records = patches.map(validatePatch).filter((record) => record.author !== 'System');
     assert(Array.isArray(categories) && categories.every((value) => typeof value === 'string' && value.trim()),
       'Patch categories are invalid.');
     const database = await this.open();
     const transaction = database.transaction([PATCH_STORE_NAME, 'library-settings'], 'readwrite');
     const done = transactionComplete(transaction);
     const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    const existing = await requestResult(objectStore.getAll());
+    const systemPatches = existing.filter((record) => record.author === 'System');
+    const combined = [...records, ...systemPatches];
+    assert(new Set(combined.map((record) => record.id)).size === combined.length, 'Patch IDs must be unique.');
     objectStore.clear();
-    for (const record of records) objectStore.put(record);
+    for (const record of combined) objectStore.put(record);
     transaction.objectStore('library-settings').put({
-      id: 'categories', values: [...new Set([...categories, ...records.map((record) => record.category)])],
+      id: 'categories',
+      values: [...new Set([...categories, ...combined.map((record) => record.category)])],
     });
     await done;
   }
 
   async put(patch) {
     const record = validatePatch(patch);
+    assert(record.author !== 'System', 'System patches are read-only; save a copy instead.');
     const database = await this.open();
     const transaction = database.transaction([PATCH_STORE_NAME, 'library-settings'], 'readwrite');
     const done = transactionComplete(transaction);
-    transaction.objectStore(PATCH_STORE_NAME).put(record);
+    const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    const existing = await requestResult(objectStore.get(record.id));
+    assert(existing?.author !== 'System', 'System patches are read-only; save a copy instead.');
+    objectStore.put(record);
     this.registerCategory(transaction, record.category);
     await done;
     return record;
@@ -209,11 +323,18 @@ export class PatchStore {
 
   async replace(deleteId, patch) {
     const record = validatePatch(patch);
+    assert(record.author !== 'System', 'System patches are read-only; save a copy instead.');
     assert(deleteId !== record.id, 'Replacement patch ID must differ from the deleted patch ID.');
     const database = await this.open();
     const transaction = database.transaction([PATCH_STORE_NAME, 'library-settings'], 'readwrite');
     const done = transactionComplete(transaction);
     const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    const [existingDelete, existingTarget] = await Promise.all([
+      requestResult(objectStore.get(deleteId)),
+      requestResult(objectStore.get(record.id)),
+    ]);
+    assert(existingDelete?.author !== 'System' && existingTarget?.author !== 'System',
+      'System patches are read-only; save a copy instead.');
     objectStore.put(record);
     objectStore.delete(deleteId);
     this.registerCategory(transaction, record.category);
@@ -225,7 +346,22 @@ export class PatchStore {
     const database = await this.open();
     const transaction = database.transaction(PATCH_STORE_NAME, 'readwrite');
     const done = transactionComplete(transaction);
-    transaction.objectStore(PATCH_STORE_NAME).delete(id);
+    const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    const existing = await requestResult(objectStore.get(id));
+    assert(existing?.author !== 'System', 'System patches cannot be deleted.');
+    objectStore.delete(id);
+    await done;
+  }
+
+  async setHidden(id, hidden) {
+    assert(typeof hidden === 'boolean', 'Patch visibility is invalid.');
+    const database = await this.open();
+    const transaction = database.transaction(PATCH_STORE_NAME, 'readwrite');
+    const done = transactionComplete(transaction);
+    const objectStore = transaction.objectStore(PATCH_STORE_NAME);
+    const existing = await requestResult(objectStore.get(id));
+    assert(existing?.author === 'System', 'Only System patches can be hidden.');
+    objectStore.put({ ...existing, hidden, updatedAt: new Date().toISOString() });
     await done;
   }
 
@@ -284,7 +420,7 @@ export class PatchStore {
     const objectStore = transaction.objectStore(PATCH_STORE_NAME);
     const patches = await requestResult(objectStore.getAll());
     for (const patch of patches) {
-      if (patch.tags.includes(tag)) {
+      if (patch.author !== 'System' && patch.tags.includes(tag)) {
         objectStore.put({
           ...patch,
           tags: patch.tags.filter((value) => value !== tag),
@@ -321,6 +457,9 @@ export async function createPatchBackup(patches) {
       name: patch.name,
       description: patch.description,
       category: patch.category,
+      type: patch.type,
+      author: patch.author,
+      hidden: patch.hidden,
       tags: patch.tags,
       favorite: Boolean(source.favorite),
       controls: patch.controls,
@@ -362,7 +501,7 @@ export async function readPatchBackup(file) {
   } catch {
     throw new Error('ZIP backup manifest is not valid JSON.');
   }
-  assert(manifest?.format === BACKUP_FORMAT && manifest.version === BACKUP_VERSION,
+  assert(manifest?.format === BACKUP_FORMAT && [1, BACKUP_VERSION].includes(manifest.version),
     'This patch backup format or version is not supported.');
   assert(Array.isArray(manifest.patches), 'ZIP backup patch list is invalid.');
 

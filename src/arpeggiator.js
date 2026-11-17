@@ -11,7 +11,7 @@ const sevenths = {
   8: [0, 4, 7, 10], 10: [0, 3, 7, 10],
 };
 
-export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0, onTempoChange = () => {}, clock) {
+export function createArpeggiator(send, changeRouting, isMuted = () => false, transpose = () => 0, onTempoChange = () => {}, clock, scheduling = {}) {
   const enabledButton = document.querySelector('#arp-enabled');
   const latchButton = document.querySelector('#arp-latch');
   const chordButton = document.querySelector('#arp-chord');
@@ -193,6 +193,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     timer = undefined;
     gateTimer = undefined;
     if (sounding !== undefined) send([0x80, sounding, 0]);
+    scheduling.cancel?.();
     sounding = undefined;
     step = 0;
     lastRandom = undefined;
@@ -259,10 +260,11 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
     const values = notes();
     if (!enabled || values.length === 0) { stop(); return; }
     const interval = 60000 / tempo * 4 / rate;
+    const lookahead = scheduling.lookahead?.() ?? 0;
     let at = performance.now();
     if (clock) {
       if (nextBeat === undefined) {
-        const start = clock.running ? clock.nextTime(4 / rate) : at;
+        const start = clock.running ? clock.nextTime(4 / rate, at + lookahead) : at + lookahead;
         clock.start('arpeggiator', start);
         nextBeat = clock.beatAt(start);
       }
@@ -270,15 +272,16 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
         nextBeat = clock.beatAt(clock.nextTime(4 / rate, at));
       }
       const target = clock.timeAt(nextBeat);
-      if (target > at + 0.1) {
-        timer = setTimeout(tick, Math.max(1, Math.ceil(target - at)));
+      if (target > at + lookahead + 0.1) {
+        timer = setTimeout(tick, Math.max(1, Math.ceil(target - at - lookahead)));
         return;
       }
       at = target;
       nextBeat += 4 / rate;
     }
     const scheduleNext = () => {
-      timer = setTimeout(tick, Math.max(1, Math.ceil(clock ? clock.timeAt(nextBeat) - performance.now() : interval)));
+      timer = setTimeout(tick, Math.max(1, Math.ceil(clock
+        ? clock.timeAt(nextBeat) - performance.now() - lookahead : interval)));
     };
     const next = nextNote(values);
     if (!next) {
@@ -290,9 +293,18 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       scheduleNext();
       return;
     }
-    if (!send([0x90, note, velocity])) {
+    if (!send([0x90, note, velocity], lookahead ? at : undefined)) {
       status('Arpeggiator stopped: MIDI output is unavailable or sending failed.', 'error');
       stop();
+      return;
+    }
+    if (lookahead) {
+      if (!send([0x80, note, 0], at + interval / 2)) {
+        status('Arpeggiator stopped: scheduled note-off failed. Use MIDI Reset.', 'error');
+        stop();
+        return;
+      }
+      scheduleNext();
       return;
     }
     sounding = note;
@@ -365,6 +377,7 @@ export function createArpeggiator(send, changeRouting, isMuted = () => false, tr
       clearTimeout(gateTimer);
       gateTimer = undefined;
       if (sounding !== undefined) send([0x80, sounding, 0]);
+      scheduling.cancel?.();
       sounding = undefined;
     },
     noteOn(owner, note, velocity, channel, source) {

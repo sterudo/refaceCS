@@ -82,10 +82,16 @@ function makeTag(text) {
   return tag;
 }
 
-export function createPatchLibrary({ root, panel, initialControls, getControls, applyControls, getAppSetting, superKnob }) {
+export function createPatchLibrary({
+  root, panel, initialControls, getControls, applyControls, getAppSetting, superKnob,
+  getType = () => 'hardware', changeType = async () => true,
+}) {
   const store = new PatchStore();
   const status = createReporter('patches', 'patch-status');
   const cards = root.querySelector('#patch-cards');
+  const typeFilter = document.querySelector('#patch-type-filter');
+  const authorFilter = document.querySelector('#patch-author-filter');
+  const showHidden = document.querySelector('#patch-show-hidden');
   const favoritesOnly = document.querySelector('#patch-favorites-only');
   const categoryFilter = document.querySelector('#patch-category-filter');
   const tagFilter = document.querySelector('#patch-tag-filter');
@@ -105,6 +111,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   const categoryOptions = document.querySelector('#patch-category-options');
   const tagsInput = document.querySelector('#patch-tags');
   const includeSuperKnob = document.querySelector('#patch-include-superknob');
+  const authorOutput = document.querySelector('#patch-author');
   const cancelEditor = document.querySelector('#patch-editor-cancel');
   const editorStatus = document.querySelector('#patch-editor-status');
   const display = panel.querySelector('#patch-display-screen');
@@ -138,6 +145,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   const selectedTags = new Set();
   const expandedAudio = new Set();
   let editingPatch = null;
+  let editingCopy = null;
   let editorCompletion = null;
   let editorSaved = false;
   let editorAllowsReplacement = false;
@@ -464,12 +472,16 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     const header = document.createElement('header');
     const title = document.createElement('h3');
     title.textContent = patch.name;
-    const favorite = iconButton(
-      `${patch.favorite ? 'Remove' : 'Add'} ${patch.name} ${patch.favorite ? 'from' : 'to'} favorites`,
-      'star', 'patch-favorite', () => toggleFavorite(patch),
-    );
-    favorite.setAttribute('aria-pressed', String(patch.favorite));
-    header.append(title, favorite, button('Load', 'patch-load', () => loadPatch(patch)));
+    header.append(title);
+    if (patch.author !== 'System') {
+      const favorite = iconButton(
+        `${patch.favorite ? 'Remove' : 'Add'} ${patch.name} ${patch.favorite ? 'from' : 'to'} favorites`,
+        'star', 'patch-favorite', () => toggleFavorite(patch),
+      );
+      favorite.setAttribute('aria-pressed', String(patch.favorite));
+      header.append(favorite);
+    }
+    header.append(button('Load', 'patch-load', () => loadPatch(patch)));
     card.append(header);
 
     if (viewToggle.getAttribute('aria-pressed') === 'true') {
@@ -484,10 +496,16 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     const category = document.createElement('span');
     category.className = 'patch-category';
     category.textContent = patch.category;
+    const type = document.createElement('span');
+    type.className = 'patch-type';
+    type.textContent = patch.type === 'soft-synth' ? 'Simple Soft Synth' : 'Reface CS';
+    const author = document.createElement('span');
+    author.className = 'patch-author';
+    author.textContent = `Author: ${patch.author}`;
     const tags = document.createElement('div');
     tags.className = 'patch-tags';
     patch.tags.forEach((tag) => tags.append(makeTag(tag)));
-    metadata.append(category, tags);
+    metadata.append(type, author, category, tags);
     card.append(metadata, makeControlsVisualization(patch.controls));
 
     const actions = document.createElement('div');
@@ -508,21 +526,32 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         if (await loadPatch(patch)) {
           await recording.open(patch);
         } else {
-          setStatus(`${status.message} Recording blocked: successfully send all patch values over MIDI before recording.`, 'error');
+          setStatus(`${status.message} Recording blocked: the patch could not be loaded completely.`, 'error');
         }
       } finally {
         recordButton.disabled = patch.audio.length >= MAX_AUDIO_ATTACHMENTS;
       }
     });
     recordButton.disabled = patch.audio.length >= MAX_AUDIO_ATTACHMENTS;
-    actions.append(
-      select,
-      button('Edit', 'patch-edit', () => openEditor(patch)),
-      button('Export', 'patch-export-one', () => exportPatch(patch)),
-      iconButton(`Delete ${patch.name}`, 'trash', 'patch-delete', () => deletePatch(patch)),
-      addButton,
-      recordButton,
-    );
+    if (patch.author === 'System') {
+      actions.append(
+        select,
+        button('Save as', 'patch-save-as', async () => {
+          if (await loadPatch(patch)) await saveAsCopy();
+        }),
+        button('Export', 'patch-export-one', () => exportPatch(patch)),
+        button(patch.hidden ? 'Show' : 'Hide', 'patch-hide', () => toggleSystemVisibility(patch)),
+      );
+    } else {
+      actions.append(
+        select,
+        button('Edit', 'patch-edit', () => openEditor(patch)),
+        button('Export', 'patch-export-one', () => exportPatch(patch)),
+        iconButton(`Delete ${patch.name}`, 'trash', 'patch-delete', () => deletePatch(patch)),
+        addButton,
+        recordButton,
+      );
+    }
     if (patch.audio.length) {
       const audioSection = makeAudioList(patch);
       if (getAppSetting('hidePatchAudio')) {
@@ -554,6 +583,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   function visiblePatches() {
     const query = nameFilter.value.trim().toLocaleLowerCase();
     return patches
+      .filter((patch) => typeFilter.value === 'all' || patch.type === typeFilter.value)
+      .filter((patch) => authorFilter.value === 'all' || patch.author === authorFilter.value)
+      .filter((patch) => showHidden.checked || !patch.hidden)
       .filter((patch) => !favoritesOnly.checked || patch.favorite)
       .filter((patch) => !selectedCategories.size || selectedCategories.has(patch.category))
       .filter((patch) => !selectedTags.size || patch.tags.some((tag) => selectedTags.has(tag)))
@@ -655,8 +687,19 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     }
   }
 
+  async function toggleSystemVisibility(patch) {
+    try {
+      await store.setHidden(patch.id, !patch.hidden);
+      await reload();
+      setStatus(`${patch.name} ${patch.hidden ? 'shown' : 'hidden'}.`);
+    } catch (error) {
+      setStatus(`Could not change factory patch visibility: ${error.message || error}`, 'error');
+    }
+  }
+
   function openEditor(patch = null, copy = null) {
     editingPatch = patch;
+    editingCopy = copy;
     editorForm.reset();
     editorStatus.textContent = '';
     let copyName = copy ? `${copy.name} (copy)` : '';
@@ -670,6 +713,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     descriptionInput.value = patch?.description ?? copy?.description ?? '';
     categoryInput.value = patch?.category ?? copy?.category ?? 'synth';
     tagsInput.value = (patch?.tags ?? copy?.tags ?? []).join(', ');
+    authorOutput.value = authorOutput.textContent = 'User';
     includeSuperKnob.checked = patch ? patch.superKnob !== undefined : superKnob.getPatchDefinition() !== undefined;
     includeSuperKnob.disabled = Boolean(patch);
     editor.showModal();
@@ -716,6 +760,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         ...(editingPatch ?? {
           id: crypto.randomUUID(),
           controls: getControls(),
+          type: editingCopy?.type ?? getType(),
+          author: 'User',
           superKnob: includeSuperKnob.checked ? superKnob.getDefinition() : undefined,
           audio: [],
           favorite: false,
@@ -737,6 +783,10 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     const conflict = patches.find((patch) => patch.id !== candidate.id
       && patch.name.toLocaleLowerCase() === candidate.name.toLocaleLowerCase());
     if (conflict) {
+      if (conflict.author === 'System') {
+        editorStatus.textContent = 'Factory patch names are reserved. Choose a different name.';
+        return;
+      }
       if (editorCompletion && !editorAllowsReplacement) {
         editorStatus.textContent = 'A patch with that name already exists. Choose a different name.';
         return;
@@ -801,6 +851,10 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   }
 
   async function deletePatch(patch) {
+    if (patch.author === 'System') {
+      setStatus('Factory patches cannot be deleted; hide them instead.', 'error');
+      return;
+    }
     if (!await confirmAction('Delete patch', `Delete "${patch.name}"? This cannot be undone.`, 'Delete')) return;
     try {
       await store.delete(patch.id);
@@ -822,7 +876,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
 
   async function overwriteActivePatch() {
     const active = patches.find((item) => item.id === activePatchId);
-    if (!active) return false;
+    if (!active || active.author === 'System') return false;
     const controls = getControls();
     const audio = await audioForOverwrite(active, controls);
     if (!audio) return false;
@@ -840,7 +894,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       const active = patches.find((item) => item.id === activePatchId);
       const choices = [
         ['Cancel', 'cancel'], [`Discard and ${nextAction}`, 'discard'],
-        ...(active ? [[`Overwrite and ${nextAction}`, 'overwrite']] : []),
+        ...(active && active.author !== 'System' ? [[`Overwrite and ${nextAction}`, 'overwrite']] : []),
         [`Save as and ${nextAction}`, 'save-as'],
       ];
       const action = await choose('Unsaved sound', 'The current sound has unsaved changes.', choices);
@@ -862,6 +916,13 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
         await saveAsCopy({ allowReplacement: true });
         return;
       }
+      if (active.author === 'System') {
+        const action = await choose('Save factory patch',
+          `Factory patch "${active.name}" is protected. Save a user copy instead?`,
+          [['Cancel', 'cancel'], ['Save as', 'save-as']]);
+        if (action === 'save-as') await saveAsCopy();
+        return;
+      }
       const action = await choose('Save patch', `Save the current sound over "${active.name}" or as a new patch?`,
         [['Cancel', 'cancel'], ['Overwrite', 'overwrite'], ['Save as', 'save-as']]);
       if (action === 'overwrite') await overwriteActivePatch();
@@ -880,7 +941,7 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     try {
       if (!await preserveUnsavedControls('initialize')) return false;
       if (!canContinue()) return false;
-      const result = await applyControls(initialControls);
+      const result = await applyControls(initialControls, getType());
       superKnob.loadPatchDefinition(undefined);
       savedControls = { ...initialControls };
       savedSuperKnob = undefined;
@@ -894,6 +955,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       } else if (result.failed || result.sent !== result.total) {
         setStatus(`INIT loaded in the app; ${result.sent} CC values sent, ${result.failed} failed. Synth state may be partial.`, 'error');
         return false;
+      } else if (getType() === 'soft-synth') {
+        setStatus('INIT loaded in Simple Soft Synth.');
+        return true;
       } else {
         setStatus(`INIT loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
         return true;
@@ -914,7 +978,8 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       if (!getAppSetting('ignoreUnsavedSynthOnLoad') && !await preserveUnsavedControls('load')) return false;
       if (!canContinue()) return false;
       patch = patches.find((item) => item.id === patch.id) ?? patch;
-      const result = await applyControls(patch.controls);
+      if (!await changeType(patch.type)) return false;
+      const result = await applyControls(patch.controls, patch.type);
       superKnob.loadPatchDefinition(patch.superKnob);
       savedControls = { ...patch.controls };
       savedSuperKnob = patch.superKnob;
@@ -925,7 +990,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
       updateDisplay();
       if (!result.unavailable && result.failed === 0
         && result.sent === result.total && result.sent === PATCH_CONTROL_IDS.length) {
-        setStatus(`${patch.name} loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
+        setStatus(patch.type === 'soft-synth'
+          ? `${patch.name} loaded in Simple Soft Synth.`
+          : `${patch.name} loaded and ${result.sent} CC values sent. MIDI does not confirm hardware response.`);
         return true;
       } else if (result.sent === 0) {
         setStatus(`${patch.name} loaded in the app; MIDI output unavailable, so no values were sent to the synth.`, 'error');
@@ -1061,7 +1128,17 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     let skipped = 0;
     let importedPatch;
     try {
-      for (const patch of imported) {
+      for (const source of imported) {
+        let patch = validatePatch(source);
+        if (patch.author === 'System') {
+          const factory = patches.find((item) => item.author === 'System' && item.id === patch.id);
+          if (factory) {
+            importedPatch = factory;
+            skipped++;
+            continue;
+          }
+          patch = { ...patch, id: crypto.randomUUID(), author: 'User', hidden: false };
+        }
         const resolution = await resolveImport(patch, patches, 'patch');
         if (resolution.action === 'ignore') {
           skipped++;
@@ -1100,6 +1177,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     void addAudio([...(audioFile.files ?? [])]);
   });
   favoritesOnly.addEventListener('change', render);
+  typeFilter.addEventListener('change', render);
+  authorFilter.addEventListener('change', render);
+  showHidden.addEventListener('change', render);
   nameFilter.addEventListener('input', render);
   viewToggle.addEventListener('click', () => {
     viewToggle.setAttribute('aria-pressed', String(viewToggle.getAttribute('aria-pressed') !== 'true'));
@@ -1108,6 +1188,9 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
   document.querySelector('#patch-clear-filters').addEventListener('click', () => {
     selectedCategories.clear();
     selectedTags.clear();
+    typeFilter.value = 'all';
+    authorFilter.value = 'all';
+    showHidden.checked = false;
     favoritesOnly.checked = false;
     nameFilter.value = '';
     render();
@@ -1238,6 +1321,31 @@ export function createPatchLibrary({ root, panel, initialControls, getControls, 
     },
     initializePatch,
     loadPatch,
+    modeChanged(type) {
+      const active = patches.find((patch) => patch.id === activePatchId) ?? detachedPatch;
+      const changed = Boolean(active) || initialized || controlsDiffer(getControls(), savedControls)
+        || JSON.stringify(superKnob.getPatchDefinition()) !== JSON.stringify(savedSuperKnob);
+      detachedPatch = changed ? {
+        ...(active ?? {}),
+        name: active?.name ?? (initialized ? 'INIT' : 'Untitled'),
+        type,
+        controls: getControls(),
+        superKnob: superKnob.getPatchDefinition(),
+        audio: active?.audio ?? [],
+        favorite: false,
+        author: 'User',
+      } : null;
+      activePatchId = null;
+      initialized = false;
+      savedControls = getControls();
+      savedSuperKnob = superKnob.getPatchDefinition();
+      updateDisplay();
+      this.setModeFilter(type);
+    },
+    setModeFilter(type) {
+      typeFilter.value = type;
+      render();
+    },
     refreshAudioVisibility: render,
     async loadLastSelectedPatch(canContinue = () => true) {
       await ready;

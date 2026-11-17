@@ -1,6 +1,14 @@
 # refaceCS
 Manager for the Yamaha refaceCS Synthesizer 
 
+## v0.12 highlights — 2026-11-17
+
+The device Mode switch adds **Simple Soft Synth**, a browser-based saw/pulse instrument with filter, ADSR, and amp-LFO controls. Saw Texture sets the octave-lower sub-oscillator volume; Pulse Texture shifts the square wave from 50/50 to 90/10. The Effect preview is flat and off in this mode, while Reface CS effect and LFO assignments are restored on return. It uses Web Audio and works with the keyboard, arpeggiator, and looper without connecting MIDI; live software playback may feel delayed by the browser/audio device. It is an approachable synthesis experience, not a recreation of the hardware sound. The shared Patch Manager filters hardware and soft-synth patches, includes protected and hideable System starter patches, and saves user patches separately. See [#7](https://github.com/sterudo/refaceCS/issues/7).
+
+Click **SSS** or **Simple Soft Synth** for its control guide. Select **AMP** and raise LFO Depth/Speed for volume modulation; pitch bend follows the displayed semitone range. Browser synth voices, including release tails and queued arpeggio notes, stop when leaving SSS mode. The MIDI controller then follows normal hardware routing. SSS arpeggios schedule their note gates ahead on the audio clock to reduce timer jitter, while looper recording preserves their note lengths. The active **SOFT** button matches the SSS logo's blue in both light and dark synth themes; inactive **CS** text stays readable in dark mode.
+
+Use only one MIDI-connected refaceCS tab/window at a time: another instance can independently forward the same controller input to hardware, even while the current tab is in SSS mode.
+
 ## v0.11 highlights — 2026-11-16
 
 The **SuperKnob** controls several synth parameters through independent absolute-value curves. Right-click it, double-click it, or use **EDIT / Configure** for the movable non-modal editor. Draw curves, drag straight lines, or set individual position/value points. The default mapping is cutoff only; custom mappings add an amber glow. The knob supports dragging, wheel, arrow/Page keys, Home (maximum), End (minimum), and MIDI Learn with the existing controller pickup behavior. See [#12](https://github.com/sterudo/refaceCS/issues/12).
@@ -52,7 +60,7 @@ npm run dev
 
 Open the localhost URL printed by Vite, including `/static/reface/`.
 The current page is an interactive SVG panel built with vanilla JavaScript, HTML, and CSS.
-It discovers MIDI devices, routes notes, synchronizes documented synth controls, plays synthesized drum grooves, and manages local patch cards with optional MP3 previews.
+It discovers MIDI devices, routes notes to hardware or its browser-based soft synth, synchronizes documented synth controls, plays synthesized drum grooves, and manages local patch cards with optional MP3 previews.
 The surrounding page and toolbar use a dark theme; the synth retains its original light case.
 
 ## Deployment
@@ -87,7 +95,7 @@ The Pages build uses `/refaceCS/` as its asset base; local builds continue to us
 - MIDI Reset, output loss/change, and hiding the page stop the looper and release its app-routed notes where possible; the phrase remains until CLEAR or page reload. MUTE silences looper playback while its timing continues. The synth's locally played keys cannot be controlled independently of MIDI playback.
 - The arpeggiator's notes and chord readouts reflect currently held on-screen, reface, and selected-controller notes, not released latched notes or generated chord tones. The chord detector recognizes major, minor, augmented and diminished triads, and dominant, major and minor 7th, 9th and 11th chords, including inversions and extended chords with an omitted fifth. Major chords are green and minor chords blue; augmented, diminished and dominant chords remain neutral. It prefers a match rooted on the lowest held note; otherwise it selects one deterministic match. Other note combinations show no chord.
 - Five read-only floating displays sit below the toolbar and above the synth: LFO, Filter, Amp ADSR, Filter ADSR, and Effect. Dark dotted grids and cyan curves update live with the faders, including resets. Cards wrap on smaller screens without covering the instrument. The gap to the case is reduced by 75%; a fully open filter shows a flat, vertically centered response.
-- These are **schematic previews**, not measured audio or calibrated Hz/millisecond curves. Both envelopes share A/D/S/R, with illustrative linear influence from EG Balance; zero amplitude-envelope influence retains a note gate, not silence. LFO shows its destination and relative depth/speed; Effect switches between echo, modulation, and distortion/tone illustrations. See the MIDI reference for verified behavior and modeling limitations.
+- These are **schematic previews**, not measured audio or calibrated Hz/millisecond curves. Both envelopes share A/D/S/R, with illustrative linear influence from EG Balance; zero amplitude-envelope influence retains a note gate, not silence. LFO shows its destination and relative depth/speed; Effect switches between echo, modulation, and distortion/tone illustrations, and is shown flat/off in Simple Soft Synth mode. See the MIDI reference for verified behavior and modeling limitations.
 - Display numbers are white, while their labels retain muted colors. Display backgrounds stay dark in every mode. Focus Mode colors graph lines and their shaded fills to match the sections: LFO green, Filter peach, both ADSR displays blue, and Effect pink. Relative luminance and fill opacity are preserved; turning Focus Mode off restores cyan.
 - The compact toolbar includes **Hide Displays**, which removes the cards and their reserved space without changing controls or other view modes. Hidden displays continue to follow faders; Reset faders preserves their visibility.
 - The MIDI Learn row is horizontally centered. **Dark Synth** keeps its label 70% closer to the mode button; both dark modes brighten cyan visual toggles, looper icons, Mute, timing/quantizer, and pitch-range actions. Standalone housing +/- symbols are 50% larger, with unchanged actions.
@@ -170,7 +178,7 @@ The collapsible **Groove studio** sits directly below the synth and above the Pa
 - **Audio output** selects the drum engine's device where `AudioContext.setSinkId()` is available. **Choose audio output** appears when supported and requests device-selection permission; **Refresh outputs** refreshes the available list. No microphone permission is requested for drum playback. Unsupported selection, permission failures, device-list changes, suspended audio, and storage/send errors are shown in the panel. This selector does not reroute the reface's physical audio or patch MP3 previews.
 - Web Audio requests interactive latency but does **not** expose ASIO drivers or guarantee a particular latency. Wired outputs are recommended; Bluetooth adds delay. Physical reface timing, audio-interface behavior, and final compensation still require checking on the actual hardware.
 
-A piano-roll reface sequencer, fader automation, and a saw/square softsynth are future additions.
+A piano-roll reface sequencer and fader automation are future additions; the saw/pulse Simple Soft Synth is available from the Mode switch.
 
 ## Patch Manager
 

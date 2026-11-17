@@ -1,5 +1,17 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const filter = document.querySelector('#patch-author-filter');
+      if (filter) {
+        filter.value = 'User';
+        filter.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { once: true });
+  });
+});
+
 test('Drive setup instructions show the current app origin', async ({ page }) => {
   await page.goto('/static/reface/');
   await page.locator('#backup-open').click();
@@ -135,7 +147,9 @@ test('named Drive backups keep audio separate and preserve a recovery point on r
   await expect(page.locator('.message-entry[data-source="cloud-status"] .message-text').last()).toContainText('recovery backup was saved');
   await expect(page.locator('#cloud-versions option')).toHaveCount(2);
   const recovery = [...files.values()].find((file) => file.appProperties?.kind === 'recovery');
-  expect(JSON.parse(recovery.content.toString()).patches).toHaveLength(0);
+  const recoveryPatches = JSON.parse(recovery.content.toString()).patches;
+  expect(recoveryPatches.filter((patch) => patch.author !== 'System')).toHaveLength(0);
+  expect(recoveryPatches.filter((patch) => patch.author === 'System')).toHaveLength(3);
   expect(JSON.parse(recovery.content.toString()).tones).toHaveLength(0);
   await page.locator('#cloud-close').click();
   await page.locator('#backup-close').click();

@@ -30,13 +30,54 @@
     .speakers-hidden .speaker { display: none; }
     .extra-key { display: none; }
     .five-octaves .extra-key { display: inline; }
-    
+    #soft-synth-mode-label { font-size: 9px; font-weight: 700; text-anchor: middle; }
+    #soft-synth-name, #soft-synth-logo { display: none; }
+    .soft-synth-mode { --soft-synth-accent: #2784b3; }
+    .dark-synth-case.soft-synth-mode { --soft-synth-accent: #78c8e7; }
+    .soft-synth-mode #body { fill: url(#soft-synth-case-fill); stroke: #c3dce6; }
+    .dark-synth-case.soft-synth-mode #body { fill: url(#dark-soft-synth-case-fill); stroke: #314b58; }
+    .soft-synth-mode #yamaha-link, .soft-synth-mode #cs-logo,
+    .soft-synth-mode #device-midi-transmit, .soft-synth-mode #device-midi-receive,
+    .soft-synth-mode #device-local-control, .soft-synth-mode #device-speaker-output { display: none; }
+    .soft-synth-mode #soft-synth-name, .soft-synth-mode #soft-synth-logo { display: inline; }
+    .soft-synth-mode #soft-synth-name { fill: var(--soft-synth-accent); }
+    .soft-synth-mode #soft-synth-logo { stroke: var(--soft-synth-accent); }
+    .soft-synth-mode #portamento, .soft-synth-mode #osc-mod,
+    .soft-synth-mode #eg-balance, .soft-synth-mode #effect-type, .soft-synth-mode #effect-depth,
+    .soft-synth-mode #effect-rate, .soft-synth-mode #focus-effect { display: none; }
+    .soft-synth-mode .section-label [data-help-target="portamento"],
+    .soft-synth-mode .section-label [data-help-target="effect"],
+    .soft-synth-mode .control-label [data-help-target="osc-mod"],
+    .soft-synth-mode .control-label [data-help-target="effect-type"],
+    .soft-synth-mode .control-label [data-help-target="effect-depth"],
+    .soft-synth-mode .control-label [data-help-target="effect-rate"] { display: none; }
+    .soft-synth-mode #osc-type .scale-label[data-step="2"],
+    .soft-synth-mode #osc-type .scale-label[data-step="3"],
+    .soft-synth-mode #osc-type .scale-label[data-step="4"],
+    .soft-synth-mode #osc-type .selection-led[data-value="2"],
+    .soft-synth-mode #osc-type .selection-led[data-value="3"],
+    .soft-synth-mode #osc-type .selection-led[data-value="4"] { display: none; }
+    .soft-synth-mode #lfo-assign .scale-label[data-step="2"],
+    .soft-synth-mode #lfo-assign .scale-label[data-step="3"],
+    .soft-synth-mode #lfo-assign .scale-label[data-step="4"] { display: none; }
   </style>
   <defs>
     <linearGradient id="case-fill" x2="0" y2="1">
       <stop stop-color="#fafafa"/>
       <stop offset="0.35" stop-color="#f0f0ee"/>
       <stop offset="1" stop-color="#dedfdd"/>
+    </linearGradient>
+    <linearGradient id="soft-synth-case-fill" x2="1" y2="0">
+      <stop stop-color="#d8eff7"/>
+      <stop offset="0.2" stop-color="#f5fbfd"/>
+      <stop offset="0.8" stop-color="#f5fbfd"/>
+      <stop offset="1" stop-color="#d8eff7"/>
+    </linearGradient>
+    <linearGradient id="dark-soft-synth-case-fill" x2="1" y2="0">
+      <stop stop-color="#101e26"/>
+      <stop offset="0.2" stop-color="#1b303a"/>
+      <stop offset="0.8" stop-color="#1b303a"/>
+      <stop offset="1" stop-color="#101e26"/>
     </linearGradient>
     <linearGradient id="panel-fill" x2="0" y2="1">
       <stop stop-color="#1b1d1d"/>
@@ -151,6 +192,15 @@
     <rect width="34" height="19" rx="3"/><text x="17" y="13">EDIT</text>
   </g>
   <g id="device-panel" transform="translate(0 -12)">
+    <g id="soft-synth-mode" class="arp-button device-switch" role="button" tabindex="0"
+      aria-pressed="false" aria-label="Device mode: Reface CS" transform="translate(655 47)">
+      <title>Switch between the Reface CS hardware and Simple Soft Synth</title>
+      <rect x="0" y="4" width="115" height="25" fill="transparent"/>
+      <text class="device-label" x="0" y="20">MODE</text>
+      <rect class="arp-bezel" x="35" y="4" width="78" height="25" rx="4"/>
+      <rect class="arp-lens" x="36" y="5" width="76" height="23" rx="3"/>
+      <text id="soft-synth-mode-label" x="74" y="21">CS</text>
+    </g>
     <g id="dark-synth-mode" class="arp-button device-switch" role="button" tabindex="0"
       aria-haspopup="menu" aria-expanded="false" aria-pressed="false" aria-label="Dark synth mode: Off"
       transform="translate(955 43)">
@@ -425,6 +475,8 @@
   </g>
     <text x="196" y="272" font-family="Arial, sans-serif" font-size="32" font-weight="800" letter-spacing="-1" fill="currentColor" style="transform: scaleX(0.7) translateX(144px);">YAMAHA</text>
     </a>
+    <text id="soft-synth-name" data-help-target="soft-synth" x="196" y="269" font-family="Arial, sans-serif" font-size="15" font-weight="700"
+      textLength="147" lengthAdjust="spacingAndGlyphs" fill="#2784b3" style="font-size: 32px;">Simple Soft Synth</text>
     <text id="arp-label" class="section-label" data-help-target="arpeggiator" x="355" y="264">ARPEGGIATOR</text>
     <g id="arp-controls" aria-label="Arpeggiator controls" transform="translate(110 0)">
       <g id="arp-enabled" class="arp-button arp-toggle" role="button" tabindex="0" aria-label="Arpeggiator on/off" aria-pressed="false" transform="translate(345 244)">
@@ -479,6 +531,11 @@
       </g>
     </g>
     <path id="cs-logo" data-help-target="cs" transform="translate(1474 248)" d="M40 0H12a12 12 0 0 0 0 24h66a6 6 0 0 0 0-12H52a6 6 0 0 1 0-12h32" fill="none" stroke="#515650" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="soft-synth-logo" data-help-target="soft-synth" aria-label="SSS logo" transform="translate(1488 245)"
+      d="M20 0H7a7 7 0 0 0 0 14h10a7 7 0 0 1 0 14H0
+         M43 0H30a7 7 0 0 0 0 14h10a7 7 0 0 1 0 14H23
+         M66 0H53a7 7 0 0 0 0 14h10a7 7 0 0 1 0 14H46"
+      fill="none" stroke="#2784b3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <g id="keyboard" transform="translate(196 296)">
       <rect x="-3" y="-3" width="1370" height="288" rx="2" fill="#101312"/>
       <g id="keyboard-keys">

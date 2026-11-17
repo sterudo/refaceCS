@@ -9,6 +9,10 @@ These are decisions made during requirements refinement:
 - The MVP centers on live visual control and a local Patch Manager, not the sequencer.
 - The app sends MIDI control changes to the reface CS as controls are changed.
 - The UI mirrors physical control changes when the synth sends MIDI feedback.
+- Simple Soft Synth is a beginner-friendly browser instrument, not a hardware sound emulation. The Mode switch selects exclusive browser-synth or hardware routing for app/controller notes; switching stops held, releasing, and queued voices. Use one MIDI-connected app instance at a time to avoid independent forwarding from another tab.
+- SSS supports saw with Texture-controlled octave-lower sub-oscillator volume, pulse with 50/50 to 90/10 width, filter/resonance, ADSR, OFF/AMP LFO, expression, transpose, and the displayed pitch-bend range. Unsupported hardware controls are hidden; effects are off, and hardware effect/LFO selections are restored on return. Arpeggios use audio-clock scheduling with recorded note lengths preserved; live browser latency remains device-dependent.
+- The SSS logo and name open the same standard help window. Its blue branding, active SOFT button, dark blue-gradient housing, and readable inactive CS text follow the selected synth theme without changing the user-adjusted logo positions.
+- Patch Manager records identify instrument type and author. The Instrument filter follows mode changes; protected System starter patches can be hidden or copied with Save as. User hardware/soft-synth patches remain separate, with instrument metadata preserved by local and cloud backups and legacy patches treated as hardware patches.
 - Dismissed or Settings-hidden Messages must stay hidden even on MIDI or other errors. New hidden errors turn the Messages button background red until it is opened; opening reveals all categories without deleting history or changing the startup policy.
 - The top About button sits between Connect MIDI and Settings; center the MIDI Learn row. Move the Dark Synth label 70% closer to its button, brighten cyan clickable housing/visual-toggle elements in both dark modes, and enlarge standalone housing +/- symbols by 50% without changing their actions.
 - App-side patches save the current visible sound-control values; the reface CS itself does not store or recall patches.
@@ -127,7 +131,7 @@ An inline Octave selector shifts every external drum note by -3 to +3 octaves (d
 
 An optional browser-local Start on keypress checkbox starts stopped drums from the first melodic Note On on the on-screen keyboard or selected reface/controller inputs, without stopping on release or retriggering an already running/pending start. Honor transport linking, and exclude controller drum notes, calibration notes, note-offs and generated notes. The arpeggiator shares the absolute Groove beat grid at every supported rate and through tempo changes, while standalone arpeggios retain immediate onset. Key-triggered simultaneous drum/arpeggiator starts use a common first beat.
 
-Browser-supported audio output selection applies only to drums. Web Audio requests interactive latency but cannot host native VSTs or directly expose ASIO. Physical interface latency, MIDI shutdown, and reface response require hardware verification. Piano-roll sequencing, fader automation, and a saw/square softsynth remain deferred.
+Browser-supported audio output selection applies only to drums. Web Audio requests interactive latency but cannot host native VSTs or directly expose ASIO. Physical interface latency, MIDI shutdown, and reface response require hardware verification. Piano-roll sequencing and fader automation remain deferred; the browser-based saw/pulse Simple Soft Synth is implemented.
 
 Sources:
 

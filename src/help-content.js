@@ -36,6 +36,8 @@ export const helpContent = {
     wide: true,
     blocks: [
       paragraph('Dates follow the commits introducing each version. The v0.1 summary also includes improvements made before v0.2.'),
+      heading('v0.12 - 2026-11-17'),
+      paragraph('Simple Soft Synth browser instrument with saw/sub-oscillator and pulse-width controls, filter, ADSR, AMP LFO, adjustable pitch-bend range, exclusive instrument routing, and audio-scheduled arpeggios. Includes SSS help, blue theme-aware branding and mode button, protected System starter patches, and shared hardware/soft-synth patch management with instrument-aware backups.'),
       heading('v0.11 - 2026-11-16'),
       paragraph('SuperKnob macro mappings with a movable curve editor, movement-triggered recording with adjustable duration, independently timed or tempo-synced cycling, MIDI Learn with temporary selected-fader control in configuration, C-major audition at shared tempo, independent macro presets with standalone/Everything/cloud backups, and optional embedded patch definitions.'),
       heading('v0.10 - 2026-11-16'),
@@ -62,12 +64,13 @@ export const helpContent = {
     title: 'About refaceCS',
     wide: true,
     blocks: [
-      paragraph('refaceCS is a browser-based companion for the Yamaha reface CS. It provides an on-screen instrument panel, MIDI control, patch organization, a browser phrase looper, an arpeggiator, and a sample-free drum Groove Studio. It does not replace the instrument or store patches in the hardware.'),
+      paragraph('refaceCS is a browser-based companion for the Yamaha reface CS. It provides an on-screen instrument panel, MIDI control, a browser-based Simple Soft Synth, patch organization, a browser phrase looper, an arpeggiator, and a sample-free drum Groove Studio. It does not replace the instrument or store patches in the hardware.'),
       heading('Getting started'),
       list(
         'Open the app in a supported Chromium browser over HTTPS or localhost. Choose Connect MIDI and grant permission.',
         'Select the reface MIDI input and output. If you use a separate controller, select its input independently.',
         'Enable MIDI Control on the reface when using the panel faders. A successful MIDI send does not prove that the instrument applied it.',
+        'Use the Mode switch for Simple Soft Synth when hardware is unavailable. It plays through browser audio without MIDI; latency depends on the browser and audio device.',
         'Play with the on-screen keys, a connected controller, or the reface keyboard. Save sounds to the Patch Manager if you want to recall them later.',
       ),
       heading('Playing and panel controls'),
@@ -84,6 +87,7 @@ export const helpContent = {
       heading('Features'),
       list(
         'Adjust supported reface CS sound controls and map absolute controller knobs and sliders with MIDI Learn.',
+        'Switch to Simple Soft Synth for saw/pulse sounds with filter, envelope, and LFO controls. It shares the keyboard, arpeggiator, and looper; it is not intended to reproduce the hardware sound.',
         'Save, tag, filter, recall, import, and export browser-side patches. A patch stores the app’s known sound-control values, not every hardware state.',
         'Record and play app-side phrases, quantize note starts, set fixed loop lengths, and save named loops in this browser.',
         'Generate arpeggios and use Groove Studio for browser audio drums or external MIDI drums.',
@@ -207,12 +211,13 @@ export const helpContent = {
     title: 'Patch Manager',
     wide: true,
     blocks: [
-      paragraph('The Patch Manager saves and organizes sounds in this browser. Each patch stores the app’s known LFO, oscillator, Portamento, Filter, EG, and Effects values, with a name, description, main category, tags, favorites, and optional MP3 previews. It does not store patches in the reface or capture every hardware setting.'),
+      paragraph('The Patch Manager saves and organizes Reface CS hardware and Simple Soft Synth patches in this browser. Each patch stores its instrument type and author along with supported controls, name, description, main category, tags, favorites, and optional MP3 previews. System factory patches cannot be edited or deleted; hide them or use Save as to create a User copy.'),
       details('Saving and editing patches', [
         list(
           'Use Save current sound or the save icon beside the patch display to save the current on-screen sound.',
           'For a loaded patch, choose Overwrite to update it or Save as to create a new patch. Save as prepopulates the metadata but does not copy audio attachments.',
           'Enter a name and main category, and optionally add a description and comma-separated tags. Replacing an existing name requires confirmation.',
+          'New user patches have Author: User. System factory patches are protected from editing, deletion, and overwrite; Save as creates an independent User copy. Use Hide to remove a factory patch from the default list, or Show hidden factory patches to restore it.',
           'Edit changes a saved patch’s details. Use the favorite star to add or remove it from favorites; the delete icon removes the patch after confirmation.',
           'Snapshots store browser-known sound controls, not performance/system settings or unreported hardware changes.',
           'Optionally include an independent SuperKnob definition. Its mappings, recording duration, and playback cycle timing travel with the patch and its backups; changing a macro preset never changes embedded copies. Loading a patch stops cycling and audition without applying macro curves over its saved sound.',
@@ -220,7 +225,7 @@ export const helpContent = {
       ]),
       details('Finding and organizing sounds', [
         list(
-          'Search by a case-insensitive part of the patch name, enable Favorites, or select category and tag chips.',
+          'Filter by instrument type or author, search by a case-insensitive part of the patch name, enable Favorites, or select category and tag chips.',
           'Multiple selected categories match any category; multiple selected tags match any tag. Name, favorites, category, and tag groups must all match. An empty group adds no restriction.',
           'Clear filters resets the search and all filter selections.',
           'Compact cards show fader outlines. Detailed snapshots adds descriptions and labeled control previews.',
@@ -229,8 +234,8 @@ export const helpContent = {
       ]),
       details('Loading sounds and protecting unsaved changes', [
         list(
-          'Load explicitly applies the saved sound to the panel and sends its sound-control CC values to the selected MIDI output. Enable MIDI Control on the reface.',
-          'Without an output, the patch loads only in the app. Partial sends are reported in Messages; a successful MIDI send does not confirm the synth applied the sound.',
+          'Load applies the saved sound and switches to its instrument type. Reface CS patches send sound-control CC values to the selected MIDI output; enable MIDI Control on the hardware.',
+          'Simple Soft Synth patches render in browser audio without MIDI. Live playback can have noticeable latency; audio timing is scheduled independently of UI updates.',
           'Selecting a card or using Preview plays its first MP3 without loading the sound into the synth. Left/Right moves through the name-sorted filtered cards and previews them, stopping at the ends.',
           'Loading with unsaved sound edits offers Cancel, Discard and load, Overwrite and load when a saved patch is active, or Save as and load.',
           'Settings can skip this warning for patch loads. INIT and synth capture still protect unsaved changes.',
@@ -252,7 +257,7 @@ export const helpContent = {
           'Each patch supports up to three MP3 attachments. Add MP3 imports existing files; select another track to preview it. If autoplay is blocked, use the track’s Play preview button.',
           'Settings can hide audio tracks on cards; use the arrow to reveal them until you close them or reload the page.',
           'Drag tracks or use their move buttons to reorder them. Remove unwanted attachments or export them individually.',
-          'Record first loads the patch and sends all its sound-control CC values. Recording is blocked if MIDI is unavailable or any value could not be sent.',
+          'Record first loads the patch. Hardware recording requires all sound-control CC values to send successfully; soft-synth recording uses the browser audio output.',
           'Connect the synth’s audio output to an audio interface: USB MIDI does not carry audio. Choose an audio input and grant microphone permission over HTTPS or localhost.',
           'Start recording, then stop manually or let it stop at 10 seconds. Preview the locally encoded MP3 before choosing Save MP3, or Discard it. Existing attachments remain unchanged.',
         ),
@@ -266,6 +271,25 @@ export const helpContent = {
           'Browser-only preferences and MIDI Learn assignments are not included in patches or backups. Cloud backup is manual, not automatic synchronization.',
         ),
       ]),
+    ],
+  },
+  'soft-synth': {
+    title: 'Simple Soft Synth',
+    blocks: [
+      paragraph('SSS is a beginner-friendly browser instrument for exploring subtractive synthesis without owning a reface CS. It is not a recreation of the hardware sound.'),
+      heading('Shape your sound'),
+      list(
+        item('SAW', 'Texture sets the volume of a sawtooth sub-oscillator one octave below the played note.'),
+        item('PULSE', 'Texture shifts pulse width from a 50/50 square wave to a 90/10 pulse.'),
+        item('Filter', 'Cutoff darkens or brightens the sound; Resonance emphasizes frequencies near the cutoff.'),
+        item('ADSR', 'Attack, Decay, Sustain, and Release shape volume over each note.'),
+        item('LFO', 'Select AMP, then raise Depth and Speed for rhythmic volume movement. OFF disables it.'),
+        item('Pitch bend', 'The range buttons set how many semitones the bend wheel moves in either direction.'),
+      ),
+      heading('Play and switch instruments'),
+      paragraph('Use the on-screen keyboard, computer keyboard, or selected MIDI controller. The arpeggiator and looper can play SSS too. Browser audio sounds only while Simple Soft Synth mode is active; switching back stops its voices and restores hardware MIDI routing.'),
+      paragraph('The Patch Manager Instrument filter follows mode changes. System starter patches can be hidden or copied with Save as. Effects are off in SSS; the Reface CS effect settings are preserved.'),
+      paragraph('Audio requires browser permission and may have noticeable live-play latency depending on your audio device. Portamento, oscillator MOD, filter-envelope balance, and hardware effects are not supported in SSS.'),
     ],
   },
   cs: {
@@ -415,7 +439,7 @@ export const helpContent = {
       paragraph('Assign chooses the LFO destination:'),
       list(
         item('OFF', 'No LFO modulation.'),
-        item('AMP', 'Changes oscillator volume.'),
+        item('AMP', 'Changes oscillator volume. In Simple Soft Synth, this is the only available destination besides OFF.'),
         item('FILTER', 'Modulates filter cutoff.'),
         item('PITCH', 'Modulates oscillator pitch.'),
         item('OSC', 'Modulates a parameter that depends on oscillator type.'),
@@ -479,8 +503,8 @@ export const helpContent = {
     blocks: [
       paragraph('Texture changes according to the selected oscillator:'),
       list(
-        item('Multi-saw', 'Adds an octave-lower sub-oscillator.'),
-        item('Pulse', 'Changes the pitch of the second square wave.'),
+        item('Multi-saw', 'Adds an octave-lower sub-oscillator; in Simple Soft Synth, Texture sets its volume.'),
+        item('Pulse', 'Changes the pitch of the second square wave on Reface CS; Simple Soft Synth shifts pulse width from 50/50 to 90/10.'),
         item('Sync', 'Changes OSC2 pitch and tone.'),
         item('Ring', 'Changes OSC1 pitch.'),
         item('FM', 'Sets the modulation amount.'),

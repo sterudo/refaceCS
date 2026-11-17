@@ -36,7 +36,7 @@ export async function saveCloudBackup(drive, folder, sources, name, kind = 'name
     records.push({ ...patch, audio });
   }
   const snapshot = {
-    format, version: 1, sections: { patches: 1, patterns: 2, loops: 1, superknob: 1 }, name, createdAt, kind,
+    format, version: 1, sections: { patches: 2, patterns: 2, loops: 1, superknob: 1 }, name, createdAt, kind,
     patches: records, categories, patterns, tones, loops, superknob,
   };
   const data = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
@@ -59,7 +59,7 @@ export async function readCloudBackup(drive, id) {
   const sections = data?.sections;
   const hasSuperKnob = sections && Object.hasOwn(sections, 'superknob');
   if (data?.format !== format || data.version !== 1 || !sections || typeof sections !== 'object' || Array.isArray(sections)
-    || Object.keys(sections).length !== (hasSuperKnob ? 4 : 3) || sections.patches !== 1 || sections.loops !== 1
+    || Object.keys(sections).length !== (hasSuperKnob ? 4 : 3) || ![1, 2].includes(sections.patches) || sections.loops !== 1
     || ![1, 2].includes(sections.patterns) || (hasSuperKnob && sections.superknob !== 1)) {
     throw new Error('Unsupported cloud backup format or section version.');
   }

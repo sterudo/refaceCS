@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }) => {
 test('dark synth control cycles modes and offers all modes in its right-click menu', async ({ page }) => {
   const mode = page.locator('#dark-synth-mode');
   await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(37, 42, 38)');
   await mode.click();
   await expect(page.locator('#synth svg')).toHaveClass(/dark-synth-case/);
   await expect(mode).toHaveAttribute('data-mode', 'case');
@@ -20,9 +21,11 @@ test('dark synth control cycles modes and offers all modes in its right-click me
   await expect(page.locator('#cs-logo')).toHaveCSS('stroke', 'rgb(196, 204, 206)');
   await expect(page.locator('#arp-enabled .arp-lens')).toHaveCSS('fill', 'rgb(74, 83, 85)');
   await expect(page.locator('#arp-enabled text')).toHaveCSS('fill', 'rgb(238, 241, 239)');
+  await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(238, 241, 239)');
   await expect(page.locator('#arp-held-notes')).toHaveCSS('fill', 'rgb(238, 241, 239)');
   await mode.click();
   await expect(page.locator('#synth svg')).toHaveClass(/dark-synth-keys/);
+  await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(238, 241, 239)');
   await mode.click({ button: 'right' });
   const menu = page.getByRole('menu', { name: 'Dark synth mode choices' });
   await expect(menu).toBeVisible();
@@ -32,6 +35,7 @@ test('dark synth control cycles modes and offers all modes in its right-click me
   await mode.click({ button: 'right' });
   await page.getByRole('menuitemradio', { name: 'Off', exact: true }).click();
   await expect(page.locator('#body-edge')).toBeVisible();
+  await expect(page.locator('#soft-synth-mode-label')).toHaveCSS('fill', 'rgb(37, 42, 38)');
   await expect(page.locator('#yamaha-link #path4')).toHaveCSS('fill', 'rgb(30, 34, 33)');
 });
 

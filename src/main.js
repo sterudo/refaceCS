@@ -18,6 +18,7 @@ import { choose } from './dialogs.js';
 import { setupHelp } from './help.js';
 import { getAppSetting, setupAppSettings } from './app-settings.js';
 import { setupSuperKnob } from './superknob-ui.js';
+import { createSoftSynth } from './soft-synth.js';
 
 const notifications = setupNotifications();
 const reportAudio = createReporter('groove', 'audio-connect-status');
@@ -49,6 +50,7 @@ const panel = container.querySelector('svg');
 setupHelp(panel);
 const displays = document.querySelector('#visualizations');
 const status = createReporter('app', 'app-status');
+const softSynth = createSoftSynth((message) => reportAudio(message, 'error'));
 const sizeButton = document.querySelector('#fader-size');
 const faders = [...panel.querySelectorAll('.fader')];
 const readouts = new Map();
@@ -62,6 +64,8 @@ const tempoFader = panel.querySelector('#tempo');
 const looperFader = panel.querySelector('#looper');
 const octaveButtons = [...panel.querySelectorAll('.octave-step')];
 const expressionFader = panel.querySelector('#expression');
+const modeSwitch = panel.querySelector('#soft-synth-mode');
+const modeLabel = panel.querySelector('#soft-synth-mode-label');
 const muteButton = panel.querySelector('#volume-mute');
 const muteLabel = panel.querySelector('#mute-label');
 const pitchRangeControl = panel.querySelector('#pitch-range');
@@ -83,6 +87,8 @@ let processedDeviceRevision = 0;
 let syncingDevice = false;
 let pitchRangeChanging = false;
 let deviceSettings;
+let synthType = 'hardware';
+let savedHardwareModeControls = null;
 
 const selections = {
   octave: ['-2', '-1', '0', '+1', '+2'],
@@ -91,7 +97,9 @@ const selections = {
   'osc-type': ['Multi-saw', 'Pulse', 'Sync', 'Ring modulation', 'FM'],
   'effect-type': ['Off', 'Delay', 'Phaser', 'Chorus / flanger', 'Distortion'],
 };
-const updateVisualizations = createVisualizations(displays, panel, selections, resetSection);
+const updateVisualizations = createVisualizations(
+  displays, panel, selections, resetSection, () => synthType === 'soft-synth',
+);
 
 function appendExtraKey(note, octave, x, black = false) {
   const key = document.createElementNS(svgNS, 'g');
@@ -169,7 +177,7 @@ const midi = setupMidiDiscovery(() => {
     midi.setCaptureStatus(midi.hasDeviceConnection() ? 'Waiting for the MIDI connection action.' : '');
     queueMicrotask(() => { void syncDeviceConnection(); });
   },
-});
+}, softSynth);
 const drums = createDrumMachine(grooveClock, {
   onAudioStatus(message) {
     reportAudio(message, 'error');
@@ -191,6 +199,50 @@ deviceSettings = setupDeviceSettings(midi, {
   onPitchRead: observePitchRange,
   onPitchUnconfirmed: () => { pitchDirection = null; },
 });
+
+function updateSynthModePresentation() {
+  const soft = synthType === 'soft-synth';
+  panel.classList.toggle('soft-synth-mode', soft);
+  modeSwitch.setAttribute('aria-pressed', String(soft));
+  modeSwitch.setAttribute('aria-label', `Device mode: ${soft ? 'Simple Soft Synth' : 'Reface CS'}`);
+  modeLabel.textContent = soft ? 'SOFT' : 'CS';
+}
+
+async function applySynthMode(type, { fromPatch = false } = {}) {
+  if (!['hardware', 'soft-synth'].includes(type)) throw new Error(`Unknown instrument type: ${type}`);
+  if (type === synthType) return true;
+  const controls = Object.fromEntries(PATCH_CONTROL_IDS.map((id) => [id, readValue(panel.querySelector(`#${id}`))]));
+  const enteringSoftSynth = type === 'soft-synth';
+  const leavingSoftSynth = synthType === 'soft-synth';
+  if (!await midi.setSoftSynthMode(type === 'soft-synth', controls, pitchRange)) {
+    status('Could not enable the Simple Soft Synth. Check browser audio support and permissions.', 'error');
+    return false;
+  }
+  if (enteringSoftSynth) {
+    savedHardwareModeControls = Object.fromEntries([
+      'lfo-assign', 'effect-type', 'effect-depth', 'effect-rate',
+    ].map((id) => [id, readValue(panel.querySelector(`#${id}`))]));
+    if (savedHardwareModeControls['lfo-assign'] > 1) {
+      updateFaderFromInput(panel.querySelector('#lfo-assign'), 0, false);
+    }
+  } else if (leavingSoftSynth && savedHardwareModeControls) {
+    for (const [id, value] of Object.entries(savedHardwareModeControls)) {
+      const fader = panel.querySelector(`#${id}`);
+      if (midi.hasDeviceConnection()) updateFaderFromInput(fader, value, false);
+      else updateFader(fader, value, false);
+    }
+    savedHardwareModeControls = null;
+  }
+  synthType = type;
+  updateSynthModePresentation();
+  updateVisualizations('effect-type');
+  if (!fromPatch) patchLibrary?.modeChanged(type);
+  else patchLibrary?.setModeFilter(type);
+  status(`Device mode: ${type === 'soft-synth' ? 'Simple Soft Synth' : 'Reface CS'}.`);
+  return true;
+}
+
+updateSynthModePresentation();
 
 async function syncDeviceConnection() {
   if (syncingDevice) return;
@@ -345,6 +397,12 @@ async function changePitchRange(value, force = false, prefix = '') {
   const revision = deviceRevision;
   pitchRangeChanging = true;
   try {
+    if (synthType === 'soft-synth') {
+      updatePitchRange(magnitude);
+      midi.setControl('pitch-range', magnitude);
+      status(`${prefix}Pitch bend range: ${magnitude} semitones in Simple Soft Synth.`);
+      return;
+    }
     if (!midi.hasDeviceConnection()) {
       updatePitchRange(magnitude);
       status(`${prefix}Pitch bend range: ${magnitude} semitones shown locally; no device setting was sent.`);
@@ -808,6 +866,10 @@ function bindButton(button, activate) {
   });
 }
 
+bindButton(modeSwitch, () => {
+  void applySynthMode(synthType === 'hardware' ? 'soft-synth' : 'hardware');
+});
+
 for (const button of pitchRangeButtons) {
   bindButton(button, () => {
     button.focus({ preventScroll: true });
@@ -948,6 +1010,8 @@ patchLibrary = createPatchLibrary({
   root: document.querySelector('#patch-library'),
   panel,
   getAppSetting,
+  getType: () => synthType,
+  changeType: (type) => applySynthMode(type, { fromPatch: true }),
   superKnob,
   initialControls: Object.fromEntries(PATCH_CONTROL_IDS.map((id) => {
     const fader = panel.querySelector(`#${id}`);
@@ -979,4 +1043,4 @@ document.querySelector('#capture-warning-close').addEventListener('click', () =>
 });
 setupBackup({ patches: patchLibrary, drums, looper: midi, superKnob });
 setupCloudBackup({ patches: patchLibrary, drums, looper: midi, superKnob });
-status('Panel ready. Connect MIDI to send notes and supported controls.');
+status('Panel ready. Connect MIDI for hardware control, or switch to the browser-based Simple Soft Synth.');

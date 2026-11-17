@@ -639,6 +639,11 @@ input[type="range"]:focus-visible,
 .device-assumption, .arp-button .device-assumption { fill: #a64b18; font-size: 11px; font-weight: 700; text-anchor: start; }
 .device-panel-confirmed .device-assumption { display: none; }
 .device-switch[aria-pressed="true"] .arp-lens { fill: url(#arp-button-red); stroke: #d66159; filter: drop-shadow(0 0 3px #f27b71); }
+#soft-synth-mode[aria-pressed="true"] .arp-lens {
+  fill: var(--soft-synth-accent);
+  stroke: var(--soft-synth-accent);
+  filter: drop-shadow(0 0 3px var(--soft-synth-accent));
+}
 .device-channel[aria-disabled="true"], .device-switch[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 .device-channel:focus-visible { outline: 2px solid #21a8bc; }
 .arp-readout-label { fill: #70766e; font-size: 8px; font-weight: 700; letter-spacing: 0.5px; }
@@ -904,6 +909,21 @@ input[type="range"]:focus-visible,
   font: inherit;
 }
 
+.patch-filters select,
+.patch-editor output {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #4b5c66;
+  border-radius: 0.35rem;
+  background: #202b33;
+  color: #dce4e8;
+  font: inherit;
+}
+
+.patch-editor output {
+  display: block;
+  min-height: 1.4em;
+}
+
 .patch-managed-labels {
   display: grid;
   gap: 0.4rem;
@@ -1106,6 +1126,8 @@ input[type="range"]:focus-visible,
 }
 
 .patch-category,
+.patch-type,
+.patch-author,
 .patch-tag {
   padding: 0.12rem 0.45rem;
   border-radius: 1rem;
@@ -1113,6 +1135,9 @@ input[type="range"]:focus-visible,
   color: #d6edf0;
   font-size: 0.7rem;
 }
+
+.patch-type { background: #245c70; }
+.patch-author { background: #3e4b54; }
 
 .patch-tags {
   display: flex;

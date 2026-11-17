@@ -45,7 +45,9 @@ export function setupBackup({ patches, drums, looper, superKnob }) {
       if (selected.includes('superknob')) files[paths.superknob] = strToU8(JSON.stringify(superKnob.listPresets()));
       files['manifest.json'] = strToU8(JSON.stringify({
         format: 'refaceCS-backup', version: 1,
-        sections: Object.fromEntries(selected.map((name) => [name, name === 'patterns' ? 2 : 1])),
+        sections: Object.fromEntries(selected.map((name) => [
+          name, name === 'patterns' ? 2 : name === 'patches' ? 2 : 1,
+        ])),
       }));
       const blob = new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
@@ -95,7 +97,8 @@ export function setupBackup({ patches, drums, looper, superKnob }) {
       }
       const names = Object.keys(manifest.sections);
       if (!names.length || names.some((name) => !Object.hasOwn(paths, name)
-        || !(name === 'patterns' ? [1, 2] : [1]).includes(manifest.sections[name]))) {
+        || !({ patterns: [1, 2], patches: [1, 2], loops: [1], superknob: [1] }[name]
+          ?? []).includes(manifest.sections[name]))) {
         throw new Error('Unsupported backup section or version; update the app');
       }
       const expected = new Set(['manifest.json', ...names.map((name) => paths[name])]);

@@ -218,15 +218,15 @@ test('About sits between Connect MIDI and Settings and includes the playing tips
 
 test('version opens dated history in newest-first order and supports keyboard reopening', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Open Version History help', exact: true });
-  await expect(trigger).toHaveText('v0.11');
-  await expect(trigger).toHaveAttribute('title', /released 2026-11-16/);
+  await expect(trigger).toHaveText('v0.12');
+  await expect(trigger).toHaveAttribute('title', /released 2026-11-17/);
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Version History', exact: true });
   await expect(dialog).toBeVisible();
   expect(await dialog.evaluate((element) => element.matches(':modal'))).toBe(false);
   expect((await dialog.boundingBox()).width).toBeCloseTo(900, 0);
   await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
-    'v0.11 - 2026-11-16', 'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
+    'v0.12 - 2026-11-17', 'v0.11 - 2026-11-16', 'v0.10 - 2026-11-16', 'v0.8 - 2026-11-16', 'v0.7 - 2026-11-15', 'v0.6 - 2026-11-15', 'v0.5 - 2026-11-15',
     'v0.4 - 2026-11-15', 'v0.3 - 2026-11-15', 'v0.2 - 2026-11-15', 'v0.1 - 2026-11-12',
   ]);
   await expect(dialog).toContainText('Contextual help');
@@ -247,10 +247,10 @@ test('Patch Manager help has collapsed feature sections and does not toggle the 
   await expect(dialog).toBeVisible();
   await expect(panel).not.toHaveAttribute('open', '');
   await expect(page.locator('#patch-editor')).not.toBeVisible();
-  await expect(dialog.getByText('The Patch Manager saves and organizes sounds', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('The Patch Manager saves and organizes Reface CS hardware and Simple Soft Synth patches', { exact: false })).toBeVisible();
   await expect(dialog.locator('details[open]')).toHaveCount(0);
   await dialog.getByText('Loading sounds and protecting unsaved changes', { exact: true }).click();
-  await expect(dialog.getByText('Without an output, the patch loads only in the app.', { exact: false })).toBeVisible();
+  await expect(dialog.getByText('Simple Soft Synth patches render in browser audio without MIDI.', { exact: false })).toBeVisible();
   await dialog.getByText('MP3 previews and recording', { exact: true }).click();
   await expect(dialog.getByText('Each patch supports up to three MP3 attachments.', { exact: false })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -412,6 +412,25 @@ test('CS logo opens synth information and Yamaha logo remains an external link',
       const screen = new DOMPoint(x, y).matrixTransform(anchor.getScreenCTM());
       return anchor.contains(document.elementFromPoint(screen.x, screen.y));
     });
+
   });
   expect(hits).toEqual([true, true, true, true]);
+});
+
+test('SSS logo and name open the same standard synth help', async ({ page }) => {
+  await page.locator('#soft-synth-mode').click();
+  await expect(page.locator('#soft-synth-mode')).toHaveAttribute('aria-pressed', 'true');
+  for (const id of ['soft-synth-logo', 'soft-synth-name']) {
+    await page.locator(`#${id}`).click();
+    const dialog = page.getByRole('dialog', { name: 'Simple Soft Synth', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Select AMP');
+    await expect(dialog).toContainText('semitones');
+    await expect(dialog).toContainText('only while Simple Soft Synth mode is active');
+    await dialog.getByRole('button', { name: 'Close Simple Soft Synth help' }).click();
+    await page.locator(`#${id}`).press('Enter');
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
 });

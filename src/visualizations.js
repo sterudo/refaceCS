@@ -16,7 +16,7 @@ function matchLuminance(color, reference) {
   return `color(srgb-linear ${adjusted.join(' ')})`;
 }
 
-export function createVisualizations(root, panel, selections, onResetSection) {
+export function createVisualizations(root, panel, selections, onResetSection, isSoftSynth = () => false) {
   const controls = new Map([...panel.querySelectorAll('.fader')].map((fader) => [fader.id, fader]));
   const value = (id) => Number(controls.get(id).dataset.value);
   const unit = (id) => value(id) / 127;
@@ -164,7 +164,8 @@ export function createVisualizations(root, panel, selections, onResetSection) {
   }
 
   function effect() {
-    const type = value('effect-type');
+    const softSynth = isSoftSynth();
+    const type = softSynth ? 0 : value('effect-type');
     const depth = unit('effect-depth');
     const rate = unit('effect-rate');
     const cycles = 1 + rate * 5;
@@ -202,8 +203,8 @@ export function createVisualizations(root, panel, selections, onResetSection) {
       });
     }
     const rateName = type === 4 ? 'Tone' : type === 1 ? 'Delay time' : 'Rate';
-    draw('effect', path, `Depth ${value('effect-depth')} / ${rateName} ${value('effect-rate')}`,
-      type === 0 ? 'Off' : selections['effect-type'][type],
+    draw('effect', path, softSynth ? 'Effect Off' : `Depth ${value('effect-depth')} / ${rateName} ${value('effect-rate')}`,
+      softSynth || type === 0 ? 'Off' : selections['effect-type'][type],
       axis, reference);
   }
 

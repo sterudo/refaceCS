@@ -5,7 +5,7 @@ import { getPreference, setPreference } from './preferences.js';
 import { captureParameters, deviceParameters, decodeControl, decodeParameter, encodeControl, encodeParameter, tempoRange,
   parameterMessage, requestMessage } from './synth-midi.js';
 
-export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}) {
+export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTempo, onLooperMode, groove = {}, softSynth) {
   const connect = document.querySelector('#midi-connect');   
   const badge = document.querySelector('#midi-badge');
   const status = createReporter('midi', 'midi-status');
@@ -46,11 +46,13 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   let receiveChannel = 16;
   let midiControlStatus = 'unknown';
   let muted = false;
+  let softSynthMode = false;
   let transpose = 0;
   let output;
   let previewNote;
   let controllerPort;
   let lastError = '';
+  const arpeggiatorRecordingTimers = new Set();
   let savedController = getPreference('controllerInput', (value) => typeof value === 'string', null);
   const looper = createLooper((message, owner) => sendOwned(output, message, owner), onLooperMode, setSharedTempo, {
     clock: groove.clock,
@@ -58,8 +60,33 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     cancelScheduled,
     onStop: () => groove.onLooperStopped?.(),
   });
-  const arpeggiator = createArpeggiator((message) => sendLive(output, message, 'arpeggiator'), changeRouting,
-    () => muted, () => transpose, onArpeggiatorTempo, groove.clock);
+  const arpeggiator = createArpeggiator(sendArpeggiator, changeRouting,
+    () => muted, () => transpose, onArpeggiatorTempo, groove.clock, {
+      lookahead: () => softSynthMode ? 100 : 0,
+      cancel() {
+        if (!softSynthMode && arpeggiatorRecordingTimers.size === 0) return;
+        for (const timer of arpeggiatorRecordingTimers) clearTimeout(timer);
+        arpeggiatorRecordingTimers.clear();
+        looper.noteOff('arpeggiator');
+        softSynth?.cancelNotes('arpeggiator');
+      },
+    });
+
+  function sendArpeggiator(message, at) {
+    if (at === undefined) return sendLive(output, message, 'arpeggiator');
+    if (!sendOwned(output, message, 'arpeggiator', at)) return false;
+    // Recording follows the audible note times, not the audio lookahead.
+    const timer = setTimeout(() => {
+      arpeggiatorRecordingTimers.delete(timer);
+      if ((message[0] & 0xf0) === 0x90 && message[2]) {
+        looper.noteOn('arpeggiator', message[0] & 0x0f, message[1], message[2]);
+      } else {
+        looper.noteOff('arpeggiator');
+      }
+    }, Math.max(0, at - performance.now()));
+    arpeggiatorRecordingTimers.add(timer);
+    return true;
+  }
 
   function updateStatusPresentation() {
     const connected = badge.dataset.state === 'connected';
@@ -106,6 +133,8 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
   }
 
   function setControl(id, value, channel = 0) {
+    if (id === 'pitch-range') softSynth?.setPitchRange(value);
+    if (softSynthMode && (id === 'transpose' || id === 'tempo' || id === 'pitch-range')) return;
     const revision = (revisions.get(id) || 0) + 1;
     revisions.set(id, revision);
     const message = encodeControl(id, value);
@@ -119,7 +148,7 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
 
   function sendPatchControls(controls) {
     const values = Object.entries(controls);
-    if (!output || output.state !== 'connected') {
+    if (!softSynthMode && (!output || output.state !== 'connected')) {
       reportError('MIDI output unavailable; patch values were not sent.');
       return { sent: 0, failed: values.length, total: values.length, unavailable: true };
     }
@@ -139,7 +168,12 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     return { sent, failed, total: values.length, unavailable: false };
   }
 
-  function send(port, message, timestamp) {
+  function send(port, message, timestamp, owner) {
+    if (softSynthMode && message.length === 3 && [0x80, 0x90, 0xb0, 0xe0].includes(message[0] & 0xf0)) {
+      if (softSynth?.handleMessage(message, timestamp, owner)) return true;
+      reportError('The Simple Soft Synth could not process the MIDI message.');
+      return false;
+    }
     if (!port || port.state !== 'connected') {
       reportError('MIDI output unavailable; message was not sent.');
       return false;
@@ -236,9 +270,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     return true;
   }
 
-  function sendOwned(port, message, owner) {
+  function sendOwned(port, message, owner, timestamp) {
     if (queuedNotes.length) looper.invalidateSchedule();
-    return applyOwned(routed(message), owner, outputNotes, (data) => send(port, data));
+    return applyOwned(routed(message), owner, outputNotes, (data) => send(port, data, timestamp, owner));
   }
 
   function applyOwned(message, owner, state, emit) {
@@ -421,7 +455,9 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
         looper.noteOff(owner);
       }
     }
-    if (port !== controllerPort || port.id === selected.input) return;
+    const routeToInstrument = (port === controllerPort && port.id !== selected.input)
+      || (softSynthMode && port.id === selected.input);
+    if (!routeToInstrument) return;
     if (on) arpeggiator.noteOn(key, note, data[2], channel, 'controller');
     else arpeggiator.noteOff(key);
     if (arpeggiator.enabled) return;
@@ -853,7 +889,15 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
     for (let channel = 0; channel < 16; channel++) {
       for (const controller of [123, 120]) messages.push([0xb0 | channel, controller, 0]);
     }
-    if (output && output.state === 'connected') {
+    if (softSynthMode) {
+      for (const message of messages) {
+        if (!send(output, message)) {
+          failed++;
+          if (!firstError) firstError = 'The Simple Soft Synth could not stop all voices';
+        }
+      }
+      softSynth?.allNotesOff();
+    } else if (output && output.state === 'connected') {
       try {
         if (typeof output.clear === 'function') output.clear();
         else if (hadScheduled) throw new Error('The MIDI output cannot cancel scheduled messages');
@@ -886,15 +930,33 @@ export function setupMidiDiscovery(onNotesChanged, onSynthValue, onArpeggiatorTe
       reportError(`MIDI reset failed${failed ? ` (${failed} of ${messages.length} messages)` : ''}: ${firstError}. Held-note state cleared.`);
     } else {
       lastError = '';
-      setStatus('MIDI reset messages sent. Release and play held keys again.');
+      setStatus(`${softSynthMode ? 'Soft Synth voices stopped.' : 'MIDI reset messages sent.'} Release and play held keys again.`);
     }
   }
 
   window.addEventListener('pagehide', () => releaseOutput(output));
 
   return {
+    async setSoftSynthMode(enabled, controls, bendRange) {
+      enabled = Boolean(enabled);
+      if (enabled === softSynthMode) {
+        if (enabled) {
+          softSynth?.setControls(controls);
+          softSynth?.setPitchRange(bendRange);
+        }
+        return true;
+      }
+      if (enabled && !await (softSynth?.resume() ?? Promise.resolve(false))) return false;
+      releaseOutput(output);
+      softSynthMode = enabled;
+      softSynth?.setControls(controls);
+      softSynth?.setPitchRange(bendRange);
+      if (!enabled) softSynth?.allNotesOff();
+      return true;
+    },
     setMuted(value) {
       muted = value;
+      softSynth?.setMuted(value);
       looper.setMuted(value);
       if (muted) {
         groove.onPreviewStop?.();
